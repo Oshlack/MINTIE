@@ -58,14 +58,10 @@ int main(int argc, char **argv){
     line_stream >> column;
     line_stream >> column;
     vector<int> junc_start = get_vector_from_list(column);
-    for(int i=0; i < junc_size.size() ; i++){
-      cout << gene_id << "\t" 
-	   << "psl2gtf\texon\t"
-	   << junc_start.at(i)+1 << "\t"
-	   << junc_start.at(i)+junc_size.at(i) << "\t"
-	   << ".\t" << strand << "\t.\t"
-	   << "gene_id \"" << gene_id << "\"; "
-	   << "transcript_id \"" << trans_id << "\";" 
+    for(int i=0; i < junc_size.size()-1 ; i++){
+      cout << gene_id << "\t"
+	   << junc_start.at(i)+junc_size.at(i)+1 << "\t"
+	   << junc_start.at(i+1) << "\t"
 	   << endl;
     }
   }
