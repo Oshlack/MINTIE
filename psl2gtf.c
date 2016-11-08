@@ -64,7 +64,7 @@ int main(int argc, char **argv){
 	   << junc_start.at(i) + junc_size.at(i) << "\t"
 	   << ".\t" << strand << "\t.\t"
 	   << "gene_id \"" << gene_id << "\"; "
-	   << "trans_id \"" << trans_id << "\";" 
+	   << "transcript_id \"" << trans_id << "\";" 
 	   << endl;
     }
   }
