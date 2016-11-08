@@ -19,6 +19,7 @@ using namespace std;
 struct g_interval {
   string chrom;
   int start, end;
+  int support;
   bool operator==(const g_interval& other)
   {
     return ((chrom==other.chrom) && (start==other.start) && (end==other.end));
