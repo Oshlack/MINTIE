@@ -2,6 +2,8 @@
  **
  ** Author: Nadia Davidson, nadia.davidson@mcri.edu.au
  ** Modified: 26 October 2016
+ **
+ ** e.g. gffread temp.gff -g /group/bioi1/shared/genomes/hg38/fasta/hg38.fa -w temp.fasta
  **/ 
 
 #include <iostream>
@@ -77,7 +79,7 @@ int main(int argc, char **argv){
     for(int i=0; i < starts.size() ; i++){
       g_interval new_exon;
       new_exon.chrom=chrom;
-      new_exon.start=starts.at(i);
+      new_exon.start=starts.at(i)+1;
       new_exon.end=ends.at(i);
       exons[symbol].push_back(new_exon);
     }
