@@ -20,11 +20,17 @@ struct g_interval {
   string chrom;
   int start, end;
   int support;
+  string strand;
   bool operator==(const g_interval& other)
   {
     return ((chrom==other.chrom) && (start==other.start) && (end==other.end));
   };
 } ;
+
+bool g_interval_compare(const g_interval& a, const g_interval&b){
+    return(a.start < b.start);
+};
+
 
 void sort_vector( vector<string> & a){ 
   sort(a.begin(), a.end());
