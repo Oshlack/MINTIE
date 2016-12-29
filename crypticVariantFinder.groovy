@@ -28,6 +28,8 @@ ref_coding_blocks="/mnt/storage/nadiad/work_area/20160203_ALL/new_code/super_ref
 ref_tab="/mnt/storage/nadiad/work_area/20160203_ALL/code/hg38_genCode20.tab"
 gene_list=code_base+"/ALL_genes_of_interest" **/
 
+controls_dir="controls"
+
 //Make a directory for each sample
 make_sample_dir= {
    from("*.gz"){
@@ -151,57 +153,67 @@ annotate_superTranscript = {
    }
 }
 
-map_reads = {
-   output.dir=branch.name
-   produce("STARAligned.sortedByCoord.out.bam"){
+build_STAR_reference = {
+   output.dir=branch.name+"/STARRef"
+   produce("Genome"){
       exec """
-      cd $branch.name ;
-      if [ ! -d STARRef ]; then mkdir STARRef ; fi ;
-      STAR --runMode genomeGenerate --genomeDir STARRef --sjdbFileChrStartEnd ../$input.juncs 
-      	   --sjdbOverhang 99 --genomeFastaFiles ../$input.fasta  --runThreadN $threads  --genomeSAindexNbases 5 ;
-      F1=`echo $inputs.fastq.gz | cut -f1 -d \" \"` ;
-      F2=`echo $inputs.fastq.gz | cut -f2 -d \" \"` ;
-      STAR --genomeDir STARRef --readFilesCommand zcat 
-         --readFilesIn ../\$F1 ../\$F2
-         --outSAMtype BAM SortedByCoordinate --outFileNamePrefix STAR
-	 --runThreadN $threads ;
-      samtools index ../$output ;
-      rm -rf STAR_STARtmp ;
+	cd $branch.name ;
+      	if [ ! -d STARRef ]; then mkdir STARRef ; fi ;
+      	STAR --runMode genomeGenerate --genomeDir STARRef --sjdbFileChrStartEnd ../$input.juncs
+            --sjdbOverhang 99 --genomeFastaFiles ../$input.fasta  --runThreadN $threads  --genomeSAindexNbases 5 ;
       """
    }
 }
 
-map_controls = {
-   output.dir=branch.parent.name+"/controls"
-   produce(branch.name+"Aligned.sortedByCoord.out.bam"){
+map_reads = {
+   output.dir=branch.name
+   def out_prefix="STAR"
+   def workingDir = System.getProperty("user.dir"); 
+   read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
+   if(type=="controls"){
+	output.dir=branch.parent.name+"/"+controls_dir
+	out_prefix=branch.name
+   }
+   produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
       exec """
-      if [ ! -d $output.dir ]; then mkdir $output.dir ; fi ;
       cd $output.dir ;
-      STAR --genomeDir ../STARRef --readFilesCommand zcat
-         --readFilesIn ../../$input1 ../../$input2
-         --outSAMtype BAM SortedByCoordinate --outFileNamePrefix $branch.name
-         --runThreadN $threads ;
-      cd ../../ ;
-      samtools index $output ;
+      STAR --genomeDir STARRef --readFilesCommand zcat 
+         --readFilesIn read_files
+         --outSAMtype BAM SortedByCoordinate --outFileNamePrefix $out_prefix
+	 --runThreadN $threads ;
+      samtools index ../$output1 ;
+      rm -rf ${out_prefix}_STARtmp ;
       """
-      }
+   }
 }
 
 get_info_on_novel_events = {
+      def out_prefix=""
       output.dir=branch.name
-      produce("novel.junctions","novel.blocks","novel.summary"){
+      if(type=="controls"){
+	output.dir=branch.parent.name+"/"+controls_dir
+	out_prefix=branch.name+"."
+      }
+      produce(out_prefix+"novel.junctions",out_prefix+"novel.blocks"){
       exec """
-      	 awk '\$6 == \"0\" { print \$0 }' $output.dir/STARSJ.out.tab > $output1 ;
+      	 awk '\$6 == \"0\" { print \$0 }' $input.tab > $output1 ;
 	 rm -rf $output2 ;
 	 cat $input.bed | while read line ; do 
 	    region=`echo $line | awk '{ printf "%s:%s-%s\\n", \$1, \$2 + 1, \$3}'` ;
 	    ave=`samtools depth $input.bam -r \$region | awk '{sum+=\$3;} END { if (NR > 0){print sum/NR} else { print "0"} }'`;
 	    echo -e "\$line\\t\$ave" >> $output2 ;
 	 done ;
-	 $code_base/parse_superTranscript_results $output1 $output2 $output.dir/all.groupings > $output3
       """
       }
 }
+
+get_filtered_variants = {
+      output.dir=branch.name
+      produce("novel.summary"){
+         exec "$code_base/parse_superTranscript_results $output1 $output2 $output.dir/all.groupings > $output3"
+      }
+}
+
 
 fastqInputFormat="%_L001_R*.fastq.gz"
 
@@ -215,8 +227,11 @@ run { fastqInputFormat * [ make_sample_dir +
 			  filter_blat_against_transcriptome +
 			  run_lace + 
 			  annotate_superTranscript +
-			  map_reads +
-			  "controls/%_*.fastq.gz" *  [ map_controls ] +
-			  get_info_on_novel_events 
+			  build_STAR_reference +
+			  map_reads + 
+			  get_info_on_novel_events +
+			  "controls/%_*.fastq.gz" *  [ map_reads.using(type:"controls") + 
+			  			  get_info_on_novel_events.using(type:"controls") ] 
+//			  get_filtered_variants
 			  ]
 }
