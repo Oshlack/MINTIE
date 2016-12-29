@@ -33,7 +33,6 @@ struct event {
   string type;
 } ;
 
-static const int read_length=100;
 static const double junc_overhand_frac=0.76; // read_length - 12 bases * 2 ends / read_length
 static const int min_abs_depth=5;
 static const double min_rel_depth=0.4;
@@ -91,7 +90,7 @@ int main(int argc, char **argv){
     line_stream >> block_type;
     line_stream >> new_event.depth;
     //fix the depth
-    new_event.depth = new_event.depth / (new_event.end - new_event.start ) ;
+    //new_event.depth = new_event.depth / (new_event.end - new_event.start ) ;
     new_event.type="insertion" ;
     if(block_type=="Assembly")
       novel_events[gene].push_back(new_event);
@@ -130,7 +129,7 @@ int main(int argc, char **argv){
       if(has_abs_depth && has_rel_depth){
 	cout << gItr->first << "\t" 
 	     << these_events.at(e).type << "\t"
-	     << these_events.at(e).end - these_events.at(e).start
+	     << these_events.at(e).end - these_events.at(e).start << "\t"
 	     << these_events.at(e).depth << "\t"
 	     << rel_depth << "\t"
 	     << these_events.at(e).start << "\t" 
