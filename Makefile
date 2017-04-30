@@ -1,5 +1,8 @@
 
-all: parse_transcriptome_blat parse_genome_blat psl2gtf psl2sjdbFileChrStartEnd parse_superTranscript_results make_superReference
+all: parse_transcriptome_blat parse_genome_blat psl2gtf psl2sjdbFileChrStartEnd parse_superTranscript_results make_superReference gtf2flatgtf
+
+gtf2flatgtf: gtf2flatgtf.c
+	g++ -O3 $^ -o $@
 
 parse_transcriptome_blat: parse_transcriptome_blat.c
 	g++ -O3 $^ -o $@
