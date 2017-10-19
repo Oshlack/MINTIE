@@ -71,11 +71,14 @@ SOAPassemble = {
          if [ ! -d $output.dir/SOAPassembly ]; then mkdir $output.dir/SOAPassembly ; fi ;
          cd $branch.name/SOAPassembly ;
 
-         module load python/2.7.11 ;
-         $trinity --seqType fq --left ../trim1.fastq --right ../trim2.fastq --CPU 8 --max_memory 24G ;
-         cp trinity_out_dir/Trinity.fasta SOAP.fasta ;
-         module unload python/2.7.11 ;
-
+         echo \"max_rd_len=\$max_read_length\" > config.config ;
+         echo -e \"[LIB]\\nq1=../trim1.fastq\\nq2=../trim2.fastq\" >> config.config ;
+         if [ -e SOAP.fasta ]; then rm SOAP.fasta ; fi ;
+         for k in $Ks ; do
+               $soap pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
+           $soap contig -g outputGraph_\$k -p $threads ;
+           cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
+         done ;
          cd ../../ ;
          $fasta_dedupe in=$branch.name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true |
          fasta_formatter |
@@ -114,6 +117,44 @@ filter_blat_against_transcriptome = {
          ${code_base}/parse_transcriptome_blat $ann_info $input.psl $input.fasta > $output.groupings ;
          cat $input.fasta $ann_superTranscriptome > $output.fasta ;
      """
+   }
+}
+
+create_salmon_index = {
+   def salmon_index=branch.name+"/all_fasta_index"
+   output.dir=branch.name+"/all_fasta_index"
+   produce('bwaidx.sa'){
+      exec """
+         salmon index -t $input.fasta -i $salmon_index --type fmd ;
+     """
+   }
+}
+
+run_salmon = {
+   def workingDir = System.getProperty("user.dir");
+   def (rf1, rf2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
+   def salmon_index="all_fasta_index"
+   if(type=="controls"){
+        output.dir=branch.parent.parent.name+"/"+controls_dir+"/salmon_out/aux_info"
+        salmon_index="../"+salmon_index
+   } else {
+        output.dir=branch.parent.name+"/salmon_out/aux_info"
+   }
+   produce("eq_classes.txt"){
+      exec """
+        cd $output.dir/../.. ;
+        salmon quant --dumpEq -i $salmon_index -l A -1 $rf1 -2 $rf2 -o salmon_out
+     """
+   }
+}
+
+filter_on_significant_ecs = {
+   output.dir=branch.name
+   produce("eq_class_comp.txt", "filtered_all_fasta.fasta"){
+      exec """
+        Rscript $code_base/compare_eq_classes.R $input1.txt $input2.txt $output ;
+        python $code_base/filter_fasta.py $input.fasta $output.txt | sed --expression='/^\$/d' - > $output.fasta
+      """
    }
 }
 
@@ -228,13 +269,16 @@ run { fastqInputFormat * [ make_sample_dir +
               filter_blat_against_genome +
               blat_against_transcriptome +
               filter_blat_against_transcriptome +
+              create_salmon_index +
+              [run_salmon, "controls/%_*.fastq.gz" * [run_salmon.using(type:"controls")]] +
+              filter_on_significant_ecs +
               run_lace +
               annotate_superTranscript +
               build_STAR_reference +
               map_reads +
-              get_info_on_novel_events +
+              //get_info_on_novel_events +
               "controls/%_*.fastq.gz" *  [ map_reads.using(type:"controls") +
-                            get_info_on_novel_events.using(type:"controls") ] +
-              get_filtered_variants
+                            get_info_on_novel_events.using(type:"controls") ]
+              //get_filtered_variants
               ]
 }
