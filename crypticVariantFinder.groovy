@@ -62,7 +62,7 @@ dedupe = {
 
 SOAPassemble = {
      output.dir=branch.name ;
-     produce(branch.name+'.fasta'){
+     produce(branch.name+'_denovo_filt.fasta', branch.name+'.fasta'){
          exec """
              $trimmomatic PE -threads $threads -phred$scores $input1.gz $input2.gz
                  $branch.name/trim1.fastq /dev/null $branch.name/trim2.fastq /dev/null
@@ -83,7 +83,8 @@ SOAPassemble = {
          $fasta_dedupe in=$branch.name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true |
          fasta_formatter |
          awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }'
-         > $output ;
+         > $output1 ;
+         cat $output1 $trans_fasta > $output2 ;
          rm $branch.name/trim1.fastq $branch.name/trim2.fastq ;
      ""","SOAPassemble"
      }
@@ -125,7 +126,7 @@ create_salmon_index = {
    output.dir=branch.name+"/all_fasta_index"
    produce('bwaidx.sa'){
       exec """
-         salmon index -t $input.fasta -i $salmon_index --type fmd ;
+         salmon index -t $input2.fasta -i $salmon_index --type fmd ;
      """
    }
 }
@@ -150,10 +151,11 @@ run_salmon = {
 
 filter_on_significant_ecs = {
    output.dir=branch.name
-   produce("eq_class_comp.txt", "filtered_all_fasta.fasta"){
+   produce("eq_class_comp.txt", "filtered_denovo.fasta", "filtered_all_fasta.fasta"){
       exec """
-        Rscript $code_base/compare_eq_classes.R $input1.txt $input2.txt $output ;
-        python $code_base/filter_fasta.py $input.fasta $output.txt | sed --expression='/^\$/d' - > $output.fasta
+        Rscript $code_base/compare_eq_classes.R $input1.txt $input2.txt $output.txt ;
+        python $code_base/filter_fasta.py $input1.fasta $output.txt | sed --expression='/^\$/d' - > $output2 ;
+        python $code_base/filter_fasta.py $input2.fasta $output.txt | sed --expression='/^\$/d' - > $output3 ;
       """
    }
 }
@@ -265,20 +267,20 @@ fastqInputFormat="%_L001_R*.fastq.gz"
 run { fastqInputFormat * [ make_sample_dir +
                         dedupe +
                         SOAPassemble +
-              blat_against_genome +
-              filter_blat_against_genome +
-              blat_against_transcriptome +
-              filter_blat_against_transcriptome +
+              //blat_against_genome +
+              //filter_blat_against_genome +
+              //blat_against_transcriptome +
+              //filter_blat_against_transcriptome +
               create_salmon_index +
               [run_salmon, "controls/%_*.fastq.gz" * [run_salmon.using(type:"controls")]] +
-              filter_on_significant_ecs +
-              run_lace +
-              annotate_superTranscript +
-              build_STAR_reference +
-              map_reads +
+              filter_on_significant_ecs
+              //run_lace +
+              //annotate_superTranscript +
+              //build_STAR_reference +
+              //map_reads +
               //get_info_on_novel_events +
-              "controls/%_*.fastq.gz" *  [ map_reads.using(type:"controls") +
-                            get_info_on_novel_events.using(type:"controls") ]
+              //"controls/%_*.fastq.gz" *  [ map_reads.using(type:"controls") +
+              //              get_info_on_novel_events.using(type:"controls") ]
               //get_filtered_variants
               ]
 }

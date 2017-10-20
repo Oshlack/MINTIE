@@ -101,7 +101,8 @@ ec_lookup <- create_ec_lookup(x, y)
 counts <- data.frame(x=ec_lookup$counts_x, y=ec_lookup$counts_y, stringsAsFactors = F)
 counts[is.na(counts)] <- 0
 counts <- as.matrix(apply(counts, 2, as.numeric))
-genes <- data.frame(transcript=ec_lookup$transcript.x, ec=ec_lookup$ec_x)
+genes <- data.frame(transcript=ec_lookup$transcript.x, ec=ec_lookup$ec_x, stringsAsFactors = F)
+genes[is.na(genes$ec),'ec'] <- paste(ec_lookup[is.na(genes$ec),]$ec_y,'y',sep='_')
 
 # CPM filtering
 keep <- apply(cpm(counts), 1, sum) > 1
