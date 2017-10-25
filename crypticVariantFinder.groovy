@@ -93,7 +93,7 @@ SOAPassemble = {
 blat_against_genome = {
    output.dir=branch.name
    produce('against_genome.psl'){
-      exec "blat $genome_fasta $input -minIdentity=98 -minScore=100 $output"
+      exec "blat $genome_fasta $input1.fasta -minIdentity=98 -minScore=100 $output"
    }
 }
 
@@ -147,6 +147,26 @@ run_salmon = {
         salmon quant --dumpEq -i $salmon_index -l A -1 $rf1 -2 $rf2 -o salmon_out
      """
    }
+}
+
+run_salmon_controls = {
+    def workingDir = System.getProperty("user.dir");
+    def salmon_index="all_fasta_index"
+    def reads = inputs.fastq.gz.split().collect { workingDir+"/$it" }
+    def counter = 1
+    // run salmon on all control sample pairs
+    for (i=0; i < reads.size-1; i+=2) {
+        def read_args = "-1 " + reads[i] + " -2 " + reads[i+1]
+        output.dir = branch.parent.parent.name + "/" + controls_dir + counter + "_salmon_out/aux_info"
+        counter++
+        produce("eq_classes.txt"){
+            exec """
+            mkdir -p $output.dir/.. ;
+            cd $output.dir/../.. ;
+            salmon quant --dumpEq -i $salmon_index -l A $read_args -o $output.dir/..
+            """
+        }
+    }
 }
 
 filter_on_significant_ecs = {
@@ -267,19 +287,19 @@ fastqInputFormat="%_L001_R*.fastq.gz"
 run { fastqInputFormat * [ make_sample_dir +
                         dedupe +
                         SOAPassemble +
+              create_salmon_index +
+              [run_salmon, "controls/%_*.fastq.gz" * [run_salmon_controls.using(type:"controls")]]
+              //filter_on_significant_ecs +
               //blat_against_genome +
               //filter_blat_against_genome +
               //blat_against_transcriptome +
               //filter_blat_against_transcriptome +
-              create_salmon_index +
-              [run_salmon, "controls/%_*.fastq.gz" * [run_salmon.using(type:"controls")]] +
-              filter_on_significant_ecs
               //run_lace +
               //annotate_superTranscript +
               //build_STAR_reference +
               //map_reads +
               //get_info_on_novel_events +
-              //"controls/%_*.fastq.gz" *  [ map_reads.using(type:"controls") +
+              //"controls/%.*.fastq.gz" *  [ map_reads.using(type:"controls") +
               //              get_info_on_novel_events.using(type:"controls") ]
               //get_filtered_variants
               ]
