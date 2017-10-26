@@ -259,6 +259,42 @@ map_reads = {
    }
 }
 
+map_reads_controls = {
+    def out_prefix="STAR"
+    def ref="../STARRef"
+    def workingDir = System.getProperty("user.dir");
+
+    def reads = inputs.fastq.gz.split().collect { workingDir+"/$it" }
+    def (reads_r1, reads_r2) = [[],[]]
+    reads.eachWithIndex { readfile, idx ->
+        if (idx % 2 == 0)
+            reads_r1.add(readfile)
+        else
+            reads_r2.add(readfile)
+    }
+    def readPairs = [reads_r1, reads_r2].transpose().collect { it.join(" ") }
+
+    int n = reads.size / 2
+    def outPrefixes = (1..n).collect { "control${it}." }
+    def outBams = outPrefixes.collect { "${it}Aligned.sortedByCoord.out.bam" }
+    def outTabs = outPrefixes.collect { "${it}SJ.out.tab" }
+
+    output.dir = branch.parent.name+"/"+controls_dir
+    def args = [readPairs, outPrefixes, outBams].transpose()
+    def commands = args.collect {
+        "cd $output.dir; time STAR --genomeDir $ref --readFilesCommand zcat" +
+        " --readFilesIn " + it[0] +
+        " --outSAMtype BAM SortedByCoordinate --outFileNamePrefix " + it[1] +
+        " --runThreadN $threads --limitBAMsortRAM 3050000000 ; " +
+        "samtools index " + it[2] + " ; " +
+        "rm -rf " + it[1] + "_STARtmp ;"
+    }
+
+    produce(outBams, outTabs){
+        multiExec commands
+    }
+}
+
 get_info_on_novel_events = {
     def out_prefix=""
     output.dir=branch.name
@@ -297,7 +333,7 @@ run { fastqInputFormat * [ make_sample_dir +
                         dedupe +
                         SOAPassemble +
               create_salmon_index +
-              [run_salmon, "controls/%_*.fastq.gz" * [run_salmon_controls.using(type:"controls")]] + 
+              [run_salmon, "controls/%_*.fastq.gz" * [ run_salmon_controls ]] +
               filter_on_significant_ecs +
               blat_against_genome +
               filter_blat_against_genome +
@@ -308,7 +344,7 @@ run { fastqInputFormat * [ make_sample_dir +
               build_STAR_reference +
               map_reads +
               //get_info_on_novel_events +
-              "controls/%.*.fastq.gz" *  [ map_reads.using(type:"controls") ]
+              "controls/%.*.fastq.gz" *  [ map_reads_controls ]
               //              get_info_on_novel_events.using(type:"controls") ]
               //get_filtered_variants
               ]
