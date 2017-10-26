@@ -1,9 +1,11 @@
-suppressWarnings(suppressMessages(require(edgeR)))
+suppressMessages(require(edgeR))
 suppressMessages(require(reshape2))
+suppressMessages(require(dplyr))
+options(stringsAsFactors = FALSE)
 
 args <- commandArgs(TRUE)
 
-if(length(args) < 3) {
+if(length(args) < 4) {
     args <- c("--help")
 }
 
@@ -14,13 +16,14 @@ if("--help" %in% args) {
         using equivalence classes as exons.
 
         Usage:
-        ./compare_eq_classes.R <ec_class1> <ec_class2> <output>\n\n")
-    
+        ./compare_eq_classes.R <cancer_ec_class> <control1_ec> <control2_ec> ... <output>\n\n
+
+        Note: at least two control samples are required.\n\n")
+
     q(save="no")
 }
 
 # TODO: make these variables either auto-inferred or CMD-line arguments
-bcv <- 0.1
 FDR_cutoff <- 0.05
 
 # load equivalence class file and return
@@ -30,13 +33,13 @@ load_ecs <- function(fpath) {
     x <- scan(fpath, what = '', sep = '\n', quiet = T)
     x <- strsplit(x, '[ \t]+')
     max.col <- max(sapply(x, length))
-    
+
     cn <- paste('X', 1:max.col, sep='')
-    x <- read.delim(fpath, header=F, sep='\t', col.names = cn, stringsAsFactors = F)
-    
+    x <- read.delim(fpath, header=F, sep='\t', col.names = cn)
+
     qs <- grep('^\\d+$',x$X1)[-c(1:2)] # get indexes of EC list
     txs <- x$X1[-c(1:2,qs)]
-    
+
     y <- x[qs,]
     tx_ec <- NULL
     for(i in 1:nrow(y)) { # add trancript/ec associations
@@ -49,77 +52,94 @@ load_ecs <- function(fpath) {
             tx_ec[[paste(tx,ec)]] <- c(tx, ec, count)
         }
     }
-    tx_ec <- data.frame(do.call(rbind, tx_ec), stringsAsFactors = F)
+    tx_ec <- data.frame(do.call(rbind, tx_ec))
     colnames(tx_ec) <- c('transcript', 'ec', 'count')
     rownames(tx_ec) <- 1:nrow(tx_ec)
-    
+
     return(tx_ec)
 }
 
-# transform equivalence class list into 
+# transform equivalence class list into
 # transcript presence/absence matrix
 create_ec_matrix <- function(x) {
     xc <- dcast(x[,1:2], transcript ~ ec, value.var = 'ec')
     xc_tmp <- xc[,2:ncol(xc)]
     xc_tmp[!is.na(xc_tmp)] <- 1
     xc_tmp[is.na(xc_tmp)] <- 0
+
     xc_tmp <- apply(xc_tmp, 2, as.numeric)
-    xc <- data.frame(transcript=xc$transcript, xc_tmp, stringsAsFactors = F)
+    xc <- data.frame(transcript=xc$transcript, xc_tmp)
     rownames(xc) <- xc$transcript
     return(xc)
 }
 
 # create lookup table for matching equivalence classes
-create_ec_lookup <- function(x, y) {
+create_ec_lookup <- function(x, all_tx) {
     xc <- create_ec_matrix(x)
-    yc <- create_ec_matrix(y)
-    common <- intersect(xc$transcript, yc$transcript)
-    
-    # create equivalence class transcript patterns
-    xc_ecs <- as.character(apply(xc[common,2:ncol(xc)], 2, paste, collapse=''))
-    yc_ecs <- as.character(apply(yc[common,2:ncol(yc)], 2, paste, collapse=''))
-    
-    ec_lookup <- cbind(ec_x=colnames(xc[common,2:ncol(xc)]), pattern=xc_ecs)
-    ec_tmp <- cbind(ec_y=colnames(yc[common,2:ncol(yc)]), pattern=yc_ecs)
-    ec_lookup <- merge(ec_lookup, ec_tmp, by='pattern')
-    
-    colnames(x)[2:3] <- c('ec_x', 'counts_x')
-    colnames(y)[2:3] <- c('ec_y', 'counts_y')
-    ec_lookup <- merge(x, ec_lookup, by='ec_x', all.x=T)
-    ec_lookup <- merge(y, ec_lookup, by='ec_y', all.x=T)
-    
+    xc <- xc[all_tx,]; xc[is.na(xc)] <- 0
+    xc_ecs <- as.character(apply(xc[,2:ncol(xc)], 2, paste, collapse=''))
+    ec_lookup <- data.frame(pattern=xc_ecs, ec=colnames(xc[,2:ncol(xc)]))
+    ec_lookup <- inner_join(ec_lookup, x, by='ec')
     return(ec_lookup)
 }
- 
-ec1_file <- args[1]
-ec2_file <- args[2]
 
-x <- load_ecs(ec1_file)
-y <- load_ecs(ec2_file)
-ec_lookup <- create_ec_lookup(x, y)
+ec_cancer_file <- args[1]
+control_files <- args[2:(length(args)-1)]
 
-counts <- data.frame(x=ec_lookup$counts_x, y=ec_lookup$counts_y, stringsAsFactors = F)
+x <- load_ecs(ec_cancer_file)
+
+all_tx <- list()
+all_tx[[1]] <- x$transcript
+controls <- list()
+for(i in 1:length(control_files)) {
+    control_file <- control_files[i]
+    controls[[i]] <- load_ecs(control_file)
+    all_tx[[i+1]] <- unique(controls[[i]]$transcript)
+}
+all_tx <- Reduce(union, all_tx)
+
+lookup <- list()
+lookup[[1]] <- create_ec_lookup(x, all_tx)
+for(i in 1:length(controls)) {
+    con <- create_ec_lookup(controls[[i]], all_tx)
+    con <- con[,c('pattern', 'transcript', 'count')]
+    colnames(con)[3] <- paste('control',i,sep='')
+    lookup[[i+1]] <- con
+}
+
+ec_union <- Reduce(function(x, y) full_join(x, y, by=c('pattern','transcript')), lookup, accumulate = F)
+info <- unique(ec_union)
+genes <- ec_union[,c('transcript', 'ec')]
+
+counts <- info[,-c(1:3)]
 counts[is.na(counts)] <- 0
-counts <- as.matrix(apply(counts, 2, as.numeric))
-genes <- data.frame(transcript=ec_lookup$transcript.x, ec=ec_lookup$ec_x, stringsAsFactors = F)
-genes[is.na(genes$ec),'ec'] <- paste(ec_lookup[is.na(genes$ec),]$ec_y,'y',sep='_')
+counts <- apply(counts, 2, as.numeric)
+
+#make new equivalence class labels
+max_ec <- max(as.numeric(sapply(unique(genes$ec), function(x){strsplit(x,"ec")[[1]][2]})), na.rm=T)
+new_ec <- paste('ec', (max_ec+1):(sum(is.na(genes$ec))+max_ec), sep='')
+genes[is.na(genes$ec),'ec'] <- new_ec
 
 # CPM filtering
-keep <- apply(cpm(counts), 1, sum) > 1
+keep <- rowSums(cpm(counts) > 1) >= ncol(counts)/3
+keep <- apply(cbind(!is.na(genes$transcript), keep), 1, all)
 counts <- counts[keep,]
 genes <- genes[keep,]
 
-# make DGE object
-group <- factor(c('x', 'y'))
+# make DGE object, estimate dispersion
+group <- factor(c('cancer', rep('control', ncol(counts)-1)))
 dge <- DGEList(counts=counts, genes=genes, group=group)
 dge <- calcNormFactors(dge)
 des <- model.matrix(~ group)
+dge <- estimateDisp(dge, des, robust=TRUE)
 
 # fit and perform differential splicing
-fit <- glmFit(dge, des, robust=TRUE, dispersion = bcv^2)
-sp <- diffSpliceDGE(fit, geneid='transcript', exonid='ec', verbose = F)
-top <- topSpliceDGE(sp, test="Simes", n=Inf)
+fit <- glmQLFit(dge, des, robust=TRUE)
+qlf <- glmQLFTest(fit)
+sp <- diffSpliceDGE(fit, geneid='transcript', exonid='ec', verbose = F, contrast=c(-1,1))
+top <- topSpliceDGE(sp, test='Simes', n=Inf)
 
-outfile <- args[3]
+# filter and write output
+outfile <- args[length(args)]
 output <- top[top$FDR<FDR_cutoff,]
 write.table(output, outfile, row.names=F, quote=F, sep='\t')
