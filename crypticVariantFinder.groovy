@@ -151,21 +151,30 @@ run_salmon = {
 
 run_salmon_controls = {
     def workingDir = System.getProperty("user.dir");
-    def salmon_index="all_fasta_index"
     def reads = inputs.fastq.gz.split().collect { workingDir+"/$it" }
-    def counter = 1
-    // run salmon on all control sample pairs
-    for (i=0; i < reads.size-1; i+=2) {
-        def read_args = "-1 " + reads[i] + " -2 " + reads[i+1]
-        output.dir = branch.parent.parent.name + "/" + controls_dir + counter + "_salmon_out/aux_info"
-        counter++
-        produce("eq_classes.txt"){
-            exec """
-            mkdir -p $output.dir/.. ;
-            cd $output.dir/../.. ;
-            salmon quant --dumpEq -i $salmon_index -l A $read_args -o $output.dir/..
-            """
-        }
+
+    //contruct output dirs
+    int n = reads.size / 2
+    def outdirs = (1..n).collect { branch.parent.parent.name + "/" + controls_dir + "${it}_salmon_out" }
+    def outfiles = outdirs.collect { "${it}/aux_info/eq_classes.txt" }
+
+    //pair up reads
+    def (reads_r1, reads_r2) = [[],[]]
+    reads.eachWithIndex { readfile, idx ->
+        if (idx % 2 == 0)
+            reads_r1.add(readfile)
+        else
+            reads_r2.add(readfile)
+    }
+    def readPairs = [reads_r1, reads_r2, outdirs].transpose()
+
+    //construct salmon command args
+    def salmon_index = branch.parent.parent.name + "/all_fasta_index"
+    def run_salmon = "salmon quant --dumpEq -i $salmon_index -l A "
+    def commands_salmon = readPairs.collect { run_salmon+"-1 "+it[0]+" -2 "+it[1]+" -o "+it[2] }
+
+    produce(outfiles) {
+        multiExec commands_salmon
     }
 }
 
@@ -173,7 +182,7 @@ filter_on_significant_ecs = {
    output.dir=branch.name
    produce("eq_class_comp.txt", "filtered_denovo.fasta", "filtered_all_fasta.fasta"){
       exec """
-        Rscript $code_base/compare_eq_classes.R $input1.txt $input2.txt $output.txt ;
+        Rscript $code_base/compare_eq_classes.R $inputs $output.txt ;
         python $code_base/filter_fasta.py $input1.fasta $output.txt | sed --expression='/^\$/d' - > $output2 ;
         python $code_base/filter_fasta.py $input2.fasta $output.txt | sed --expression='/^\$/d' - > $output3 ;
       """
@@ -288,18 +297,18 @@ run { fastqInputFormat * [ make_sample_dir +
                         dedupe +
                         SOAPassemble +
               create_salmon_index +
-              [run_salmon, "controls/%_*.fastq.gz" * [run_salmon_controls.using(type:"controls")]]
-              //filter_on_significant_ecs +
-              //blat_against_genome +
-              //filter_blat_against_genome +
-              //blat_against_transcriptome +
-              //filter_blat_against_transcriptome +
-              //run_lace +
-              //annotate_superTranscript +
-              //build_STAR_reference +
-              //map_reads +
+              [run_salmon, "controls/%_*.fastq.gz" * [run_salmon_controls.using(type:"controls")]] + 
+              filter_on_significant_ecs +
+              blat_against_genome +
+              filter_blat_against_genome +
+              blat_against_transcriptome +
+              filter_blat_against_transcriptome +
+              run_lace +
+              annotate_superTranscript +
+              build_STAR_reference +
+              map_reads +
               //get_info_on_novel_events +
-              //"controls/%.*.fastq.gz" *  [ map_reads.using(type:"controls") +
+              "controls/%.*.fastq.gz" *  [ map_reads.using(type:"controls") ]
               //              get_info_on_novel_events.using(type:"controls") ]
               //get_filtered_variants
               ]
