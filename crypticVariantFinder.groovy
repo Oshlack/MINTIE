@@ -126,7 +126,7 @@ create_salmon_index = {
    output.dir=branch.name+"/all_fasta_index"
    produce('bwaidx.sa'){
       exec """
-         salmon index -t $input2.fasta -i $salmon_index --type fmd ;
+         salmon index -t $input.fasta -i $salmon_index --type fmd ;
      """
    }
 }
@@ -135,12 +135,7 @@ run_salmon = {
    def workingDir = System.getProperty("user.dir");
    def (rf1, rf2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
    def salmon_index="all_fasta_index"
-   if(type=="controls"){
-        output.dir=branch.parent.parent.name+"/"+controls_dir+"/salmon_out/aux_info"
-        salmon_index="../"+salmon_index
-   } else {
-        output.dir=branch.parent.name+"/salmon_out/aux_info"
-   }
+   output.dir=branch.parent.name+"/salmon_out/aux_info"
    produce("eq_classes.txt"){
       exec """
         cd $output.dir/../.. ;
@@ -183,11 +178,11 @@ filter_on_significant_ecs = {
    produce("eq_class_comp.txt", "filtered_denovo.fasta", "filtered_all_fasta.fasta"){
       exec """
         Rscript $code_base/compare_eq_classes.R $inputs $output.txt ;
-        python $code_base/filter_fasta.py $input1.fasta $output.txt | sed --expression='/^\$/d' - > $output2 ;
-        python $code_base/filter_fasta.py $input2.fasta $output.txt | sed --expression='/^\$/d' - > $output3 ;
       """
    }
 }
+        //python $code_base/filter_fasta.py $input1.fasta $output.txt | sed --expression='/^\$/d' - > $output2 ;
+        //python $code_base/filter_fasta.py $input2.fasta $output.txt | sed --expression='/^\$/d' - > $output3 ;
 
 run_lace = {
    output.dir=branch.name
@@ -332,20 +327,20 @@ fastqInputFormat="%_L001_R*.fastq.gz"
 run { fastqInputFormat * [ make_sample_dir +
                         dedupe +
                         SOAPassemble +
-              create_salmon_index +
-              [run_salmon, "controls/%_*.fastq.gz" * [ run_salmon_controls ]] +
-              filter_on_significant_ecs +
               blat_against_genome +
               filter_blat_against_genome +
               blat_against_transcriptome +
               filter_blat_against_transcriptome +
-              run_lace +
-              annotate_superTranscript +
-              build_STAR_reference +
-              map_reads +
-              //get_info_on_novel_events +
-              "controls/%.*.fastq.gz" *  [ map_reads_controls ]
-              //              get_info_on_novel_events.using(type:"controls") ]
-              //get_filtered_variants
+              create_salmon_index +
+              [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon_controls ]] +
+              filter_on_significant_ecs
+//              run_lace +
+//              annotate_superTranscript +
+//              build_STAR_reference +
+//              map_reads +
+//              //get_info_on_novel_events +
+//              "controls/%.*.fastq.gz" *  [ map_reads_controls ]
+//              //              get_info_on_novel_events.using(type:"controls") ]
+//              //get_filtered_variants
               ]
 }

@@ -86,8 +86,8 @@ create_ec_lookup <- function(x, all_tx) {
 ec_cancer_file <- args[1]
 control_files <- args[2:(length(args)-1)]
 
+# match up equivalence classes
 x <- load_ecs(ec_cancer_file)
-
 all_tx <- list()
 all_tx[[1]] <- x$transcript
 controls <- list()
@@ -109,37 +109,43 @@ for(i in 1:length(controls)) {
 
 ec_union <- Reduce(function(x, y) full_join(x, y, by=c('pattern','transcript')), lookup, accumulate = F)
 info <- unique(ec_union)
-genes <- ec_union[,c('transcript', 'ec')]
-
-counts <- info[,-c(1:3)]
-counts[is.na(counts)] <- 0
-counts <- apply(counts, 2, as.numeric)
 
 #make new equivalence class labels
-max_ec <- max(as.numeric(sapply(unique(genes$ec), function(x){strsplit(x,"ec")[[1]][2]})), na.rm=T)
-new_ec <- paste('ec', (max_ec+1):(sum(is.na(genes$ec))+max_ec), sep='')
-genes[is.na(genes$ec),'ec'] <- new_ec
+max_ec <- max(as.numeric(sapply(unique(info$ec), function(x){strsplit(x,"ec")[[1]][2]})), na.rm=T)
+new_ec <- paste('ec', (max_ec+1):(sum(is.na(info$ec))+max_ec), sep='')
+info[is.na(info$ec),'ec'] <- new_ec
+info[is.na(info)] <- 0
+
+#keep interesting ECs containing de novo assemblies
+interesting_ecs <- unique(info[grep("_", info$transcript),'ec'])
+info <- info[info$ec%in%interesting_ecs,]
+
+# make counts
+counts <- unique(info[, grep('ec|count|control', colnames(info))])
+ecs <- counts$ec
+counts <- apply(counts[,-1], 2, as.numeric)
+rownames(counts) <- ecs
 
 # CPM filtering
 keep <- rowSums(cpm(counts) > 1) >= ncol(counts)/3
-keep <- apply(cbind(!is.na(genes$transcript), keep), 1, all)
 counts <- counts[keep,]
-genes <- genes[keep,]
 
 # make DGE object, estimate dispersion
 group <- factor(c('cancer', rep('control', ncol(counts)-1)))
-dge <- DGEList(counts=counts, genes=genes, group=group)
+dge <- DGEList(counts=counts, group=group)
 dge <- calcNormFactors(dge)
 des <- model.matrix(~ group)
 dge <- estimateDisp(dge, des, robust=TRUE)
 
 # fit and perform differential splicing
 fit <- glmQLFit(dge, des, robust=TRUE)
-qlf <- glmQLFTest(fit)
-sp <- diffSpliceDGE(fit, geneid='transcript', exonid='ec', verbose = F, contrast=c(-1,1))
-top <- topSpliceDGE(sp, test='Simes', n=Inf)
+qlf <- glmQLFTest(fit, contrast=c(-1,1))
+top <- data.frame(topTags(qlf, n=Inf))
+top <- top[top$FDR<FDR_cutoff,]
 
 # filter and write output
+info_out <- info[info$ec%in%rownames(top),-1]
+top <- data.frame(ec=rownames(top), top)
 outfile <- args[length(args)]
-output <- top[top$FDR<FDR_cutoff,]
+output <- left_join(info_out, top, by='ec')
 write.table(output, outfile, row.names=F, quote=F, sep='\t')
