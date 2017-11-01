@@ -16,7 +16,7 @@ if("--help" %in% args) {
         using equivalence classes as exons.
 
         Usage:
-        ./compare_eq_classes.R <cancer_ec_class> <control1_ec> <control2_ec> ... <output>\n\n
+        ./compare_eq_classes.R <cancer_ec_class> <control1_ec> <control2_ec> ... <groupings> <output>\n\n
 
         Note: at least two control samples are required.\n\n")
 
@@ -25,6 +25,7 @@ if("--help" %in% args) {
 
 # TODO: make these variables either auto-inferred or CMD-line arguments
 FDR_cutoff <- 0.05
+novel_contig_regex <- '^k[0-9]+_[0-9]+'
 
 # load equivalence class file and return
 # transcripts matched to equivalence classes
@@ -84,7 +85,8 @@ create_ec_lookup <- function(x, all_tx) {
 }
 
 ec_cancer_file <- args[1]
-control_files <- args[2:(length(args)-1)]
+control_files <- args[2:(length(args)-2)]
+groupings_file <- args[length(args)-1]
 
 # match up equivalence classes
 x <- load_ecs(ec_cancer_file)
@@ -110,14 +112,55 @@ for(i in 1:length(controls)) {
 ec_union <- Reduce(function(x, y) full_join(x, y, by=c('pattern','transcript')), lookup, accumulate = F)
 info <- unique(ec_union)
 
-#make new equivalence class labels
+# make new equivalence class labels
 max_ec <- max(as.numeric(sapply(unique(info$ec), function(x){strsplit(x,"ec")[[1]][2]})), na.rm=T)
 new_ec <- paste('ec', (max_ec+1):(sum(is.na(info$ec))+max_ec), sep='')
 info[is.na(info$ec),'ec'] <- new_ec
 info[is.na(info)] <- 0
 
-#keep interesting ECs containing de novo assemblies
-interesting_ecs <- unique(info[grep("_", info$transcript),'ec'])
+################## diffsplice testing using ECs ##################
+
+# parse contig to gene groupings
+grp <- read.delim(groupings_file, sep='\t', header=F)
+colnames(grp) <- c('transcript','contig')
+grp_novel <- grp[grep(novel_contig_regex, grp$transcript),]
+grp_gene <- grp[grep(novel_contig_regex, grp$transcript, invert = T),]
+
+# create gene-contig lookup
+contig_gene <- merge(grp_novel, grp_gene, by='contig')[,-1]
+colnames(contig_gene) <- c('transcript', 'gene')
+
+# remove denovo assembled contigs that don't group with any genes
+tmp <- merge(info[,-1], contig_gene, all.x=T, by='transcript')
+tmp[is.na(tmp$gene),'gene'] <- tmp[is.na(tmp$gene),'transcript']
+tmp <- tmp[grep(novel_contig_regex, tmp$gene, invert = T),]
+
+# make counts and genes dataframes
+counts <- tmp[, grep('count|control', colnames(tmp))]
+counts <- as.matrix(apply(counts, 2, as.numeric))
+genes <- tmp[,c('gene', 'ec')]
+
+# make DGE object, estimate dispersion
+group <- factor(c('cancer', rep('control', ncol(counts)-1)))
+dge <- DGEList(counts=counts, group=group, genes=genes)
+dge <- calcNormFactors(dge)
+des <- model.matrix(~ group)
+dge <- estimateDisp(dge, des, robust=TRUE)
+
+# perform diffsplice on equivalance classes of genes
+fit <- glmFit(dge, des)
+sp <- diffSpliceDGE(fit, contrast = c(-1,1), geneid='gene', exonid='ec')
+top <- topSpliceDGE(sp, n=Inf)
+top <- top[top$FDR<FDR_cutoff,]
+
+# write output
+outfile <- paste(args[length(args)], 'diffsplice.txt', sep='_')
+write.table(top, outfile, row.names=F, quote=F, sep='\t')
+
+################## DE using equivalence classes DE ##################
+
+# keep interesting ECs containing de novo assemblies
+interesting_ecs <- unique(info[grep(novel_contig_regex, info$transcript), 'ec'])
 info <- info[info$ec%in%interesting_ecs,]
 
 # make counts
@@ -126,26 +169,21 @@ ecs <- counts$ec
 counts <- apply(counts[,-1], 2, as.numeric)
 rownames(counts) <- ecs
 
-# CPM filtering
-keep <- rowSums(cpm(counts) > 1) >= ncol(counts)/3
-counts <- counts[keep,]
-
 # make DGE object, estimate dispersion
 group <- factor(c('cancer', rep('control', ncol(counts)-1)))
 dge <- DGEList(counts=counts, group=group)
 dge <- calcNormFactors(dge)
-des <- model.matrix(~ group)
 dge <- estimateDisp(dge, des, robust=TRUE)
 
 # fit and perform differential splicing
 fit <- glmQLFit(dge, des, robust=TRUE)
 qlf <- glmQLFTest(fit, contrast=c(-1,1))
 top <- data.frame(topTags(qlf, n=Inf))
+top <- data.frame(ec=rownames(top), top)
 top <- top[top$FDR<FDR_cutoff,]
 
 # filter and write output
-info_out <- info[info$ec%in%rownames(top),-1]
-top <- data.frame(ec=rownames(top), top)
-outfile <- args[length(args)]
+info_out <- info[info$ec%in%top$ec,-1]
 output <- left_join(info_out, top, by='ec')
+outfile <- paste(args[length(args)], 'de.txt', sep='_')
 write.table(output, outfile, row.names=F, quote=F, sep='\t')

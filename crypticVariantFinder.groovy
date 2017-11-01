@@ -175,9 +175,11 @@ run_salmon_controls = {
 
 filter_on_significant_ecs = {
    output.dir=branch.name
-   produce("eq_class_comp.txt", "filtered_denovo.fasta", "filtered_all_fasta.fasta"){
+   output_prefix = branch.name+"/eq_class_comp"
+   produce("eq_class_comp_de.txt", "eq_class_comp_diffsplice.txt", "filtered_all_fasta.fasta"){
       exec """
-        Rscript $code_base/compare_eq_classes.R $inputs $output.txt ;
+        Rscript $code_base/compare_eq_classes.R $inputs $output.dir/all.groupings $output_prefix ;
+        python $code_base/filter_fasta.py $input.fasta $output.txt | sed --expression='/^\$/d' - > $output.fasta ;
       """
    }
 }
