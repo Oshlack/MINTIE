@@ -5,18 +5,18 @@ options(stringsAsFactors = FALSE)
 
 args <- commandArgs(TRUE)
 
-if(length(args) < 4) {
+if(length(args) < 3) {
     args <- c("--help")
 }
 
 if("--help" %in% args) {
     cat("
-        Load in Salmon equivalence classes from two samples,
-        match them and perform differential splice analysis
-        using equivalence classes as exons.
+        Perform differential expression and
+        differential splice analysis using
+        equivalence classes.
 
         Usage:
-        ./compare_eq_classes.R <cancer_ec_class> <control1_ec> <control2_ec> ... <groupings> <output>\n\n
+        Rscript compare_eq_classes.R <ec_matrix> <groupings> <output>\n\n
 
         Note: at least two control samples are required.\n\n")
 
@@ -27,96 +27,11 @@ if("--help" %in% args) {
 FDR_cutoff <- 0.05
 novel_contig_regex <- '^k[0-9]+_[0-9]+'
 
-# load equivalence class file and return
-# transcripts matched to equivalence classes
-# with their respective counts
-load_ecs <- function(fpath) {
-    x <- scan(fpath, what = '', sep = '\n', quiet = T)
-    x <- strsplit(x, '[ \t]+')
-    max.col <- max(sapply(x, length))
+ec_matrix_file <- args[1]
+groupings_file <- args[2]
+output_prefix <- args[3]
 
-    cn <- paste('X', 1:max.col, sep='')
-    x <- read.delim(fpath, header=F, sep='\t', col.names = cn)
-
-    qs <- grep('^\\d+$',x$X1)[-c(1:2)] # get indexes of EC list
-    txs <- x$X1[-c(1:2,qs)]
-
-    y <- x[qs,]
-    tx_ec <- NULL
-    for(i in 1:nrow(y)) { # add trancript/ec associations
-        ntxs <- as.numeric(y[i,1]) # number of TXs in this EC
-        ec <- paste('ec', i, sep='')
-        for(j in 1:ntxs) {
-            tx_id <- y[i, j+1] + 1
-            tx <- txs[tx_id]
-            count <- y[i, ntxs+2]
-            tx_ec[[paste(tx,ec)]] <- c(tx, ec, count)
-        }
-    }
-    tx_ec <- data.frame(do.call(rbind, tx_ec))
-    colnames(tx_ec) <- c('transcript', 'ec', 'count')
-    rownames(tx_ec) <- 1:nrow(tx_ec)
-
-    return(tx_ec)
-}
-
-# transform equivalence class list into
-# transcript presence/absence matrix
-create_ec_matrix <- function(x) {
-    xc <- dcast(x[,1:2], transcript ~ ec, value.var = 'ec')
-    xc_tmp <- xc[,2:ncol(xc)]
-    xc_tmp[!is.na(xc_tmp)] <- 1
-    xc_tmp[is.na(xc_tmp)] <- 0
-
-    xc_tmp <- apply(xc_tmp, 2, as.numeric)
-    xc <- data.frame(transcript=xc$transcript, xc_tmp)
-    rownames(xc) <- xc$transcript
-    return(xc)
-}
-
-# create lookup table for matching equivalence classes
-create_ec_lookup <- function(x, all_tx) {
-    xc <- create_ec_matrix(x)
-    xc <- xc[all_tx,]; xc[is.na(xc)] <- 0
-    xc_ecs <- as.character(apply(xc[,2:ncol(xc)], 2, paste, collapse=''))
-    ec_lookup <- data.frame(pattern=xc_ecs, ec=colnames(xc[,2:ncol(xc)]))
-    ec_lookup <- inner_join(ec_lookup, x, by='ec')
-    return(ec_lookup)
-}
-
-ec_cancer_file <- args[1]
-control_files <- args[2:(length(args)-2)]
-groupings_file <- args[length(args)-1]
-
-# match up equivalence classes
-x <- load_ecs(ec_cancer_file)
-all_tx <- list()
-all_tx[[1]] <- x$transcript
-controls <- list()
-for(i in 1:length(control_files)) {
-    control_file <- control_files[i]
-    controls[[i]] <- load_ecs(control_file)
-    all_tx[[i+1]] <- unique(controls[[i]]$transcript)
-}
-all_tx <- Reduce(union, all_tx)
-
-lookup <- list()
-lookup[[1]] <- create_ec_lookup(x, all_tx)
-for(i in 1:length(controls)) {
-    con <- create_ec_lookup(controls[[i]], all_tx)
-    con <- con[,c('pattern', 'transcript', 'count')]
-    colnames(con)[3] <- paste('control',i,sep='')
-    lookup[[i+1]] <- con
-}
-
-ec_union <- Reduce(function(x, y) full_join(x, y, by=c('pattern','transcript')), lookup, accumulate = F)
-info <- unique(ec_union)
-
-# make new equivalence class labels
-max_ec <- max(as.numeric(sapply(unique(info$ec), function(x){strsplit(x,"ec")[[1]][2]})), na.rm=T)
-new_ec <- paste('ec', (max_ec+1):(sum(is.na(info$ec))+max_ec), sep='')
-info[is.na(info$ec),'ec'] <- new_ec
-info[is.na(info)] <- 0
+ec_matrix <- read.delim(ec_matrix_file, sep='\t')
 
 ################## diffsplice testing using ECs ##################
 
@@ -131,14 +46,14 @@ contig_gene <- merge(grp_novel, grp_gene, by='contig')[,-1]
 colnames(contig_gene) <- c('transcript', 'gene')
 
 # remove denovo assembled contigs that don't group with any genes
-tmp <- merge(info[,-1], contig_gene, all.x=T, by='transcript')
+tmp <- merge(ec_matrix, contig_gene, all.x=T, by='transcript')
 tmp[is.na(tmp$gene),'gene'] <- tmp[is.na(tmp$gene),'transcript']
 tmp <- tmp[grep(novel_contig_regex, tmp$gene, invert = T),]
 
 # make counts and genes dataframes
-counts <- tmp[, grep('count|control', colnames(tmp))]
+counts <- tmp[, grep('cancer|control', colnames(tmp))]
 counts <- as.matrix(apply(counts, 2, as.numeric))
-genes <- tmp[,c('gene', 'ec')]
+genes <- tmp[,c('gene', 'ec_names')]
 
 # make DGE object, estimate dispersion
 group <- factor(c('cancer', rep('control', ncol(counts)-1)))
@@ -149,24 +64,24 @@ dge <- estimateDisp(dge, des, robust=TRUE)
 
 # perform diffsplice on equivalance classes of genes
 fit <- glmFit(dge, des)
-sp <- diffSpliceDGE(fit, contrast = c(-1,1), geneid='gene', exonid='ec')
+sp <- diffSpliceDGE(fit, contrast = c(-1,1), geneid='gene', exonid='ec_names')
 top <- topSpliceDGE(sp, n=Inf)
 top <- top[top$FDR<FDR_cutoff,]
 
 # write output
-outfile <- paste(args[length(args)], 'diffsplice.txt', sep='_')
+outfile <- paste(output_prefix, 'diffsplice.txt', sep='_')
 write.table(top, outfile, row.names=F, quote=F, sep='\t')
 
 ################## DE using equivalence classes DE ##################
 
 # keep interesting ECs containing de novo assemblies
-interesting_ecs <- unique(info[grep(novel_contig_regex, info$transcript), 'ec'])
-info <- info[info$ec%in%interesting_ecs,]
+interesting_ecs <- unique(ec_matrix[grep(novel_contig_regex, ec_matrix$transcript), 'ec_names'])
+ec_matrix <- ec_matrix[ec_matrix$ec_names%in%interesting_ecs,]
 
 # make counts
-counts <- unique(info[, grep('ec|count|control', colnames(info))])
-ecs <- counts$ec
-counts <- apply(counts[,-1], 2, as.numeric)
+counts <- unique(ec_matrix[, grep('ec|cancer|control', colnames(ec_matrix))])
+ecs <- counts$ec_names
+counts <- apply(counts[,-grep('ec', colnames(ec_matrix))], 2, as.numeric)
 rownames(counts) <- ecs
 
 # make DGE object, estimate dispersion
@@ -179,11 +94,11 @@ dge <- estimateDisp(dge, des, robust=TRUE)
 fit <- glmQLFit(dge, des, robust=TRUE)
 qlf <- glmQLFTest(fit, contrast=c(-1,1))
 top <- data.frame(topTags(qlf, n=Inf))
-top <- data.frame(ec=rownames(top), top)
+top <- data.frame(ec_names=rownames(top), top)
 top <- top[top$FDR<FDR_cutoff,]
 
 # filter and write output
-info_out <- info[info$ec%in%top$ec,-1]
-output <- left_join(info_out, top, by='ec')
-outfile <- paste(args[length(args)], 'de.txt', sep='_')
+ec_matrix_out <- ec_matrix[ec_matrix$ec_names%in%top$ec_names,grep('cancer|control|ec', colnames(ec_matrix))]
+output <- left_join(ec_matrix_out, top, by='ec_names')
+outfile <- paste(output_prefix, 'de.txt', sep='_')
 write.table(output, outfile, row.names=F, quote=F, sep='\t')

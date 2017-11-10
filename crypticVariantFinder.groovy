@@ -135,54 +135,35 @@ run_salmon = {
    def workingDir = System.getProperty("user.dir");
    def (rf1, rf2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
    def salmon_index="all_fasta_index"
-   output.dir=branch.parent.name+"/salmon_out/aux_info"
+   def base_outdir = "salmon_out"
+
+   if(type=="controls"){
+        output.dir=branch.parent.parent.name+"/"+controls_dir+"/"+branch.name+"_salmon_out/aux_info"
+        base_outdir=branch.name+"_salmon_out"
+        salmon_index="../all_fasta_index"
+   } else {
+        output.dir=branch.parent.name+"/salmon_out/aux_info"
+   }
+
    produce("eq_classes.txt"){
       exec """
         cd $output.dir/../.. ;
-        salmon quant --dumpEq -i $salmon_index -l A -1 $rf1 -2 $rf2 -o salmon_out
+        salmon quant --dumpEq -i $salmon_index -l A -1 $rf1 -2 $rf2 -o $base_outdir
      """
    }
-}
-
-run_salmon_controls = {
-    def workingDir = System.getProperty("user.dir");
-    def reads = inputs.fastq.gz.split().collect { workingDir+"/$it" }
-
-    //contruct output dirs
-    int n = reads.size / 2
-    def outdirs = (1..n).collect { branch.parent.parent.name + "/" + controls_dir + "${it}_salmon_out" }
-    def outfiles = outdirs.collect { "${it}/aux_info/eq_classes.txt" }
-
-    //pair up reads
-    def (reads_r1, reads_r2) = [[],[]]
-    reads.eachWithIndex { readfile, idx ->
-        if (idx % 2 == 0)
-            reads_r1.add(readfile)
-        else
-            reads_r2.add(readfile)
-    }
-    def readPairs = [reads_r1, reads_r2, outdirs].transpose()
-
-    //construct salmon command args
-    def salmon_index = branch.parent.parent.name + "/all_fasta_index"
-    def run_salmon = "salmon quant --dumpEq -i $salmon_index -l A "
-    def commands_salmon = readPairs.collect { run_salmon+"-1 "+it[0]+" -2 "+it[1]+" -o "+it[2] }
-
-    produce(outfiles) {
-        multiExec commands_salmon
-    }
 }
 
 filter_on_significant_ecs = {
    output.dir=branch.name
    output_prefix = branch.name+"/eq_class_comp"
-   produce("eq_class_comp_de.txt", "eq_class_comp_diffsplice.txt", "filtered_all_fasta.fasta"){
+   produce("ec_count_matrix.txt", "eq_class_comp_de.txt", "eq_class_comp_diffsplice.txt", "filtered_all_fasta.fasta"){
       exec """
-        Rscript $code_base/compare_eq_classes.R $inputs $output.dir/all.groupings $output_prefix ;
-        python $code_base/filter_fasta.py $input.fasta $output.txt | sed --expression='/^\$/d' - > $output.fasta ;
+        python $code_base/create_ec_count_matrix.py $inputs $output1 ;
+        Rscript $code_base/compare_eq_classes.R $output1 $output.dir/all.groupings $output_prefix ;
       """
    }
 }
+        //python $code_base/filter_fasta.py $input.fasta $output.txt | sed --expression='/^\$/d' - > $output.fasta ;
         //python $code_base/filter_fasta.py $input1.fasta $output.txt | sed --expression='/^\$/d' - > $output2 ;
         //python $code_base/filter_fasta.py $input2.fasta $output.txt | sed --expression='/^\$/d' - > $output3 ;
 
@@ -324,7 +305,8 @@ get_filtered_variants = {
     }
 }
 
-fastqInputFormat="%_L001_R*.fastq.gz"
+//fastqInputFormat="%_L001_R*.fastq.gz"
+fastqInputFormat="%_R*.fastq.gz"
 
 run { fastqInputFormat * [ make_sample_dir +
                         dedupe +
@@ -334,7 +316,7 @@ run { fastqInputFormat * [ make_sample_dir +
               blat_against_transcriptome +
               filter_blat_against_transcriptome +
               create_salmon_index +
-              [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon_controls ]] +
+              [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon.using(type:"controls") ]] +
               filter_on_significant_ecs
 //              run_lace +
 //              annotate_superTranscript +
