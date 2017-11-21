@@ -116,7 +116,7 @@ filter_blat_against_transcriptome = {
    produce('all.groupings','all.fasta'){
       exec """
          ${code_base}/parse_transcriptome_blat $ann_info $input.psl $input.fasta > $output.groupings ;
-         cat $input.fasta $ann_superTranscriptome > $output.fasta ;
+         cat $input.fasta $trans_fasta > $output.fasta ;
      """
    }
 }

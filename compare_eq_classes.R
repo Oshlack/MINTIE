@@ -49,11 +49,17 @@ colnames(contig_gene) <- c('transcript', 'gene')
 tmp <- merge(ec_matrix, contig_gene, all.x=T, by='transcript')
 tmp[is.na(tmp$gene),'gene'] <- tmp[is.na(tmp$gene),'transcript']
 tmp <- tmp[grep(novel_contig_regex, tmp$gene, invert = T),]
+info <- unique(tmp[, grep('cancer|control|ec|gene', colnames(tmp))])
 
 # make counts and genes dataframes
-counts <- tmp[, grep('cancer|control', colnames(tmp))]
+counts <- info[, grep('cancer|control', colnames(info))]
 counts <- as.matrix(apply(counts, 2, as.numeric))
-genes <- tmp[,c('gene', 'ec_names')]
+genes <- info[,c('gene', 'ec_names')]
+
+# filter low count ECs
+keep <- rowSums(cpm(counts) > 1) >= 1
+counts <- counts[keep,]
+genes <- genes[keep,]
 
 # make DGE object, estimate dispersion
 group <- factor(c('cancer', rep('control', ncol(counts)-1)))
@@ -64,7 +70,7 @@ dge <- estimateDisp(dge, des, robust=TRUE)
 
 # perform diffsplice on equivalance classes of genes
 fit <- glmFit(dge, des)
-sp <- diffSpliceDGE(fit, contrast = c(-1,1), geneid='gene', exonid='ec_names')
+sp <- diffSpliceDGE(fit, contrast = c(1,-1), geneid='gene', exonid='ec_names')
 top <- topSpliceDGE(sp, n=Inf)
 top <- top[top$FDR<FDR_cutoff,]
 
@@ -84,6 +90,10 @@ ecs <- counts$ec_names
 counts <- apply(counts[,-grep('ec', colnames(ec_matrix))], 2, as.numeric)
 rownames(counts) <- ecs
 
+# filter low count ECs
+keep <- rowSums(cpm(counts) > 1) >= 1
+counts <- counts[keep,]
+
 # make DGE object, estimate dispersion
 group <- factor(c('cancer', rep('control', ncol(counts)-1)))
 dge <- DGEList(counts=counts, group=group)
@@ -92,7 +102,7 @@ dge <- estimateDisp(dge, des, robust=TRUE)
 
 # fit and perform differential splicing
 fit <- glmQLFit(dge, des, robust=TRUE)
-qlf <- glmQLFTest(fit, contrast=c(-1,1))
+qlf <- glmQLFTest(fit, contrast=c(1,-1))
 top <- data.frame(topTags(qlf, n=Inf))
 top <- data.frame(ec_names=rownames(top), top)
 top <- top[top$FDR<FDR_cutoff,]
