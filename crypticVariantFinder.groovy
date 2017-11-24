@@ -116,7 +116,8 @@ filter_blat_against_transcriptome = {
    produce('all.groupings','all.fasta'){
       exec """
          ${code_base}/parse_transcriptome_blat $ann_info $input.psl $input.fasta > $output.groupings ;
-         cat $input.fasta $trans_fasta > $output.fasta ;
+         python ${code_base}/filter_fasta.py $input.fasta $output.groupings > $output.dir/transcriptome_filtered.fasta ;
+         cat $output.dir/transcriptome_filtered.fasta $trans_fasta > $output.fasta ;
      """
    }
 }
@@ -156,7 +157,8 @@ run_salmon = {
 filter_on_significant_ecs = {
    output.dir=branch.name
    output_prefix = branch.name+"/eq_class_comp"
-   produce("ec_count_matrix.txt", "eq_class_comp_de.txt", "eq_class_comp_diffsplice.txt", "filtered_all_fasta.fasta"){
+   //produce("ec_count_matrix.txt", "eq_class_comp_de.txt", "eq_class_comp_diffsplice.txt", "filtered_all_fasta.fasta"){
+   produce("ec_count_matrix.txt", "eq_class_comp_de.txt", "eq_class_comp_diffsplice.txt"){
       exec """
         python $code_base/create_ec_count_matrix.py $inputs $output1 ;
         Rscript $code_base/compare_eq_classes.R $output1 $output.dir/all.groupings $output_prefix ;
@@ -189,7 +191,7 @@ annotate_superTranscript = {
    "SuperDuper-Ass.bed", "SuperDuper-part.bed","SuperDuper-Ann.juncs","SuperDuper.bed"){
       exec """
          blat $input.fasta $trans_fasta -minScore=100 -minIdentity=98 $output.dir/SuperDuper-Ann.psl ;
-         $code_base/psl2gtf $output.dir/SuperDuper-Ann.psl | bedtools sort > $output1 ;
+         $code_base/psl2gtf $output.dir/SuperDuper-Ann.psl | bedtools sort | awk '{if(length(\$1)<128){print \$0}}' > $output1 ;
          blat $input.fasta $output.dir/genome_filtered.fasta -minScore=100 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
          $code_base/psl2gtf $output.dir/SuperDuper-Ass.psl | bedtools sort > $output2 ;
          $code_base/psl2sjdbFileChrStartEnd $output.dir/SuperDuper-Ann.psl > $output6 ;
@@ -317,11 +319,11 @@ run { fastqInputFormat * [ make_sample_dir +
               filter_blat_against_transcriptome +
               create_salmon_index +
               [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon.using(type:"controls") ]] +
-              filter_on_significant_ecs
-//              run_lace +
-//              annotate_superTranscript +
-//              build_STAR_reference +
-//              map_reads +
+              filter_on_significant_ecs +
+              run_lace +
+              annotate_superTranscript +
+              build_STAR_reference +
+              map_reads
 //              //get_info_on_novel_events +
 //              "controls/%.*.fastq.gz" *  [ map_reads_controls ]
 //              //              get_info_on_novel_events.using(type:"controls") ]
