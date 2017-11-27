@@ -323,9 +323,9 @@ run { fastqInputFormat * [ make_sample_dir +
               run_lace +
               annotate_superTranscript +
               build_STAR_reference +
-              map_reads
+              map_reads + 
 //              //get_info_on_novel_events +
-//              "controls/%.*.fastq.gz" *  [ map_reads_controls ]
+              "controls/%.*.fastq.gz" *  [ map_reads.using(type:"controls") ]
 //              //              get_info_on_novel_events.using(type:"controls") ]
 //              //get_filtered_variants
               ]

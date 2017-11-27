@@ -51,8 +51,8 @@ def build_ec_dict(ec_dict, sample, name):
         ec_dict[tx_id][name] = count
     return(ec_dict)
 
-cancer = load_ecs(ec_files[-1])
-controls = [load_ecs(file) for file in ec_files[:-1]]
+cancer = load_ecs(ec_files[0])
+controls = [load_ecs(file) for file in ec_files[1:]]
 
 # build EC dictionary
 ec_dict = build_ec_dict({}, cancer, 'cancer')
