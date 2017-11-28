@@ -125,7 +125,7 @@ int main(int argc, char **argv){
 	if(gene_match[id].size()>=1){
 	  stringstream cluster;
 	  cluster << gene_match[id].at(0);
-	  for(int i=1; i<gene_match[id].size() ; i++) cluster << "-" << gene_match[id].at(i) ;
+	  for(int i=1; i<gene_match[id].size() ; i++) cluster << "|" << gene_match[id].at(i) ;
 	  cout << id << "\t" << cluster.str() << endl;
 	  for(int i=0; i<gene_match[id].size() ; i++) gene_cluster[gene_match[id].at(i)].push_back(cluster.str());
 	}
