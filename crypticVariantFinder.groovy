@@ -1,8 +1,8 @@
-code_base="/group/bioi1/marekc/cryptic_fusions/CrypticVariant"
+code_base="/group/bioi1/marekc/20170918_cryptic_fusions/CrypticVariant/"
 
 //Trim options
 minQScore=20 //trimmomatic quality cut off
-threads=16
+threads=8
 scores=33
 min_read_length=50;
 
@@ -27,6 +27,8 @@ ann_info=code_base+"/gen24_hg38.info"
 ann_superTranscriptome=code_base+"/gen24_hg38.super_transcriptome.fasta"
 
 controls_dir="controls"
+sample_n_controls=10
+bootstrap_iters=10
 
 //Make a directory for each sample
 make_sample_dir= {
@@ -127,6 +129,7 @@ create_salmon_index = {
    output.dir=branch.name+"/all_fasta_index"
    produce('bwaidx.sa'){
       exec """
+         module load salmon ;
          salmon index -t $input.fasta -i $salmon_index --type fmd ;
      """
    }
@@ -149,7 +152,8 @@ run_salmon = {
    produce("eq_classes.txt"){
       exec """
         cd $output.dir/../.. ;
-        salmon quant --dumpEq -i $salmon_index -l A -1 $rf1 -2 $rf2 -o $base_outdir
+        module load salmon ;
+        salmon quant --dumpEq -i $salmon_index -l A -1 $rf1 -2 $rf2 -p $threads -o $base_outdir
      """
    }
 }
@@ -157,11 +161,14 @@ run_salmon = {
 filter_on_significant_ecs = {
    output.dir=branch.name
    output_prefix = branch.name+"/eq_class_comp"
+   salmon_dir = branch.name+"/salmon_out/aux_info"
    //produce("ec_count_matrix.txt", "eq_class_comp_de.txt", "eq_class_comp_diffsplice.txt", "filtered_all_fasta.fasta"){
-   produce("ec_count_matrix.txt", "eq_class_comp_de.txt", "eq_class_comp_diffsplice.txt"){
+   produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt"){
       exec """
+        module load R ;
         python $code_base/create_ec_count_matrix.py $inputs $output1 ;
-        Rscript $code_base/compare_eq_classes.R $output1 $output.dir/all.groupings $output_prefix ;
+        Rscript $code_base/compare_eq_classes.R $output1 $output.dir/all.groupings $salmon_dir $input.psl $output2 \
+            --sample=$sample_n_controls --iters=$bootstrap_iters ;
       """
    }
 }
@@ -190,9 +197,13 @@ annotate_superTranscript = {
    produce("SuperDuper-Ann.gtf","SuperDuper-Ass.gtf","SuperDuper-Ann.bed",
    "SuperDuper-Ass.bed", "SuperDuper-part.bed","SuperDuper-Ann.juncs","SuperDuper.bed"){
       exec """
+         module load blat ;
+         module load bedops ;
+         module load bedtools ;
+         module load fastx-toolkit ;
          blat $input.fasta $trans_fasta -minScore=100 -minIdentity=98 $output.dir/SuperDuper-Ann.psl ;
          $code_base/psl2gtf $output.dir/SuperDuper-Ann.psl | bedtools sort | awk '{if(length(\$1)<128){print \$0}}' > $output1 ;
-         blat $input.fasta $output.dir/genome_filtered.fasta -minScore=100 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
+         blat $input.fasta $output.dir/transcriptome_filtered.fasta -minScore=100 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
          $code_base/psl2gtf $output.dir/SuperDuper-Ass.psl | bedtools sort > $output2 ;
          $code_base/psl2sjdbFileChrStartEnd $output.dir/SuperDuper-Ann.psl > $output6 ;
          $gtf2bed < $output1 > $output3 ; $gtf2bed < $output2 > $output4 ;
@@ -206,6 +217,7 @@ build_STAR_reference = {
     output.dir=branch.name+"/STARRef"
     produce("Genome"){
         exec """
+            module load star ;
             cd $branch.name ;
             if [ ! -d STARRef ]; then mkdir STARRef ; fi ;
             STAR --runMode genomeGenerate --genomeDir STARRef --sjdbFileChrStartEnd ../$input.juncs
@@ -228,11 +240,13 @@ map_reads = {
    }
    produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
     exec """
+        module load star ;
+        module load samtools ;
         cd $output.dir ;
         time STAR --genomeDir $ref --readFilesCommand zcat
            --readFilesIn $read_files
            --outSAMtype BAM SortedByCoordinate --outFileNamePrefix $out_prefix
-           --runThreadN $threads --limitBAMsortRAM 3050000000 ;
+           --runThreadN $threads --limitBAMsortRAM 5050000000 ;
         samtools index ${workingDir}/${output1} ;
         rm -rf ${out_prefix}_STARtmp ;
     """
@@ -286,6 +300,7 @@ get_info_on_novel_events = {
     }
     produce(out_prefix+"novel.junctions",out_prefix+"novel.blocks"){
     exec """
+        module load samtools ;
         awk '\$6 == \"0\" { print \$0 }' $input.tab > $output1 ;
         rm -rf $output2 ;
         cat ${bed_dir}/SuperDuper.bed | while read line ; do
@@ -323,10 +338,10 @@ run { fastqInputFormat * [ make_sample_dir +
               run_lace +
               annotate_superTranscript +
               build_STAR_reference +
-              map_reads + 
-//              //get_info_on_novel_events +
-              "controls/%.*.fastq.gz" *  [ map_reads.using(type:"controls") ]
-//              //              get_info_on_novel_events.using(type:"controls") ]
-//              //get_filtered_variants
+              map_reads +
+              get_info_on_novel_events +
+              "controls/%.*.fastq.gz" *  [ map_reads.using(type:"controls") +
+                            get_info_on_novel_events.using(type:"controls") ] +
+              get_filtered_variants
               ]
 }

@@ -1,114 +1,116 @@
-suppressMessages(require(edgeR))
+suppressWarnings(suppressMessages(require(edgeR)))
 suppressMessages(require(reshape2))
 suppressMessages(require(dplyr))
+suppressMessages(require(EnsDb.Hsapiens.v86))
+suppressMessages(require(data.table))
+suppressMessages(require(IRanges))
+suppressMessages(require(UpSetR))
 options(stringsAsFactors = FALSE)
 
-args <- commandArgs(TRUE)
+# load helper methods
+args <- commandArgs(trailingOnly=FALSE)
+file.arg <- grep("--file=",args,value=TRUE)
+incl.path <- gsub("--file=(.*)compare_eq_classes.R","\\1helper_methods.R", file.arg)
+source(incl.path, chdir=TRUE)
 
-if(length(args) < 3) {
+args <- commandArgs(trailingOnly=TRUE)
+
+if(length(args) < 5) {
     args <- c("--help")
 }
 
 if("--help" %in% args) {
     cat("
-        Perform differential expression and
-        differential splice analysis using
-        equivalence classes.
+        Load in Salmon equivalence classes from two samples,
+        match them and perform differential splice analysis
+        using equivalence classes as exons.
 
         Usage:
-        Rscript compare_eq_classes.R <ec_matrix> <groupings> <output>\n\n
+        Rscript compare_eq_classes.R <ec_matrix> <groupings> <salmon_outdir> <tx_blat> <output> --iters=<n_iters> --sample=<N>\n\n
 
+        Default iterations is 1 and default sample number is equivalent to number of controls
         Note: at least two control samples are required.\n\n")
 
     q(save="no")
 }
 
-# TODO: make these variables either auto-inferred or CMD-line arguments
 FDR_cutoff <- 0.05
 novel_contig_regex <- '^k[0-9]+_[0-9]+'
-
 ec_matrix_file <- args[1]
 groupings_file <- args[2]
-output_prefix <- args[3]
+salmon_outdir <- args[3]
+against_txome_blat <- args[4]
+outfile <- args[5]
 
-ec_matrix <- read.delim(ec_matrix_file, sep='\t')
+n_sample <- grep("--sample=",args,value=TRUE)
+n_iters <- grep("--iters=",args,value=TRUE)
+if (length(n_iters)==0) {
+    n_iters <- 1
+} else {
+    n_iters <- strsplit(n_iters, "=")[[1]][2]
+}
+n_iters <- as.numeric(n_iters)
+
+ec_path <- paste(salmon_outdir, 'eq_classes.txt', sep='/')
+ambig_info_path <- paste(salmon_outdir, 'ambig_info.tsv', sep='/')
+
+################## load data ##################
+ec_matrix <- read.delim(gzfile(ec_matrix_file), sep='\t')
+all.groupings <- read.delim(groupings_file, sep='\t', header=F)
+colnames(all.groupings) <- c('transcript', 'gene')
+
+n_controls <- length(grep('control', colnames(ec_matrix)))
+if (length(n_sample)==0) {
+    n_sample <- n_controls
+} else {
+    n_sample <- min(strsplit(n_sample, "=")[[1]][2], n_controls)
+}
+n_sample <- as.numeric(n_sample)
+
+# match ECs to genes
+grp_novel <- all.groupings[grep(novel_contig_regex, all.groupings$transcript),]
+genes_tx <- transcripts(EnsDb.Hsapiens.v86, columns=listColumns(EnsDb.Hsapiens.v86, c('tx', 'gene')))
+info <- match_tx_to_genes(ec_matrix, grp_novel, genes_tx)
+
+print('Identifying novel contigs...')
+tx_blat <- read.delim(against_txome_blat, sep='\t', skip = 5, header=F)
+tx_blat$tx_id <- as.character(sapply(tx_blat$V14, function(x){strsplit(x, '\\.')[[1]][1]}))
+tx_blat <- left_join(tx_blat, data.frame(genes_tx)[,c('tx_id', 'symbol')], by='tx_id')
+
+tx_ec_gn <- info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
+nc <- unique(tx_ec_gn[grep(novel_contig_regex, tx_ec_gn$transcript),]$transcript) # all novel contigs
+int_contigs <- sapply(nc, is_interesting, tx_blat) # novel contigs with consistent reference gaps
+int_contigs <- names(int_contigs[as.logical(int_contigs)])
+
+# get genes that are associated with all interesting novel contigs
+int_ecs <- unique(ec_matrix[ec_matrix$transcript%in%int_contigs,]$ec_names)
+tx_ec <- data.table(distinct(tx_ec_gn[,c('ec_names','transcript')]))
+tx_to_ecs <- tx_ec[, paste(transcript, collapse=':'), by=list(ec_names)]
+uniq_ecs <- tx_to_ecs[grep('ENST',tx_to_ecs$V1, invert = T),]$ec_names # ECs containing only novel contigs
+
+int_ecs <- intersect(uniq_ecs, int_ecs)
+int_genes <- unique(info[info$ec_names%in%int_ecs,]$gene)
 
 ################## diffsplice testing using ECs ##################
 
-# parse contig to gene groupings
-grp <- read.delim(groupings_file, sep='\t', header=F)
-colnames(grp) <- c('transcript','contig')
-grp_novel <- grp[grep(novel_contig_regex, grp$transcript),]
-grp_gene <- grp[grep(novel_contig_regex, grp$transcript, invert = T),]
+bs_results <- bootstrap_diffsplice(info, int_genes, n_sample, n_iters, uniq_ecs)
 
-# create gene-contig lookup
-contig_gene <- merge(grp_novel, grp_gene, by='contig')[,-1]
-colnames(contig_gene) <- c('transcript', 'gene')
+################## compile and write results ##################
 
-# remove denovo assembled contigs that don't group with any genes
-tmp <- merge(ec_matrix, contig_gene, all.x=T, by='transcript')
-tmp[is.na(tmp$gene),'gene'] <- tmp[is.na(tmp$gene),'transcript']
-tmp <- tmp[grep(novel_contig_regex, tmp$gene, invert = T),]
-info <- unique(tmp[, grep('cancer|control|ec|gene', colnames(tmp))])
+print('Compiling and writing results...')
+bs_genes <- NULL
+for(i in 1:n_iters) {
+    bs_genes[[i]] <- unique(bs_results[[i]]$spg$gene)
+}
 
-# make counts and genes dataframes
-counts <- info[, grep('cancer|control', colnames(info))]
-counts <- as.matrix(apply(counts, 2, as.numeric))
-genes <- info[,c('gene', 'ec_names')]
+names(bs_genes) <- 1:n_iters
+bs_up <- fromList(bs_genes)
+if (n_iters > 1) {
+    plotfile <- paste(dirname(outfile), '/upset_plot_', n_iters, '_iters.pdf', sep='')
+    pdf(plotfile, width=8, height=5)
+    upset(bs_up, order.by='freq', nsets=n_iters)
+    dev.off()
+}
 
-# filter low count ECs
-keep <- rowSums(cpm(counts) > 1) >= 1
-counts <- counts[keep,]
-genes <- genes[keep,]
-
-# make DGE object, estimate dispersion
-group <- factor(c('cancer', rep('control', ncol(counts)-1)))
-dge <- DGEList(counts=counts, group=group, genes=genes)
-dge <- calcNormFactors(dge)
-des <- model.matrix(~ group)
-dge <- estimateDisp(dge, des, robust=TRUE)
-
-# perform diffsplice on equivalance classes of genes
-fit <- glmFit(dge, des)
-sp <- diffSpliceDGE(fit, contrast = c(1,-1), geneid='gene', exonid='ec_names')
-top <- topSpliceDGE(sp, n=Inf)
-top <- top[top$FDR<FDR_cutoff,]
-
-# write output
-outfile <- paste(output_prefix, 'diffsplice.txt', sep='_')
-write.table(top, outfile, row.names=F, quote=F, sep='\t')
-
-################## DE using equivalence classes DE ##################
-
-# keep interesting ECs containing de novo assemblies
-interesting_ecs <- unique(ec_matrix[grep(novel_contig_regex, ec_matrix$transcript), 'ec_names'])
-ec_matrix <- ec_matrix[ec_matrix$ec_names%in%interesting_ecs,]
-
-# make counts
-counts <- unique(ec_matrix[, grep('ec|cancer|control', colnames(ec_matrix))])
-ecs <- counts$ec_names
-counts <- apply(counts[,-grep('ec', colnames(ec_matrix))], 2, as.numeric)
-rownames(counts) <- ecs
-
-# filter low count ECs
-keep <- rowSums(cpm(counts) > 1) >= 1
-counts <- counts[keep,]
-
-# make DGE object, estimate dispersion
-group <- factor(c('cancer', rep('control', ncol(counts)-1)))
-dge <- DGEList(counts=counts, group=group)
-dge <- calcNormFactors(dge)
-dge <- estimateDisp(dge, des, robust=TRUE)
-
-# fit and perform differential splicing
-fit <- glmQLFit(dge, des, robust=TRUE)
-qlf <- glmQLFTest(fit, contrast=c(1,-1))
-top <- data.frame(topTags(qlf, n=Inf))
-top <- data.frame(ec_names=rownames(top), top)
-top <- top[top$FDR<FDR_cutoff,]
-
-# filter and write output
-ec_matrix_out <- ec_matrix[ec_matrix$ec_names%in%top$ec_names,grep('cancer|control|ec', colnames(ec_matrix))]
-output <- left_join(ec_matrix_out, top, by='ec_names')
-outfile <- paste(output_prefix, 'de.txt', sep='_')
-write.table(output, outfile, row.names=F, quote=F, sep='\t')
+concat_results <- concatenate_bs_results(bs_results, n_iters)
+write.table(concat_results, outfile, row.names=F, quote=F, sep='\t')

@@ -7,6 +7,7 @@
 import argparse
 import pandas as pd
 import re
+import sys
 from Bio import SeqIO
 
 parser = argparse.ArgumentParser()
@@ -21,6 +22,7 @@ tx_list = pd.read_csv(tx_list_file, sep='\t', header=None)
 
 handle = open(fasta_file, 'r')
 for record in SeqIO.parse(handle, 'fasta'):
+    record.description = record.id
     if record.id in tx_list[0].values:
-        print(record.format('fasta'))
+        sys.stdout.write(record.format('fasta'))
 handle.close()
