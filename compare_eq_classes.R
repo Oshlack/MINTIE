@@ -111,7 +111,7 @@ for(i in 1:n_iters) {
     bs_genes[[i]] <- unique(bs_results[[i]]$spg$gene)
 }
 
-names(bs_genes) <- 1:n_iters
+names(bs_genes) <- paste('iter', 1:n_iters, sep='')
 bs_up <- fromList(bs_genes)
 if (n_iters > 1) {
     plotfile <- paste(dirname(outfile), '/upset_plot_', n_iters, '_iters.pdf', sep='')
