@@ -58,7 +58,7 @@ is_interesting <- function(novel_contig, tx_blat) {
     return(gaps_in_reftx_concat_exons | gaps_in_reftx_whole_txs)
 }
 
-get_ambig_info <- function(ec_path, ambig_path) {
+get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
     # get ambiguous mapping info from salmon,
     # match with transcripts and calculate
     # ambiguous mapping fraction
@@ -82,7 +82,7 @@ get_ambig_info <- function(ec_path, ambig_path) {
     return(uac)
 }
 
-bootstrap_diffsplice <- function(full_info, int_genes, n_controls, n_iters, select_ecs) {
+bootstrap_diffsplice <- function(full_info, int_genes, n_controls, n_iters, select_ecs, tx_to_ecs) {
     # perform differential splicing selecting n_controls
     # bootstrap for n_iters iterations
 
@@ -133,6 +133,7 @@ bootstrap_diffsplice <- function(full_info, int_genes, n_controls, n_iters, sele
         colnames(top_ds)[3:4] <- paste('Simes', colnames(top_ds)[3:4], sep='.')
         spg <- sp$genes[sp$genes$gene%in%sig_genes & sp$genes$ec_names%in%select_ecs,]
         spg <- left_join(spg, txs_in_ec, by='ec_names')
+        spg <- left_join(spg, tx_to_ecs, by='ec_names')
         spg <- left_join(spg, top_ex, by=c('gene', 'ec_names'))
         spg <- left_join(spg, top_ds, by=c('gene'))
 

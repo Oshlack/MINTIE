@@ -36,6 +36,9 @@ if("--help" %in% args) {
 
 FDR_cutoff <- 0.05
 novel_contig_regex <- '^k[0-9]+_[0-9]+'
+
+# parse arguments
+args <- args[c(grep('--', args, invert=T), grep('--', args))]
 ec_matrix_file <- args[1]
 groupings_file <- args[2]
 salmon_outdir <- args[3]
@@ -50,9 +53,6 @@ if (length(n_iters)==0) {
     n_iters <- strsplit(n_iters, "=")[[1]][2]
 }
 n_iters <- as.numeric(n_iters)
-
-ec_path <- paste(salmon_outdir, 'eq_classes.txt', sep='/')
-ambig_info_path <- paste(salmon_outdir, 'ambig_info.tsv', sep='/')
 
 ################## load data ##################
 ec_matrix <- read.delim(gzfile(ec_matrix_file), sep='\t')
@@ -86,14 +86,22 @@ int_contigs <- names(int_contigs[as.logical(int_contigs)])
 int_ecs <- unique(ec_matrix[ec_matrix$transcript%in%int_contigs,]$ec_names)
 tx_ec <- data.table(distinct(tx_ec_gn[,c('ec_names','transcript')]))
 tx_to_ecs <- tx_ec[, paste(transcript, collapse=':'), by=list(ec_names)]
-uniq_ecs <- tx_to_ecs[grep('ENST',tx_to_ecs$V1, invert = T),]$ec_names # ECs containing only novel contigs
+tx_to_ecs <- tx_to_ecs[grep('ENST',tx_to_ecs$V1, invert = T),] # ECs containing only novel contigs
+colnames(tx_to_ecs)[2] <- 'contigs'
+uniq_ecs <- tx_to_ecs$ec_names
 
+# get interesting genes (any genes associated with non-reference ECs that only map to denovo contigs)
 int_ecs <- intersect(uniq_ecs, int_ecs)
 int_genes <- unique(info[info$ec_names%in%int_ecs,]$gene)
 
+# ambiguous mapping info, useful for final output
+ec_path <- paste(salmon_outdir, 'eq_classes.txt', sep='/')
+ambig_info_path <- paste(salmon_outdir, 'ambig_info.tsv', sep='/')
+uac <- get_ambig_info(ec_path, ambig_info_path, tx_ec_gn)
+
 ################## diffsplice testing using ECs ##################
 
-bs_results <- bootstrap_diffsplice(info, int_genes, n_sample, n_iters, uniq_ecs)
+bs_results <- bootstrap_diffsplice(info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs)
 
 ################## compile and write results ##################
 
@@ -113,4 +121,5 @@ if (n_iters > 1) {
 }
 
 concat_results <- concatenate_bs_results(bs_results, n_iters)
+concat_results <- left_join(concat_results, uac, by=c('ec_names','gene'))
 write.table(concat_results, outfile, row.names=F, quote=F, sep='\t')
