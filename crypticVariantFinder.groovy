@@ -27,8 +27,8 @@ ann_info=code_base+"/gen24_hg38.info"
 ann_superTranscriptome=code_base+"/gen24_hg38.super_transcriptome.fasta"
 
 controls_dir="controls"
-sample_n_controls=10
-bootstrap_iters=10
+sample_n_controls=29
+bootstrap_iters=1
 
 //Make a directory for each sample
 make_sample_dir= {
@@ -168,8 +168,8 @@ filter_on_significant_ecs = {
         python $code_base/create_ec_count_matrix.py $inputs $output1 ;
         Rscript $code_base/compare_eq_classes.R $output1 $output.dir/all.groupings $salmon_dir $input.psl $output2 \
             --sample=$sample_n_controls --iters=$bootstrap_iters ;
-        python $code_base/filter_fasta.py $input.fasta $output2.txt --col_id transcript > $output1.fasta ;
-        cat $trans_fasta $output1.fasta > $output2.fasta
+        python $code_base/filter_fasta.py $input.fasta $output2.txt --col_id transcript > $output3 ;
+        cat $trans_fasta $output3 > $output4
       """
    }
 }

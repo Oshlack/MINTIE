@@ -97,7 +97,7 @@ bootstrap_diffsplice <- function(full_info, int_genes, n_controls, n_iters, sele
 
         # sample controls for comparison
         controls <- colnames(info)[grep('control', colnames(info))]
-        controls <- sample(controls, n_controls)
+        if(n_controls<length(controls)){controls <- sample(controls, n_controls)}
 
         counts <- info[, c('cancer', controls)]
         counts <- as.matrix(apply(counts, 2, as.numeric))
@@ -155,22 +155,24 @@ bootstrap_diffsplice <- function(full_info, int_genes, n_controls, n_iters, sele
 concatenate_bs_results <- function(bs_results, n_iters) {
     # take results from bootstrap_diffsplice and return
     # gene/ECs present in all runs with mean FDRs and logFCs
-    tmp <- NULL
-    for(i in 1:n_iters) {
-        tmp[[i]] <- bs_results[[i]]$spg
+    if(n_iters == 1) {
+        concat_results <- bs_results[[1]]$spg
+    } else {
+        tmp <- NULL
+        for(i in 1:n_iters) {
+            tmp[[i]] <- bs_results[[i]]$spg
+        }
+        shared_cols <- c('gene','ec_names')
+        ix_results <- Reduce(function(x, y) inner_join(x, y, by=shared_cols), tmp, accumulate = F)
+        concat_results <- ix_results[,1:2]
+        concat_results$n_txs_in_ec <- apply(ix_results[,grep('n_txs',colnames(ix_results))], 1, max)
+        concat_results$NExons <- apply(ix_results[,grep('NExons',colnames(ix_results))], 1, max)
+        concat_results$sig_ecs_in_gene <- apply(ix_results[,grep('sig_ecs_in_gene',colnames(ix_results))], 1, max)
+        concat_results$total_ecs_in_gene <- apply(ix_results[,grep('total_ecs_in_gene',colnames(ix_results))], 1, max)
+        concat_results$mean_FDR <- apply(ix_results[,grep('^FDR',colnames(ix_results))], 1, mean)
+        concat_results$mean_Simes_FDR <- apply(ix_results[,grep('Simes.FDR',colnames(ix_results))], 1, mean)
+        concat_results$mean_logFC <- sapply(apply(apply(ix_results[,grep('log',colnames(ix_results))],1,exp),2,mean),log)
+        concat_results <- concat_results[order(concat_results$mean_FDR),]
     }
-
-    shared_cols <- c('gene','ec_names')
-    ix_results <- Reduce(function(x, y) inner_join(x, y, by=shared_cols), tmp, accumulate = F)
-    concat_results <- ix_results[,1:2]
-    concat_results$n_txs_in_ec <- apply(ix_results[,grep('n_txs',colnames(ix_results))], 1, max)
-    concat_results$NExons <- apply(ix_results[,grep('NExons',colnames(ix_results))], 1, max)
-    concat_results$sig_ecs_in_gene <- apply(ix_results[,grep('sig_ecs_in_gene',colnames(ix_results))], 1, max)
-    concat_results$total_ecs_in_gene <- apply(ix_results[,grep('total_ecs_in_gene',colnames(ix_results))], 1, max)
-    concat_results$mean_FDR <- apply(ix_results[,grep('^FDR',colnames(ix_results))], 1, mean)
-    concat_results$mean_Simes_FDR <- apply(ix_results[,grep('Simes.FDR',colnames(ix_results))], 1, mean)
-    concat_results$mean_logFC <- sapply(apply(apply(ix_results[,grep('log',colnames(ix_results))],1,exp),2,mean),log)
-    concat_results <- concat_results[order(concat_results$mean_FDR),]
-
     return(concat_results)
 }
