@@ -19,12 +19,14 @@ fastq_dedupe="fastuniq" ;
 bowtie2="/usr/bin/time -v bowtie2"
 gtf2bed="gtf2bed"
 bedops="bedops"
+gmap="gmap"
 
 //reference
 genome_fasta="/group/bioi1/shared/genomes/hg38/fasta/hg38.fa"
 trans_fasta=code_base+"/Homo_sapiens.GRCh38.cdna.all.fa"
 ann_info=code_base+"/gen24_hg38.info"
 ann_superTranscriptome=code_base+"/gen24_hg38.super_transcriptome.fasta"
+gmap_index="/group/bioi1/shared/genomes/hg38/gmapdb"
 
 controls_dir="controls"
 sample_n_controls=29
@@ -92,24 +94,42 @@ SOAPassemble = {
      }
 }
 
-blat_against_genome = {
+align_contigs = {
    output.dir=branch.name
-   produce('against_genome.psl'){
-      exec "blat $genome_fasta $input1.fasta -minIdentity=98 -minScore=100 $output"
+   produce('aligned_contigs.sam'){
+      exec "$gmap -D $gmap_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam"
    }
 }
 
-filter_blat_against_genome = {
+filter_contigs = {
    output.dir=branch.name
-   produce('genome_filtered.fasta'){
-      exec "${code_base}/parse_genome_blat $ann_info $input.psl $input.fasta > $output"
+   produce('filtered_contigs.bam', 'interesting_contigs.txt', 'genome_filtered.fasta'){
+      exec """
+      python ${code_base}/filter_contigs.py $ann_info $input.sam $output.bam ;
+      python ${code_base}/filter_fasta.py $input.fasta $output.txt > $output.fasta ;
+      """
    }
 }
+      //cat $output.dir/genome_filtered.fasta $trans_fasta > $output.fasta
+
+//blat_against_genome = {
+//   output.dir=branch.name
+//   produce('against_genome.psl'){
+//      exec "blat $genome_fasta $input1.fasta -minIdentity=98 -minScore=30 $output"
+//   }
+//}
+//
+//filter_blat_against_genome = {
+//   output.dir=branch.name
+//   produce('genome_filtered.fasta'){
+//      exec "${code_base}/parse_genome_blat $ann_info $input.psl $input.fasta > $output"
+//   }
+//}
 
 blat_against_transcriptome = {
    output.dir=branch.name
    produce('against_transcriptome.psl'){
-      exec "blat $trans_fasta $input -minIdentity=98 -minScore=100 $output"
+      exec "blat $trans_fasta $input.fasta -minIdentity=98 -minScore=30 $output"
    }
 }
 
@@ -162,9 +182,9 @@ filter_on_significant_ecs = {
    output.dir=branch.name
    output_prefix = branch.name+"/eq_class_comp"
    salmon_dir = branch.name+"/salmon_out/aux_info"
-   produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt", "ds_denovo_filt.fasta", "all_filt.fasta"){
+   produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt", "diffspliced_contigs.fasta", "all_filt.fasta"){
       exec """
-        module load R ;
+        module load R/3.3.2 ;
         python $code_base/create_ec_count_matrix.py $inputs $output1 ;
         Rscript $code_base/compare_eq_classes.R $output1 $output.dir/all.groupings $salmon_dir $input.psl $output2 \
             --sample=$sample_n_controls --iters=$bootstrap_iters ;
@@ -200,9 +220,9 @@ annotate_superTranscript = {
          module load bedops ;
          module load bedtools ;
          module load fastx-toolkit ;
-         blat $input.fasta $trans_fasta -minScore=100 -minIdentity=98 $output.dir/SuperDuper-Ann.psl ;
+         blat $input.fasta $trans_fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ann.psl ;
          $code_base/psl2gtf $output.dir/SuperDuper-Ann.psl | bedtools sort | awk '{if(length(\$1)<128){print \$0}}' > $output1 ;
-         blat $input.fasta $output.dir/transcriptome_filtered.fasta -minScore=100 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
+         blat $input.fasta $output.dir/transcriptome_filtered.fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
          $code_base/psl2gtf $output.dir/SuperDuper-Ass.psl | bedtools sort > $output2 ;
          $code_base/psl2sjdbFileChrStartEnd $output.dir/SuperDuper-Ann.psl > $output6 ;
          $gtf2bed < $output1 > $output3 ; $gtf2bed < $output2 > $output4 ;
@@ -327,8 +347,10 @@ fastqInputFormat="%_R*.fastq.gz"
 run { fastqInputFormat * [ make_sample_dir +
                         dedupe +
                         SOAPassemble +
-              blat_against_genome +
-              filter_blat_against_genome +
+              align_contigs +
+              filter_contigs +
+//              blat_against_genome +
+//              filter_blat_against_genome +
               blat_against_transcriptome +
               filter_blat_against_transcriptome +
               create_salmon_index +
@@ -337,10 +359,10 @@ run { fastqInputFormat * [ make_sample_dir +
               run_lace +
               annotate_superTranscript +
               build_STAR_reference +
-              map_reads +
-              get_info_on_novel_events +
-              "controls/%.*.fastq.gz" *  [ map_reads.using(type:"controls") +
-                            get_info_on_novel_events.using(type:"controls") ] +
-              get_filtered_variants
+              map_reads
+//              get_info_on_novel_events +
+//              "controls/%.*.fastq.gz" *  [ map_reads.using(type:"controls") +
+//                            get_info_on_novel_events.using(type:"controls") ] +
+//              get_filtered_variants
               ]
 }
