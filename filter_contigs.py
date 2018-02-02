@@ -41,17 +41,24 @@ args = parser.parse_args()
 tx_info = args.tx_info
 samfile = args.samfile
 outbam_file = args.outbam_file
+outbam_file_unsort = '%s_unsorted.bam' % os.path.splitext(outbam_file)[0]
 
 genref = pd.read_csv(tx_info, sep='\t')
 juncs = genref.apply(lambda tx: get_juncs(tx), axis=1)
 juncs = [(str(c), int(s), int(e)) for jv in juncs.values for c, s, e in jv] # flatten juncs list
 
 sam = pysam.AlignmentFile(samfile, 'rc')
-outbam = pysam.AlignmentFile(outbam_file, 'wb', template=sam)
+outbam = pysam.AlignmentFile(outbam_file_unsort, 'wb', template=sam)
 
 # write novel contigs to bam file
 int_contigs = np.empty(0, dtype='U100')
 for read in sam.fetch():
+    if read.reference_id < 0:
+        # unmapped contig
+        int_contigs = np.append(int_contigs, read.qname)
+        outbam.write(read)
+        continue
+
     has_gaps = any([op in gaps.values() and val >= gap_min for op, val in read.cigar])
     has_clips = any([op in clips.values() and val >= clip_min for op, val in read.cigar])
 
@@ -65,6 +72,9 @@ for read in sam.fetch():
         int_contigs = np.append(int_contigs, read.qname)
         outbam.write(read)
 
+sam.close()
+outbam.close()
+
 # write interesting contigs list to file
 int_contigs = np.unique(int_contigs)
 outdir = os.path.dirname(outbam_file)
@@ -72,3 +82,7 @@ outdir = '.' if outdir == '' else outdir
 with open('%s/interesting_contigs.txt' % outdir, 'w') as fout:
     for contig in int_contigs:
         fout.write('%s\n' % contig)
+
+pysam.sort('-o', outbam_file, outbam_file_unsort)
+pysam.index(outbam_file)
+os.remove(outbam_file_unsort)
