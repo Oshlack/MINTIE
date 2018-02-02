@@ -69,7 +69,7 @@ n_sample <- as.numeric(n_sample)
 
 # match ECs to genes
 grp_novel <- all.groupings[grep(novel_contig_regex, all.groupings$transcript),]
-genes_tx <- transcripts(EnsDb.Hsapiens.v86, columns=listColumns(EnsDb.Hsapiens.v86, c('tx', 'gene')))
+genes_tx <- transcripts(EnsDb.Hsapiens.v86, columns=c('tx_id', 'symbol'))
 info <- match_tx_to_genes(ec_matrix, grp_novel, genes_tx)
 
 print('Identifying novel contigs...')
