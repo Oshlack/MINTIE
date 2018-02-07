@@ -23,7 +23,7 @@ gmap="gmap"
 
 //reference
 genome_fasta="/group/bioi1/shared/genomes/hg38/fasta/hg38.fa"
-trans_fasta=code_base+"/Homo_sapiens.GRCh38.cdna.all.fa"
+trans_fasta="/group/bioi1/shared/transcriptomes/hg38/Homo_sapiens.GRCh38.cdna.all.fa"
 ann_info=code_base+"/gen24_hg38.info"
 ann_superTranscriptome=code_base+"/gen24_hg38.super_transcriptome.fasta"
 gmap_index="/group/bioi1/shared/genomes/hg38/gmapdb"
@@ -105,7 +105,7 @@ filter_contigs = {
    output.dir=branch.name
    produce('filtered_contigs.bam', 'interesting_contigs.txt', 'genome_filtered.fasta'){
       exec """
-      python ${code_base}/filter_contigs.py $ann_info $input.sam $output.bam ;
+      python ${code_base}/filter_contigs.py $input.sam $output.bam --splice_juncs $ann_info;
       python ${code_base}/filter_fasta.py $input.fasta $output.txt > $output.fasta ;
       """
    }
@@ -129,7 +129,7 @@ filter_contigs = {
 blat_against_transcriptome = {
    output.dir=branch.name
    produce('against_transcriptome.psl'){
-      exec "blat $trans_fasta $input.fasta -minIdentity=98 -minScore=30 $output"
+      exec "blat $trans_fasta $input.fasta -minIdentity=98 -minScore=30 -mask=out $output"
    }
 }
 

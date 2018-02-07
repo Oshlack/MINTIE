@@ -33,9 +33,12 @@ def get_juncs(tx):
     return(list(zip(chroms, ends, starts)))
 
 parser = argparse.ArgumentParser()
-parser.add_argument(dest='tx_info')
 parser.add_argument(dest='samfile')
 parser.add_argument(dest='outbam_file')
+parser.add_argument('--splice_juncs', dest='tx_info', default='',
+                    help='''Reference file containing transcripts and their respective
+                    splice junctions. Implies that contigs are being filtered against the
+                    genome, otherwise transcriptome is assumed.''')
 args = parser.parse_args()
 
 tx_info = args.tx_info
@@ -43,9 +46,10 @@ samfile = args.samfile
 outbam_file = args.outbam_file
 outbam_file_unsort = '%s_unsorted.bam' % os.path.splitext(outbam_file)[0]
 
-genref = pd.read_csv(tx_info, sep='\t')
-juncs = genref.apply(lambda tx: get_juncs(tx), axis=1)
-juncs = [(str(c), int(s), int(e)) for jv in juncs.values for c, s, e in jv] # flatten juncs list
+if tx_info != '':
+    genref = pd.read_csv(tx_info, sep='\t')
+    juncs = genref.apply(lambda tx: get_juncs(tx), axis=1)
+    juncs = [(str(c), int(s), int(e)) for jv in juncs.values for c, s, e in jv] # flatten juncs list
 
 sam = pysam.AlignmentFile(samfile, 'rc')
 outbam = pysam.AlignmentFile(outbam_file_unsort, 'wb', template=sam)
@@ -62,11 +66,13 @@ for read in sam.fetch():
     has_gaps = any([op in gaps.values() and val >= gap_min for op, val in read.cigar])
     has_clips = any([op in clips.values() and val >= clip_min for op, val in read.cigar])
 
-    # check junctions
-    starts, ends = zip(*read.blocks)
-    chroms = [read.reference_name] * (len(starts)-1)
-    tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
-    unknown_juncs = any([txj not in juncs for txj in tx_juncs])
+    unknown_juncs = False
+    if tx_info != '':
+        # check junctions
+        starts, ends = zip(*read.blocks)
+        chroms = [read.reference_name] * (len(starts)-1)
+        tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
+        unknown_juncs = any([txj not in juncs for txj in tx_juncs])
 
     if has_gaps or has_clips or unknown_juncs:
         int_contigs = np.append(int_contigs, read.qname)
