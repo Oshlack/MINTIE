@@ -12,6 +12,8 @@ import pandas as pd
 import numpy as np
 import pysam
 import os
+import re
+from Bio import SeqIO
 
 # cutoff parameters
 gap_min = 7
@@ -39,27 +41,48 @@ parser.add_argument('--splice_juncs', dest='tx_info', default='',
                     help='''Reference file containing transcripts and their respective
                     splice junctions. Implies that contigs are being filtered against the
                     genome, otherwise transcriptome is assumed.''')
-args = parser.parse_args()
+parser.add_argument('--groupings', dest='groupings', default='',
+                    help='''Fasta file containing transcriptome that GMAP was aligned to;
+                    requires gene symbols to be in the header lines.
+                    Used to match transcriptome mappings of novel contigs to genes.
+                    When this option is used, an all.groupings file is created instead
+                    of an interesting_contigs.txt file.''')
+#TODO: get rid of the gen24.info annotation file, as it is redundant. You can get this info from the gtf.
 
-tx_info = args.tx_info
-samfile = args.samfile
+args        = parser.parse_args()
+samfile     = args.samfile
 outbam_file = args.outbam_file
+tx_info     = args.tx_info
+txome_fasta    = args.groupings
+
 outbam_file_unsort = '%s_unsorted.bam' % os.path.splitext(outbam_file)[0]
+groupings = []
 
 if tx_info != '':
     genref = pd.read_csv(tx_info, sep='\t')
     juncs = genref.apply(lambda tx: get_juncs(tx), axis=1)
     juncs = [(str(c), int(s), int(e)) for jv in juncs.values for c, s, e in jv] # flatten juncs list
 
+lookup = []
+if txome_fasta != '':
+    for record in SeqIO.parse(txome_fasta, 'fasta'):
+        tx_id = record.id
+        gname = re.search('gene_symbol:([A-Za-z0-9\.\_\-]+)', record.description).group(1)
+        lookup.append((tx_id, gname))
+    lookup = pd.DataFrame(lookup, columns=['tx_id', 'gene_name'])
+
 sam = pysam.AlignmentFile(samfile, 'rc')
 outbam = pysam.AlignmentFile(outbam_file_unsort, 'wb', template=sam)
 
 # write novel contigs to bam file
-int_contigs = np.empty(0, dtype='U100')
+int_contigs = {}
 for read in sam.fetch():
     if read.reference_id < 0:
         # unmapped contig
-        int_contigs = np.append(int_contigs, read.qname)
+        if read.query_name in int_contigs.keys():
+            int_contigs[read.query_name] = np.append(int_contigs[read.query_name], None)
+        else:
+            int_contigs[read.query_name] = None
         outbam.write(read)
         continue
 
@@ -75,19 +98,32 @@ for read in sam.fetch():
         unknown_juncs = any([txj not in juncs for txj in tx_juncs])
 
     if has_gaps or has_clips or unknown_juncs:
-        int_contigs = np.append(int_contigs, read.qname)
+        if read.query_name in int_contigs.keys():
+            int_contigs[read.query_name] = np.append(int_contigs[read.query_name], read.reference_name)
+        else:
+            int_contigs[read.query_name] = np.array([read.reference_name])
         outbam.write(read)
-
 sam.close()
 outbam.close()
 
-# write interesting contigs list to file
-int_contigs = np.unique(int_contigs)
-outdir = os.path.dirname(outbam_file)
-outdir = '.' if outdir == '' else outdir
-with open('%s/interesting_contigs.txt' % outdir, 'w') as fout:
+if len(lookup) > 0:
+    groupings = []
+    all_gns = []
     for contig in int_contigs:
-        fout.write('%s\n' % contig)
+        enst = int_contigs[contig]
+        if not enst: continue
+        genes = '|'.join(lookup[lookup.tx_id.isin(enst)].gene_name.values)
+        all_gns.append(genes)
+        groupings.append([contig, genes])
+    #TODO: finish code
+else:
+    # write interesting contigs list to file
+    int_contigs = int_contigs.keys()
+    outdir = os.path.dirname(outbam_file)
+    outdir = '.' if outdir == '' else outdir
+    with open('%s/interesting_contigs.txt' % outdir, 'w') as fout:
+        for contig in int_contigs:
+            fout.write('%s\n' % contig)
 
 pysam.sort('-o', outbam_file, outbam_file_unsort)
 pysam.index(outbam_file)
