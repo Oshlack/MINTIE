@@ -5,6 +5,7 @@
 # i.e. - genomic gaps <7bp
 #      - no soft or hard clips >30bp
 #      - all junctions are known (in annotation)
+# Also groups transcripts to genes (optionally)
 #########################################################
 
 import argparse
@@ -42,12 +43,11 @@ parser.add_argument('--splice_juncs', dest='tx_info', default='',
                     splice junctions. Implies that contigs are being filtered against the
                     genome, otherwise transcriptome is assumed.''')
 parser.add_argument('--groupings', dest='groupings', default='',
-                    help='''Fasta file containing transcriptome that GMAP was aligned to;
-                    requires gene symbols to be in the header lines.
+                    help='''Transcriptome reference that GMAP was aligned to.
+                    Requires gene symbols to be in the header lines.
                     Used to match transcriptome mappings of novel contigs to genes.
                     When this option is used, an all.groupings file is created instead
                     of an interesting_contigs.txt file.''')
-#TODO: get rid of the gen24.info annotation file, as it is redundant. You can get this info from the gtf.
 
 args        = parser.parse_args()
 samfile     = args.samfile
@@ -106,24 +106,35 @@ for read in sam.fetch():
 sam.close()
 outbam.close()
 
+outdir = os.path.dirname(outbam_file)
+outdir = '.' if outdir == '' else outdir
+
 if len(lookup) > 0:
-    groupings = []
-    all_gns = []
+    groupings = pd.DataFrame()
+    all_gns = pd.DataFrame()
+
     for contig in int_contigs:
         enst = int_contigs[contig]
-        if not enst: continue
-        genes = '|'.join(lookup[lookup.tx_id.isin(enst)].gene_name.values)
-        all_gns.append(genes)
-        groupings.append([contig, genes])
-    #TODO: finish code
+        if enst is None: continue
+        genes = np.unique(lookup[lookup.tx_id.isin(enst)].gene_name.values)
+        fus_genes = '|'.join(genes)
+        for gn in genes:
+            all_gns = all_gns.append([[gn, fus_genes]])
+        groupings = groupings.append([[contig, fus_genes]])
+
+    # sort contigs alphanumerically
+    tmp = [int(x.split('_')[1]) for x in groupings[0].values]
+    groupings = groupings.reset_index()
+    groupings = groupings.drop(['index'], axis=1)
+    groupings = groupings.loc[sorted(range(len(tmp)), key=lambda k: tmp[k])]
+
+    groupings = pd.concat([groupings, all_gns.sort_values(by=0)])
+    groupings = groupings.drop_duplicates()
+    groupings.to_csv('%s/all.groupings' % outdir, sep='\t', header=False, index=False)
 else:
     # write interesting contigs list to file
-    int_contigs = int_contigs.keys()
-    outdir = os.path.dirname(outbam_file)
-    outdir = '.' if outdir == '' else outdir
-    with open('%s/interesting_contigs.txt' % outdir, 'w') as fout:
-        for contig in int_contigs:
-            fout.write('%s\n' % contig)
+    int_contigs = pd.DataFrame(list(int_contigs.keys()))
+    int_contigs.to_csv('%s/interesting_contigs.txt' % outdir, sep='\t', header=False, index=False)
 
 pysam.sort('-o', outbam_file, outbam_file_unsort)
 pysam.index(outbam_file)

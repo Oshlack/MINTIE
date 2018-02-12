@@ -10,9 +10,9 @@ match_tx_to_genes <- function(ec_matrix, grp_novel, genes_tx) {
     int_ec_matrix <- left_join(int_ec_matrix, genes_tx, by='tx_id')
     int_ec_matrix[is.na(int_ec_matrix$gene), 'gene'] <- int_ec_matrix[is.na(int_ec_matrix$gene), 'symbol']
 
-    ntx <- nrow(distinct(int_ec_matrix[,c('transcript', 'gene')]))
+    tmp <- distinct(int_ec_matrix[,c('transcript', 'gene')])
     ngs <- length(unique(int_ec_matrix$gene))
-    print(paste(ntx, 'transcripts across', ngs, 'genes found'))
+    print(paste(nrow(tmp), 'transcripts across', ngs, 'genes found'))
 
     # filter out any ECs with no associated gene
     int_ec_matrix <- int_ec_matrix[!is.na(int_ec_matrix$gene),]
@@ -27,10 +27,12 @@ match_tx_to_genes <- function(ec_matrix, grp_novel, genes_tx) {
         int_ec_matrix[rename_gns[[i]], 'gene'] <- names(rename_gns)[i]
     }
 
-    ntx2 <- nrow(distinct(int_ec_matrix[,c('transcript', 'gene')]))
+    ntx <- nrow(distinct(int_ec_matrix[,c('transcript', 'gene')]))
     info <- int_ec_matrix[, grep('cancer|control|ec|gene|transcript', colnames(int_ec_matrix))]
 
-    print(paste('could not find genes for ', ntx-ntx2, ' transcripts (', round((ntx-ntx2)/ntx,4)*100 , '%)', sep=''))
+    print(paste('could not find genes for ', nrow(tmp)-ntx, ' transcripts (', 
+                round((nrow(tmp)-ntx)/nrow(tmp),4)*100 , '%):', sep=''))
+    print(tmp$transcript[!tmp$transcript%in%info$transcript])
     return(info)
 }
 

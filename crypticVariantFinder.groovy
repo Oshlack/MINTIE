@@ -27,6 +27,7 @@ trans_fasta="/group/bioi1/shared/transcriptomes/hg38/Homo_sapiens.GRCh38.cdna.al
 ann_info=code_base+"/gen24_hg38.info"
 ann_superTranscriptome=code_base+"/gen24_hg38.super_transcriptome.fasta"
 gmap_index="/group/bioi1/shared/genomes/hg38/gmapdb"
+gmap_tx_index="/group/bioi1/shared/transcriptomes/hg38/indexes/gmapdb"
 
 controls_dir="controls"
 sample_n_controls=29
@@ -94,14 +95,14 @@ SOAPassemble = {
      }
 }
 
-align_contigs = {
+align_contigs_against_genome = {
    output.dir=branch.name
-   produce('aligned_contigs.sam'){
+   produce('aligned_contigs_against_genome.sam'){
       exec "$gmap -D $gmap_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam"
    }
 }
 
-filter_contigs = {
+filter_contigs_against_genome = {
    output.dir=branch.name
    produce('filtered_contigs.bam', 'interesting_contigs.txt', 'genome_filtered.fasta'){
       exec """
@@ -111,6 +112,24 @@ filter_contigs = {
    }
 }
       //cat $output.dir/genome_filtered.fasta $trans_fasta > $output.fasta
+
+align_contigs_against_transcriptome = {
+   output.dir=branch.name
+   produce('aligned_contigs_against_txome.sam'){
+      exec "$gmap -D $gmap_tx_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam"
+   }
+}
+
+filter_contigs_against_transcriptome = {
+   output.dir=branch.name
+   produce('filtered_contigs_against_txome.bam', 'all.groupings', 'all.fasta'){
+      exec """
+      python ${code_base}/filter_contigs.py $input.sam $output.bam --groupings $trans_fasta ;
+      python ${code_base}/filter_fasta.py $input.fasta $output.groupings > $output.dir/transcriptome_filtered.fasta ;
+      cat $output.dir/transcriptome_filtered.fasta $trans_fasta > $output.fasta ;
+      """
+   }
+}
 
 //blat_against_genome = {
 //   output.dir=branch.name
@@ -126,23 +145,23 @@ filter_contigs = {
 //   }
 //}
 
-blat_against_transcriptome = {
-   output.dir=branch.name
-   produce('against_transcriptome.psl'){
-      exec "blat $trans_fasta $input.fasta -minIdentity=98 -minScore=30 -mask=out $output"
-   }
-}
-
-filter_blat_against_transcriptome = {
-   output.dir=branch.name
-   produce('all.groupings','all.fasta'){
-      exec """
-         ${code_base}/parse_transcriptome_blat $ann_info $input.psl $input.fasta > $output.groupings ;
-         python ${code_base}/filter_fasta.py $input.fasta $output.groupings > $output.dir/transcriptome_filtered.fasta ;
-         cat $output.dir/transcriptome_filtered.fasta $trans_fasta > $output.fasta ;
-     """
-   }
-}
+//blat_against_transcriptome = {
+//   output.dir=branch.name
+//   produce('against_transcriptome.psl'){
+//      exec "blat $trans_fasta $input.fasta -minIdentity=98 -minScore=30 -mask=out $output"
+//   }
+//}
+//
+//filter_blat_against_transcriptome = {
+//   output.dir=branch.name
+//   produce('all.groupings','all.fasta'){
+//      exec """
+//         ${code_base}/parse_transcriptome_blat $ann_info $input.psl $input.fasta > $output.groupings ;
+//         python ${code_base}/filter_fasta.py $input.fasta $output.groupings > $output.dir/transcriptome_filtered.fasta ;
+//         cat $output.dir/transcriptome_filtered.fasta $trans_fasta > $output.fasta ;
+//     """
+//   }
+//}
 
 create_salmon_index = {
    def salmon_index=branch.name+"/all_fasta_index"
@@ -186,7 +205,7 @@ filter_on_significant_ecs = {
       exec """
         module load R/3.3.2 ;
         python $code_base/create_ec_count_matrix.py $inputs $output1 ;
-        Rscript $code_base/compare_eq_classes.R $output1 $output.dir/all.groupings $salmon_dir $input.psl $output2 \
+        Rscript $code_base/compare_eq_classes.R $output1 $output.dir/all.groupings $salmon_dir $output2 \
             --sample=$sample_n_controls --iters=$bootstrap_iters ;
         python $code_base/filter_fasta.py $input.fasta $output2.txt --col_id transcript > $output3 ;
         cat $trans_fasta $output3 > $output4
@@ -347,12 +366,12 @@ fastqInputFormat="%_R*.fastq.gz"
 run { fastqInputFormat * [ make_sample_dir +
                         dedupe +
                         SOAPassemble +
-              align_contigs +
-              filter_contigs +
+              align_contigs_against_genome +
+              filter_contigs_against_genome +
 //              blat_against_genome +
 //              filter_blat_against_genome +
-              blat_against_transcriptome +
-              filter_blat_against_transcriptome +
+              align_contigs_against_transcriptome +
+              filter_contigs_against_transcriptome +
               create_salmon_index +
               [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon.using(type:"controls") ]] +
               filter_on_significant_ecs +

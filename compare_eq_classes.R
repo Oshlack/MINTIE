@@ -15,7 +15,7 @@ source(incl.path, chdir=TRUE)
 
 args <- commandArgs(trailingOnly=TRUE)
 
-if(length(args) < 5) {
+if(length(args) < 4) {
     args <- c("--help")
 }
 
@@ -26,7 +26,7 @@ if("--help" %in% args) {
         using equivalence classes as exons.
 
         Usage:
-        Rscript compare_eq_classes.R <ec_matrix> <groupings> <salmon_outdir> <tx_blat> <output> --iters=<n_iters> --sample=<N>\n\n
+        Rscript compare_eq_classes.R <ec_matrix> <groupings> <salmon_outdir> <output> --iters=<n_iters> --sample=<N>\n\n
 
         Default iterations is 1 and default sample number is equivalent to number of controls
         Note: at least two control samples are required.\n\n")
@@ -42,8 +42,7 @@ args <- args[c(grep('--', args, invert=T), grep('--', args))]
 ec_matrix_file <- args[1]
 groupings_file <- args[2]
 salmon_outdir <- args[3]
-against_txome_blat <- args[4]
-outfile <- args[5]
+outfile <- args[4]
 
 n_sample <- grep("--sample=",args,value=TRUE)
 n_iters <- grep("--iters=",args,value=TRUE)
@@ -72,15 +71,8 @@ grp_novel <- all.groupings[grep(novel_contig_regex, all.groupings$transcript),]
 genes_tx <- transcripts(EnsDb.Hsapiens.v86, columns=c('tx_id', 'symbol'))
 info <- match_tx_to_genes(ec_matrix, grp_novel, genes_tx)
 
-print('Identifying novel contigs...')
-tx_blat <- read.delim(against_txome_blat, sep='\t', skip = 5, header=F)
-tx_blat$tx_id <- as.character(sapply(tx_blat$V14, function(x){strsplit(x, '\\.')[[1]][1]}))
-tx_blat <- left_join(tx_blat, data.frame(genes_tx)[,c('tx_id', 'symbol')], by='tx_id')
-
 tx_ec_gn <- info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
-nc <- unique(tx_ec_gn[grep(novel_contig_regex, tx_ec_gn$transcript),]$transcript) # all novel contigs
-int_contigs <- sapply(nc, is_interesting, tx_blat) # novel contigs with consistent reference gaps
-int_contigs <- names(int_contigs[as.logical(int_contigs)])
+int_contigs <- unique(grp_novel$transcript)
 
 # get genes that are associated with all interesting novel contigs
 int_ecs <- unique(ec_matrix[ec_matrix$transcript%in%int_contigs,]$ec_names)
