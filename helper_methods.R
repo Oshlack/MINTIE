@@ -28,11 +28,13 @@ match_tx_to_genes <- function(ec_matrix, grp_novel, genes_tx) {
     }
 
     ntx <- nrow(distinct(int_ec_matrix[,c('transcript', 'gene')]))
-    info <- int_ec_matrix[, grep('cancer|control|ec|gene|transcript', colnames(int_ec_matrix))]
+    info <- int_ec_matrix[, !colnames(int_ec_matrix)%in%c('tx_id', 'symbol')]
 
-    print(paste('could not find genes for ', nrow(tmp)-ntx, ' transcripts (', 
-                round((nrow(tmp)-ntx)/nrow(tmp),4)*100 , '%):', sep=''))
-    print(tmp$transcript[!tmp$transcript%in%info$transcript])
+    if(nrow(tmp)-ntx!=0) {
+        print(paste('could not find genes for ', nrow(tmp)-ntx, ' transcripts (',
+                    round((nrow(tmp)-ntx)/nrow(tmp),4)*100 , '%):', sep=''))
+        print(tmp$transcript[!tmp$transcript%in%info$transcript])
+    }
     return(info)
 }
 
@@ -89,19 +91,20 @@ bootstrap_diffsplice <- function(full_info, int_genes, n_controls, n_iters, sele
     # bootstrap for n_iters iterations
 
     tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
-    info <- distinct(full_info[,grep('cancer|control|ec|gene', colnames(full_info))])
+    info <- distinct(full_info[,!colnames(full_info)%in%'transcript'])
     info <- info[info$gene%in%int_genes,] #consider only ECs mapping to interesting genes
 
     print('Performing bootstrapped differential splicing analysis')
     results <- NULL
     for (i in 1:n_iters) {
-        print(paste('Iteration', i, 'of', n_iters))
-
+        if(n_iters>1) {
+            print(paste('Iteration', i, 'of', n_iters))
+        }
         # sample controls for comparison
         controls <- colnames(info)[grep('control', colnames(info))]
         if(n_controls<length(controls)){controls <- sample(controls, n_controls)}
 
-        counts <- info[, c('cancer', controls)]
+        counts <- info[,!colnames(info)%in%c('ec_names','gene')]
         counts <- as.matrix(apply(counts, 2, as.numeric))
         genes <- info[,c('gene', 'ec_names')]
 

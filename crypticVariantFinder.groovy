@@ -201,10 +201,13 @@ filter_on_significant_ecs = {
    output.dir=branch.name
    output_prefix = branch.name+"/eq_class_comp"
    salmon_dir = branch.name+"/salmon_out/aux_info"
+   def sample_names=inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
+   sample_names.set(0, branch.name) // case sample, rest are controls
+   sample_names = sample_names.join(',')
    produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt", "diffspliced_contigs.fasta", "all_filt.fasta"){
       exec """
         module load R/3.3.2 ;
-        python $code_base/create_ec_count_matrix.py $inputs $output1 ;
+        python $code_base/create_ec_count_matrix.py $inputs $sample_names $output1 ;
         Rscript $code_base/compare_eq_classes.R $output1 $output.dir/all.groupings $salmon_dir $output2 \
             --sample=$sample_n_controls --iters=$bootstrap_iters ;
         python $code_base/filter_fasta.py $input.fasta $output2.txt --col_id transcript > $output3 ;
