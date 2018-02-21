@@ -15,7 +15,7 @@ source(incl.path, chdir=TRUE)
 
 args <- commandArgs(trailingOnly=TRUE)
 
-if(length(args) < 4) {
+if(length(args) < 5) {
     args <- c("--help")
 }
 
@@ -26,7 +26,7 @@ if("--help" %in% args) {
         using equivalence classes as exons.
 
         Usage:
-        Rscript compare_eq_classes.R <ec_matrix> <groupings> <salmon_outdir> <output> --iters=<n_iters> --sample=<N>\n\n
+        Rscript compare_eq_classes.R <case_name> <ec_matrix> <groupings> <salmon_outdir> <output> --iters=<n_iters> --sample=<N>\n\n
 
         Default iterations is 1 and default sample number is equivalent to number of controls
         Note: at least two control samples are required.\n\n")
@@ -39,10 +39,11 @@ novel_contig_regex <- '^k[0-9]+_[0-9]+'
 
 # parse arguments
 args <- args[c(grep('--', args, invert=T), grep('--', args))]
-ec_matrix_file <- args[1]
-groupings_file <- args[2]
-salmon_outdir <- args[3]
-outfile <- args[4]
+case_name <- args[1]
+ec_matrix_file <- args[2]
+groupings_file <- args[3]
+salmon_outdir <- args[4]
+outfile <- args[5]
 
 n_sample <- grep("--sample=",args,value=TRUE)
 n_iters <- grep("--iters=",args,value=TRUE)
@@ -58,7 +59,7 @@ ec_matrix <- read.delim(gzfile(ec_matrix_file), sep='\t')
 all.groupings <- read.delim(groupings_file, sep='\t', header=F)
 colnames(all.groupings) <- c('transcript', 'gene')
 
-n_controls <- length(grep('control', colnames(ec_matrix)))
+n_controls <- ncol(ec_matrix)-4 # all cols minus gene/tx/ec and case cols
 if (length(n_sample)==0) {
     n_sample <- n_controls
 } else {
@@ -93,7 +94,7 @@ uac <- get_ambig_info(ec_path, ambig_info_path, tx_ec_gn)
 
 ################## diffsplice testing using ECs ##################
 
-bs_results <- bootstrap_diffsplice(info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs)
+bs_results <- bootstrap_diffsplice(case_name, info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs)
 
 ################## compile and write results ##################
 

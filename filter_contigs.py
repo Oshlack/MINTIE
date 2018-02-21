@@ -21,7 +21,7 @@ gap_min = 7
 clip_min = 30
 
 # CIGAR specification codes
-gaps = {'deletion': 1, 'insertion': 2, 'silent_deletion': 6}
+gaps = {'insertion': 1, 'deletion': 2, 'silent_deletion': 6}
 clips = {'soft': 4, 'hard': 5}
 
 def get_juncs(tx):
@@ -59,9 +59,11 @@ outbam_file_unsort = '%s_unsorted.bam' % os.path.splitext(outbam_file)[0]
 groupings = []
 
 if tx_info != '':
+    # this means we are analysing against transcriptome (not genome)
     genref = pd.read_csv(tx_info, sep='\t')
     juncs = genref.apply(lambda tx: get_juncs(tx), axis=1)
     juncs = [(str(c), int(s), int(e)) for jv in juncs.values for c, s, e in jv] # flatten juncs list
+    gaps = {'insertion': 1, 'deletion': 2, 'skipped': 3, 'silent_deletion': 6} # also consider skipped regions as gaps
 
 lookup = []
 if txome_fasta != '':
@@ -77,13 +79,8 @@ outbam = pysam.AlignmentFile(outbam_file_unsort, 'wb', template=sam)
 # write novel contigs to bam file
 int_contigs = {}
 for read in sam.fetch():
-    if read.reference_id < 0:
-        # unmapped contig
-        if read.query_name in int_contigs.keys():
-            int_contigs[read.query_name] = np.append(int_contigs[read.query_name], None)
-        else:
-            int_contigs[read.query_name] = None
-        outbam.write(read)
+    if read.reference_id < 0 or read.mapping_quality == 0:
+        # skip unmapped or 0 MAPQ contigs
         continue
 
     has_gaps = any([op in gaps.values() and val >= gap_min for op, val in read.cigar])

@@ -86,27 +86,29 @@ get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
     return(uac)
 }
 
-bootstrap_diffsplice <- function(full_info, int_genes, n_controls, n_iters, select_ecs, tx_to_ecs) {
+bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_iters, select_ecs, tx_to_ecs) {
     # perform differential splicing selecting n_controls
     # bootstrap for n_iters iterations
-
     tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
     info <- distinct(full_info[,!colnames(full_info)%in%'transcript'])
     info <- info[info$gene%in%int_genes,] #consider only ECs mapping to interesting genes
 
-    print('Performing bootstrapped differential splicing analysis')
     results <- NULL
+    print('Performing differential splicing analysis...')
     for (i in 1:n_iters) {
         if(n_iters>1) {
             print(paste('Iteration', i, 'of', n_iters))
         }
-        # sample controls for comparison
-        controls <- colnames(info)[grep('control', colnames(info))]
-        if(n_controls<length(controls)){controls <- sample(controls, n_controls)}
-
         counts <- info[,!colnames(info)%in%c('ec_names','gene')]
         counts <- as.matrix(apply(counts, 2, as.numeric))
         genes <- info[,c('gene', 'ec_names')]
+
+        # sample controls for comparison
+        controls <- colnames(counts)[grep(case_name, colnames(counts), invert=T)]
+        if(n_controls < length(controls)) {
+            controls <- sample(controls, n_controls)
+            counts <- counts[,c(case_name, controls)]
+        }
 
         # CPM filtering
         keep <- rowSums(cpm(counts) > 1) >= 1
@@ -114,17 +116,18 @@ bootstrap_diffsplice <- function(full_info, int_genes, n_controls, n_iters, sele
         genes <- genes[keep,]
 
         # construct DGE object
-        group <- factor(c('cancer', rep('control', ncol(counts)-1)))
-        dge <- DGEList(counts=counts, group=group, genes=genes)
+        group <- rep('control', ncol(counts))
+        group[colnames(counts)==case_name] <- 'cancer'
+        dge <- DGEList(counts=counts, group=as.factor(group), genes=genes)
         dge <- calcNormFactors(dge)
-        des <- model.matrix(~0+group)
+        des <- model.matrix(~0+as.factor(group))
         dge <- estimateDisp(dge, des)
 
         # fit and perform diff splice analysis
         fit <- glmFit(dge, des)
         sp <- diffSpliceDGE(fit, geneid='gene', exonid='ec_names', contrast=c(1,-1), verbose = FALSE)
 
-        top_ds <- data.frame(topSpliceDGE(sp, test='Simes', n=Inf)) #gene-level diff splicing using Simes adjustment
+        top_ds <- data.frame(topSpliceDGE(sp, test='gene', n=Inf)) #gene-level diff splicing
         top_ex <- data.frame(topSpliceDGE(sp, test='exon', n=Inf)) #exon-level diff splicing
 
         sig_genes <- top_ds[top_ds$FDR<0.05, 'gene']
@@ -135,7 +138,7 @@ bootstrap_diffsplice <- function(full_info, int_genes, n_controls, n_iters, sele
         txs_in_ec$Var1 <- as.character(txs_in_ec$Var1)
         colnames(txs_in_ec) <- c('ec_names', 'n_txs_in_ec')
 
-        colnames(top_ds)[3:4] <- paste('Simes', colnames(top_ds)[3:4], sep='.')
+        colnames(top_ds)[4:5] <- paste('gene', colnames(top_ds)[4:5], sep='.')
         spg <- sp$genes[sp$genes$gene%in%sig_genes & sp$genes$ec_names%in%select_ecs,]
         spg <- left_join(spg, txs_in_ec, by='ec_names')
         spg <- left_join(spg, tx_to_ecs, by='ec_names')
@@ -150,7 +153,7 @@ bootstrap_diffsplice <- function(full_info, int_genes, n_controls, n_iters, sele
 
         colnames(spg)[(ncol(spg)-1):ncol(spg)] <- c('sig_ecs_in_gene', 'total_ecs_in_gene')
         spg <- spg[,!colnames(spg)%in%'significant_ec']
-        spg <- spg[spg$FDR<0.05 & spg$Simes.FDR<0.05,]
+        spg <- spg[spg$FDR<0.05 & spg$gene.FDR<0.05,]
 
         results[[i]] <- list(controls=controls, spg=spg)
     }
@@ -162,6 +165,7 @@ concatenate_bs_results <- function(bs_results, n_iters) {
     # gene/ECs present in all runs with mean FDRs and logFCs
     if(n_iters == 1) {
         concat_results <- bs_results[[1]]$spg
+        concat_results <- concat_results[order(concat_results$gene.FDR),]
     } else {
         tmp <- NULL
         for(i in 1:n_iters) {
@@ -175,7 +179,7 @@ concatenate_bs_results <- function(bs_results, n_iters) {
         concat_results$sig_ecs_in_gene <- apply(ix_results[,grep('sig_ecs_in_gene',colnames(ix_results))], 1, max)
         concat_results$total_ecs_in_gene <- apply(ix_results[,grep('total_ecs_in_gene',colnames(ix_results))], 1, max)
         concat_results$mean_FDR <- apply(ix_results[,grep('^FDR',colnames(ix_results))], 1, mean)
-        concat_results$mean_Simes_FDR <- apply(ix_results[,grep('Simes.FDR',colnames(ix_results))], 1, mean)
+        concat_results$mean_gene_FDR <- apply(ix_results[,grep('gene.FDR',colnames(ix_results))], 1, mean)
         concat_results$mean_logFC <- sapply(apply(apply(ix_results[,grep('log',colnames(ix_results))],1,exp),2,mean),log)
         concat_results <- concat_results[order(concat_results$mean_FDR),]
     }

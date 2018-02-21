@@ -20,6 +20,7 @@ bowtie2="/usr/bin/time -v bowtie2"
 gtf2bed="gtf2bed"
 bedops="bedops"
 gmap="gmap"
+salmon="/group/bioi1/marekc/apps/Salmon-latest_linux_x86_64/bin/salmon"
 
 //reference
 genome_fasta="/group/bioi1/shared/genomes/hg38/fasta/hg38.fa"
@@ -69,6 +70,8 @@ SOAPassemble = {
      output.dir=branch.name ;
      produce(branch.name+'_denovo_filt.fasta', branch.name+'.fasta'){
          exec """
+             module load trimmomatic ;
+             module load fastx-toolkit ;
              $trimmomatic PE -threads $threads -phred$scores $input1.gz $input2.gz
                  $branch.name/trim1.fastq /dev/null $branch.name/trim2.fastq /dev/null
                  LEADING:$minQScore TRAILING:$minQScore MINLEN:$min_read_length ;
@@ -166,10 +169,9 @@ filter_contigs_against_transcriptome = {
 create_salmon_index = {
    def salmon_index=branch.name+"/all_fasta_index"
    output.dir=branch.name+"/all_fasta_index"
-   produce('bwaidx.sa'){
+   produce('sa.bin','hash.bin','rsd.bin'){
       exec """
-         module load salmon ;
-         salmon index -t $input.fasta -i $salmon_index --type fmd ;
+         $salmon index -t $input.fasta -i $salmon_index ;
      """
    }
 }
@@ -191,8 +193,7 @@ run_salmon = {
    produce("eq_classes.txt"){
       exec """
         cd $output.dir/../.. ;
-        module load salmon ;
-        salmon quant --dumpEq -i $salmon_index -l A -1 $rf1 -2 $rf2 -p $threads -o $base_outdir
+        $salmon quant --dumpEq --gcBias --seqBias -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $base_outdir
      """
    }
 }
@@ -208,7 +209,7 @@ filter_on_significant_ecs = {
       exec """
         module load R/3.3.2 ;
         python $code_base/create_ec_count_matrix.py $inputs $sample_names $output1 ;
-        Rscript $code_base/compare_eq_classes.R $output1 $output.dir/all.groupings $salmon_dir $output2 \
+        Rscript $code_base/compare_eq_classes.R $branch.name $output1 $output.dir/all.groupings $salmon_dir $output2 \
             --sample=$sample_n_controls --iters=$bootstrap_iters ;
         python $code_base/filter_fasta.py $input.fasta $output2.txt --col_id transcript > $output3 ;
         cat $trans_fasta $output3 > $output4
