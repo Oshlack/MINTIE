@@ -94,7 +94,7 @@ uac <- get_ambig_info(ec_path, ambig_info_path, tx_ec_gn)
 
 ################## diffsplice testing using ECs ##################
 
-bs_results <- bootstrap_diffsplice(case_name, info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs)
+bs_results <- bootstrap_diffsplice(case_name, info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs, dirname(outfile))
 
 ################## compile and write results ##################
 

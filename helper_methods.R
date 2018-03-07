@@ -86,7 +86,7 @@ get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
     return(uac)
 }
 
-bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_iters, select_ecs, tx_to_ecs) {
+bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_iters, select_ecs, tx_to_ecs, outdir) {
     # perform differential splicing selecting n_controls
     # bootstrap for n_iters iterations
     tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
@@ -150,8 +150,11 @@ bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_
         ntot <- data.table(spg[,c('gene','significant_ec')])[,length(significant_ec),by=gene]
         spg <- left_join(spg, nsig, by='gene')
         spg <- left_join(spg, ntot, by='gene')
-
         colnames(spg)[(ncol(spg)-1):ncol(spg)] <- c('sig_ecs_in_gene', 'total_ecs_in_gene')
+
+        # write full results
+        write.table(spg, file=paste(outdir, '/full_diffsplice_results_iter_', i, '.txt', sep=''), row.names=F, quote=F, sep='\t')
+
         spg <- spg[,!colnames(spg)%in%'significant_ec']
         spg <- spg[spg$FDR<0.05 & spg$gene.FDR<0.05,]
 
