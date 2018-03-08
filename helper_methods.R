@@ -86,6 +86,84 @@ get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
     return(uac)
 }
 
+run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2) {
+    tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
+    info <- distinct(full_info[,!colnames(full_info)%in%'transcript'])
+    info <- info[info$gene%in%int_genes,] #consider only ECs mapping to interesting genes
+
+    results <- NULL
+    print('Performing differential splicing analysis with DEXSeq...')
+    start.time <- Sys.time(); print(start.time)
+
+    counts <- info[,!colnames(info)%in%c('ec_names','gene')]
+    counts <- as.matrix(apply(counts, 2, as.numeric))
+    genes <- info[,c('gene', 'ec_names')]
+
+    keep <- rowSums(cpm(counts) > cpm_cutoff) >= 1
+    counts <- counts[keep,]
+    genes <- genes[keep,]
+
+    group <- rep('control', ncol(counts))
+    case_name <- gsub('-', '.', case_name)
+    group[colnames(counts)==case_name] <- 'cancer'
+
+    sampleTable <- data.frame(condition=factor(group, levels=c('control', 'cancer')))
+    rownames(sampleTable) <- colnames(counts)
+    print(sampleTable)
+
+    BPPARAM=MulticoreParam(workers=threads)
+    dx <- DEXSeqDataSet(counts, sampleData = sampleTable,
+                        groupID = genes$gene, featureID = genes$ec_names)
+
+    dx <- estimateSizeFactors(dx)
+
+    print('Estimating dispersions...')
+    dx <- estimateDispersions(dx, BPPARAM=BPPARAM)
+
+    print('Performing DEU test...')
+    dx <- testForDEU(dx)
+    dx <- estimateExonFoldChanges(dx)
+
+    dxr <- DEXSeq(dx, BPPARAM=BPPARAM)
+    pgq <- perGeneQValue(dxr)
+    pgq <- data.frame(gene=names(pgq), gene.FDR=pgq)
+
+    dx_df <- data.frame(dxr)
+    print(head(dx_df))
+    colnames(dx_df)[1:2] <- c('gene', 'ec_names')
+
+    txs_in_ec <- data.frame(table(tx_ec_gn$ec_names))
+    txs_in_ec$Var1 <- as.character(txs_in_ec$Var1)
+    colnames(txs_in_ec) <- c('ec_names', 'n_txs_in_ec')
+
+    dx_df <- left_join(dx_df, txs_in_ec, by='ec_names')
+    dx_df <- left_join(dx_df, tx_to_ecs, by='ec_names')
+    dx_df <- left_join(dx_df, pgq, by='gene')
+    dx_df <- dx_df[, !colnames(dx_df)%in%'genomicData']
+    
+    dx_df$significant_ec <- dx_df$padj<0.05
+    dx_df$significant_gene <- dx_df$gene.FDR<0.05
+    nsig <- data.table(dx_df[,c('gene','significant_ec')])[,sum(significant_ec),by=gene]
+    ntot <- data.table(dx_df[,c('gene','significant_ec')])[,length(significant_ec),by=gene]
+    dx_df <- left_join(dx_df, nsig, by='gene')
+    dx_df <- left_join(dx_df, ntot, by='gene')
+    colnames(dx_df)[(ncol(dx_df)-1):ncol(dx_df)] <- c('sig_ecs_in_gene', 'total_ecs_in_gene')
+    dx_df$novel_ec <- dx_df$ec_names%in%select_ecs
+
+    end.time <- Sys.time(); print(end.time)
+    time.taken <- end.time - start.time
+
+    print(paste('Testing with DEXSeq took', time.taken, 'minutes!'))
+
+    # write full results
+    write.table(dx_df, file=paste(outdir, 'full_dexseq_results.txt', sep='/'), row.names=F, quote=F, sep='\t')
+
+    dx_df <- dx_df[!is.na(dx_df$significant_gene) & !is.na(dx_df$contigs) & !is.na(dx_df$significant_gene),]
+    dx_df <- dx_df[dx_df$significant_gene & dx_df$significant_ec & dx_df$novel_ec,]
+
+    return(dx_df)
+}
+
 bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_iters, select_ecs, tx_to_ecs, outdir) {
     # perform differential splicing selecting n_controls
     # bootstrap for n_iters iterations
@@ -130,8 +208,8 @@ bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_
         top_ds <- data.frame(topSpliceDGE(sp, test='gene', n=Inf)) #gene-level diff splicing
         top_ex <- data.frame(topSpliceDGE(sp, test='exon', n=Inf)) #exon-level diff splicing
 
-        sig_genes <- top_ds[top_ds$FDR<0.05, 'gene']
-        sig_exons <- top_ex[top_ex$FDR<0.05, 'ec_names']
+        #sig_genes <- top_ds[top_ds$FDR<0.05, 'gene']
+        #sig_exons <- top_ex[top_ex$FDR<0.05, 'ec_names']
 
         # construct results dataframe
         txs_in_ec <- data.frame(table(tx_ec_gn$ec_names))
@@ -139,7 +217,7 @@ bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_
         colnames(txs_in_ec) <- c('ec_names', 'n_txs_in_ec')
 
         colnames(top_ds)[4:5] <- paste('gene', colnames(top_ds)[4:5], sep='.')
-        spg <- sp$genes[sp$genes$gene%in%sig_genes & sp$genes$ec_names%in%select_ecs,]
+        #spg <- sp$genes[sp$genes$gene%in%sig_genes & sp$genes$ec_names%in%select_ecs,]
         spg <- left_join(spg, txs_in_ec, by='ec_names')
         spg <- left_join(spg, tx_to_ecs, by='ec_names')
         spg <- left_join(spg, top_ex, by=c('gene', 'ec_names'))

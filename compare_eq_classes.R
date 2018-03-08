@@ -5,6 +5,7 @@ suppressMessages(require(EnsDb.Hsapiens.v86))
 suppressMessages(require(data.table))
 suppressMessages(require(IRanges))
 suppressMessages(require(UpSetR))
+suppressMessages(require(DEXSeq))
 options(stringsAsFactors = FALSE)
 
 # load helper methods
@@ -95,24 +96,27 @@ uac <- get_ambig_info(ec_path, ambig_info_path, tx_ec_gn)
 ################## diffsplice testing using ECs ##################
 
 bs_results <- bootstrap_diffsplice(case_name, info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs, dirname(outfile))
+bs_results <- run_dexseq(case_name, info, int_genes, uniq_ecs, tx_to_ecs, dirname(outfile))
 
 ################## compile and write results ##################
 
-print('Compiling and writing results...')
-bs_genes <- NULL
-for(i in 1:n_iters) {
-    bs_genes[[i]] <- unique(bs_results[[i]]$spg$gene)
-}
+#print('Compiling and writing results...')
+#bs_genes <- NULL
+#for(i in 1:n_iters) {
+#    bs_genes[[i]] <- unique(bs_results[[i]]$spg$gene)
+#}
 
-names(bs_genes) <- paste('iter', 1:n_iters, sep='')
-bs_up <- fromList(bs_genes)
-if (n_iters > 1) {
-    plotfile <- paste(dirname(outfile), '/upset_plot_', n_iters, '_iters.pdf', sep='')
-    pdf(plotfile, width=8, height=5)
-    upset(bs_up, order.by='freq', nsets=n_iters)
-    dev.off()
-}
+#names(bs_genes) <- paste('iter', 1:n_iters, sep='')
+#bs_up <- fromList(bs_genes)
+#if (n_iters > 1) {
+#    plotfile <- paste(dirname(outfile), '/upset_plot_', n_iters, '_iters.pdf', sep='')
+#    pdf(plotfile, width=8, height=5)
+#    upset(bs_up, order.by='freq', nsets=n_iters)
+#    dev.off()
+#}
 
-concat_results <- concatenate_bs_results(bs_results, n_iters)
+#concat_results <- concatenate_bs_results(bs_results, n_iters)
+concat_results <- bs_results
 concat_results <- left_join(concat_results, uac, by=c('ec_names','gene'))
+concat_results <- concat_results[order(concat_results$gene.FDR),]
 write.table(concat_results, outfile, row.names=F, quote=F, sep='\t')
