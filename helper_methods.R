@@ -109,7 +109,6 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
 
     sampleTable <- data.frame(condition=factor(group, levels=c('control', 'cancer')))
     rownames(sampleTable) <- colnames(counts)
-    print(sampleTable)
 
     BPPARAM=MulticoreParam(workers=threads)
     dx <- DEXSeqDataSet(counts, sampleData = sampleTable,
@@ -140,7 +139,7 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
     dx_df <- left_join(dx_df, tx_to_ecs, by='ec_names')
     dx_df <- left_join(dx_df, pgq, by='gene')
     dx_df <- dx_df[, !colnames(dx_df)%in%'genomicData']
-    
+
     dx_df$significant_ec <- dx_df$padj<0.05
     dx_df$significant_gene <- dx_df$gene.FDR<0.05
     nsig <- data.table(dx_df[,c('gene','significant_ec')])[,sum(significant_ec),by=gene]
@@ -164,7 +163,7 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
     return(dx_df)
 }
 
-bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_iters, select_ecs, tx_to_ecs, outdir) {
+bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_iters, select_ecs, tx_to_ecs, outdir, cpm_cutoff=2) {
     # perform differential splicing selecting n_controls
     # bootstrap for n_iters iterations
     tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
@@ -189,7 +188,7 @@ bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_
         }
 
         # CPM filtering
-        keep <- rowSums(cpm(counts) > 1) >= 1
+        keep <- rowSums(cpm(counts) > cpm_cutoff) >= 1
         counts <- counts[keep,]
         genes <- genes[keep,]
 
@@ -217,13 +216,16 @@ bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_
         colnames(txs_in_ec) <- c('ec_names', 'n_txs_in_ec')
 
         colnames(top_ds)[4:5] <- paste('gene', colnames(top_ds)[4:5], sep='.')
-        #spg <- sp$genes[sp$genes$gene%in%sig_genes & sp$genes$ec_names%in%select_ecs,]
+        spg <- sp$genes
         spg <- left_join(spg, txs_in_ec, by='ec_names')
         spg <- left_join(spg, tx_to_ecs, by='ec_names')
         spg <- left_join(spg, top_ex, by=c('gene', 'ec_names'))
         spg <- left_join(spg, top_ds, by=c('gene'))
 
         spg$significant_ec <- spg$FDR<0.05
+        spg$significant_gene <- spg$gene.FDR<0.05
+        spg$novel_ec <- spg$ec_names%in%select_ecs
+
         nsig <- data.table(spg[,c('gene','significant_ec')])[,sum(significant_ec),by=gene]
         ntot <- data.table(spg[,c('gene','significant_ec')])[,length(significant_ec),by=gene]
         spg <- left_join(spg, nsig, by='gene')
@@ -233,8 +235,8 @@ bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_
         # write full results
         write.table(spg, file=paste(outdir, '/full_diffsplice_results_iter_', i, '.txt', sep=''), row.names=F, quote=F, sep='\t')
 
-        spg <- spg[,!colnames(spg)%in%'significant_ec']
-        spg <- spg[spg$FDR<0.05 & spg$gene.FDR<0.05,]
+        spg <- spg[spg$significant_ec & spg$significant_gene & spg$novel_ec,]
+        spg <- spg[,!colnames(spg)%in%c('significant_ec','significant_gene')]
 
         results[[i]] <- list(controls=controls, spg=spg)
     }
