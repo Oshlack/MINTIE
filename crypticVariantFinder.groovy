@@ -83,8 +83,8 @@ SOAPassemble = {
          echo -e \"[LIB]\\nq1=../trim1.fastq\\nq2=../trim2.fastq\" >> config.config ;
          if [ -e SOAP.fasta ]; then rm SOAP.fasta ; fi ;
          for k in $Ks ; do
-               $soap pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
-           $soap contig -g outputGraph_\$k -p $threads ;
+           $soap pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
+           $soap contig -g outputGraph_\$k ;
            cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
          done ;
          cd ../../ ;

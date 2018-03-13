@@ -19,6 +19,8 @@ from Bio import SeqIO
 # cutoff parameters
 gap_min = 7
 clip_min = 30
+match_min = 30
+match_perc_min = 0.3
 
 # CIGAR specification codes
 gaps = {'insertion': 1, 'deletion': 2, 'silent_deletion': 6}
@@ -53,7 +55,7 @@ args        = parser.parse_args()
 samfile     = args.samfile
 outbam_file = args.outbam_file
 tx_info     = args.tx_info
-txome_fasta    = args.groupings
+txome_fasta = args.groupings
 
 outbam_file_unsort = '%s_unsorted.bam' % os.path.splitext(outbam_file)[0]
 groupings = []
@@ -81,6 +83,13 @@ int_contigs = {}
 for read in sam.fetch():
     if read.reference_id < 0 or read.mapping_quality == 0:
         # skip unmapped or 0 MAPQ contigs
+        continue
+
+    # only consider the contig if at least match_min bases align
+    # to reference and at least match_perc_min of the read aligns
+    rlen = read.reference_length
+    qlen = float(read.query_length)
+    if (rlen < match_min) or (rlen / qlen) < match_perc_min:
         continue
 
     has_gaps = any([op in gaps.values() and val >= gap_min for op, val in read.cigar])
