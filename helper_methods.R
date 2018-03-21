@@ -181,6 +181,7 @@ bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_
         genes <- info[,c('gene', 'ec_names')]
 
         # sample controls for comparison
+        case_name <- gsub('-', '.', case_name)
         controls <- colnames(counts)[grep(case_name, colnames(counts), invert=T)]
         if(n_controls < length(controls)) {
             controls <- sample(controls, n_controls)

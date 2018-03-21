@@ -107,7 +107,7 @@ align_contigs_against_genome = {
 
 filter_contigs_against_genome = {
    output.dir=branch.name
-   produce('filtered_contigs.bam', 'interesting_contigs.txt', 'genome_filtered.fasta'){
+   produce('filtered_contigs_against_genome.bam', 'interesting_contigs.txt', 'genome_filtered.fasta'){
       exec """
       python ${code_base}/filter_contigs.py $input.sam $output.bam --splice_juncs $ann_info;
       python ${code_base}/filter_fasta.py $input.fasta $output.txt > $output.fasta ;
@@ -205,14 +205,19 @@ filter_on_significant_ecs = {
    def sample_names=inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
    sample_names.set(0, branch.name) // case sample, rest are controls
    sample_names = sample_names.join(',')
-   produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt", "diffspliced_contigs.fasta", "all_filt.fasta"){
+   produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt", "diffspliced_contigs.fasta", "all_filt.fasta", "novel_ds_contigs.bam"){
       exec """
         module load R/3.3.2 ;
+        module load samtools ;
         python $code_base/create_ec_count_matrix.py $inputs $sample_names $output1 ;
         Rscript $code_base/compare_eq_classes.R $branch.name $output1 $output.dir/all.groupings $salmon_dir $output2 \
             --sample=$sample_n_controls --iters=$bootstrap_iters ;
         python $code_base/filter_fasta.py $input.fasta $output2.txt --col_id transcript > $output3 ;
-        cat $trans_fasta $output3 > $output4
+        cat $trans_fasta $output3 > $output4 ;
+        sed '1d' $output2.txt | cut -f 21 | tr ':' '\n' | sort | uniq > $output.dir/ds_novel_contigs.txt ;
+        samtools view -H $output.dir/filtered_contigs_against_genome.bam > tmp.sam ;
+        samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $output.dir/ds_novel_contigs.txt >> tmp.sam ;
+        python ${code_base}/filter_contigs.py tmp.sam $output.bam --splice_juncs $ann_info --annotate ;
       """
    }
 }
