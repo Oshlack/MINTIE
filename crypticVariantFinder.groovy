@@ -107,7 +107,7 @@ align_contigs_against_genome = {
 
 filter_contigs_against_genome = {
    output.dir=branch.name
-   produce('filtered_contigs_against_genome.bam', 'interesting_contigs.txt', 'genome_filtered.fasta'){
+   produce('filtered_contigs_against_genome.bam', 'novel_contigs.txt', 'genome_filtered.fasta'){
       exec """
       python ${code_base}/filter_contigs.py $input.sam $output.bam --splice_juncs $ann_info;
       python ${code_base}/filter_fasta.py $input.fasta $output.txt > $output.fasta ;
@@ -205,7 +205,7 @@ filter_on_significant_ecs = {
    def sample_names=inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
    sample_names.set(0, branch.name) // case sample, rest are controls
    sample_names = sample_names.join(',')
-   produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt", "diffspliced_contigs.fasta", "all_filt.fasta", "novel_ds_contigs.bam"){
+   produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt", "diffspliced_contigs.fasta", "all_filt.fasta", "novel_contigs_annotated.txt", "novel_contigs.bam"){
       exec """
         module load R/3.3.2 ;
         module load samtools ;

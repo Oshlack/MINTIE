@@ -203,13 +203,15 @@ if len(lookup) > 0:
 else:
     # write interesting contigs list to file
     write_header = False
+    annot = ''
     if annotate:
         int_contigs = pd.DataFrame(int_contigs, columns=['contig', 'variant', 'chrom1', 'pos1', 'chrom2', 'pos2', 'size'])
         write_header = True
+        annot = '_annotated'
     else:
         int_contigs = np.unique(np.array([c[0] for c in int_contigs]))
         int_contigs = pd.DataFrame(list(int_contigs))
-    int_contigs.to_csv('%s/interesting_contigs.txt' % outdir, sep='\t', header=write_header, index=False)
+    int_contigs.to_csv('%s/novel_contigs%s.txt' % (outdir, annot), sep='\t', header=write_header, index=False)
 
 pysam.sort('-o', outbam_file, outbam_file_unsort)
 pysam.index(outbam_file)
