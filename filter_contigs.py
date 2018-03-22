@@ -153,6 +153,7 @@ for read in sam.fetch():
         starts, ends = zip(*read.blocks)
         chroms = [read.reference_name] * (len(starts)-1)
         tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
+        tx_juncs = [junc for junc in tx_juncs if (junc[2] - junc[1]) > gap_min]
         unknown_juncs = any([txj not in juncs for txj in tx_juncs])
 
     if has_gaps or has_clips or unknown_juncs:
@@ -206,7 +207,7 @@ else:
         int_contigs = pd.DataFrame(int_contigs, columns=['contig', 'variant', 'chrom1', 'pos1', 'chrom2', 'pos2', 'size'])
         write_header = True
     else:
-        int_contigs = np.unique(np.array([c[0] for c in contigs]))
+        int_contigs = np.unique(np.array([c[0] for c in int_contigs]))
         int_contigs = pd.DataFrame(list(int_contigs))
     int_contigs.to_csv('%s/interesting_contigs.txt' % outdir, sep='\t', header=write_header, index=False)
 
