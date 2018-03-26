@@ -205,7 +205,7 @@ filter_on_significant_ecs = {
    def sample_names=inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
    sample_names.set(0, branch.name) // case sample, rest are controls
    sample_names = sample_names.join(',')
-   produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt", "diffspliced_contigs.fasta", "all_filt.fasta", "novel_contigs_annotated.txt", "novel_contigs.bam"){
+   produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt", "diffspliced_contigs.fasta", "all_filt.fasta", "ds_novel_contigs.txt"){
       exec """
         module load R/3.3.2 ;
         module load samtools ;
@@ -214,9 +214,18 @@ filter_on_significant_ecs = {
             --sample=$sample_n_controls --iters=$bootstrap_iters ;
         python $code_base/filter_fasta.py $input.fasta $output2.txt --col_id transcript > $output3 ;
         cat $trans_fasta $output3 > $output4 ;
-        sed '1d' $output2.txt | cut -f 21 | tr ':' '\n' | sort | uniq > $output.dir/ds_novel_contigs.txt ;
+        sed '1d' $output2.txt | cut -f 21 | tr ':' '\n' | sort | uniq > $output5 ;
+      """
+   }
+}
+
+annotate_diffspliced_contigs = {
+   output.dir=branch.name
+   produce("novel_contigs_annotated.txt", "novel_contigs.bam"){
+      exec """
+        module load samtools ;
         samtools view -H $output.dir/filtered_contigs_against_genome.bam > tmp.sam ;
-        samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $output.dir/ds_novel_contigs.txt >> tmp.sam ;
+        samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $input5 >> tmp.sam ;
         python ${code_base}/filter_contigs.py tmp.sam $output.bam --splice_juncs $ann_info --annotate ;
       """
    }
@@ -384,6 +393,7 @@ run { fastqInputFormat * [ make_sample_dir +
               create_salmon_index +
               [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon.using(type:"controls") ]] +
               filter_on_significant_ecs +
+              annotate_diffspliced_contigs +
               run_lace +
               annotate_superTranscript +
               build_STAR_reference +

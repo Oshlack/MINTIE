@@ -109,6 +109,44 @@ def annotate_contig(read, tx_juncs):
 
     return(annot)
 
+def nice_sort(ids):
+    '''
+    sorts strings with characters and integers intuitively
+    '''
+    convert = lambda text: int(text) if text.isdigit() else text
+    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ]
+    return sorted(ids, key = alphanum_key)
+
+def pair_fusions(int_contigs):
+    fusions = int_contigs[int_contigs.variant == 'fusion']
+    fusion_contigs = np.unique(fusions.contig).copy()
+
+    fusions_new = pd.DataFrame()
+    for contig in fusion_contigs:
+        tmp = fusions[fusions.contig==contig].reset_index(drop=True)
+        if len(tmp) != 2:
+            continue
+        chroms, pos = nice_sort(tmp.chrom1.values), np.sort(tmp.pos1.values)
+        if tmp.chrom1[0] != tmp.chrom1[1]:
+            pos1 = tmp[chroms[0] == tmp.chrom1].pos1.values[0]
+            pos2 = tmp[chroms[1] == tmp.chrom1].pos1.values[0]
+            pos = [pos1, pos2]
+        tmp.loc[0, 'chrom1'] = chroms[0]
+        tmp.loc[0, 'chrom2'] = chroms[1]
+        tmp.loc[0, 'pos1'] = pos[0]
+        tmp.loc[0, 'pos2'] = pos[1]
+        fusions_new = pd.concat([fusions_new, tmp.loc[0]], axis=1)
+
+    fusions_new = fusions_new.transpose()
+
+    # set size to correspond to rearrangement proximity
+    fusions_new.size = None
+    intra_chrom = fusions_new.chrom1 == fusions_new.chrom2
+    fusions_new.loc[intra_chrom, 'size'] = fusions_new[intra_chrom].pos2.values - fusions_new[intra_chrom].pos1.values
+
+    int_contigs = pd.concat([int_contigs[int_contigs.variant != 'fusion'], fusions_new])
+    return(int_contigs.reset_index(drop=True))
+
 if tx_info != '':
     # aligning against genome
     genref = pd.read_csv(tx_info, sep='\t')
@@ -206,6 +244,7 @@ else:
     annot = ''
     if annotate:
         int_contigs = pd.DataFrame(int_contigs, columns=['contig', 'variant', 'chrom1', 'pos1', 'chrom2', 'pos2', 'size'])
+        int_contigs = pair_fusions(int_contigs)
         write_header = True
         annot = '_annotated'
     else:
