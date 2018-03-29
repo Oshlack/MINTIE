@@ -1,4 +1,4 @@
-code_base="/group/bioi1/marekc/20170918_cryptic_fusions/CrypticVariant/"
+code_base="/group/bioi1/marekc/20170918_cryptic_variant/CrypticVariant/"
 
 //Trim options
 minQScore=20 //trimmomatic quality cut off
@@ -25,10 +25,11 @@ salmon="/group/bioi1/marekc/apps/Salmon-latest_linux_x86_64/bin/salmon"
 //reference
 genome_fasta="/group/bioi1/shared/genomes/hg38/fasta/hg38.fa"
 trans_fasta="/group/bioi1/shared/transcriptomes/hg38/Homo_sapiens.GRCh38.cdna.all.fa"
-ann_info=code_base+"/gen24_hg38.info"
+//ann_info=code_base+"/gen24_hg38.info"
 ann_superTranscriptome=code_base+"/gen24_hg38.super_transcriptome.fasta"
 gmap_index="/group/bioi1/shared/genomes/hg38/gmapdb"
 gmap_tx_index="/group/bioi1/shared/transcriptomes/hg38/indexes/gmapdb"
+ann_info="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.info"
 
 controls_dir="controls"
 sample_n_controls=29
@@ -134,38 +135,6 @@ filter_contigs_against_transcriptome = {
    }
 }
 
-//blat_against_genome = {
-//   output.dir=branch.name
-//   produce('against_genome.psl'){
-//      exec "blat $genome_fasta $input1.fasta -minIdentity=98 -minScore=30 $output"
-//   }
-//}
-//
-//filter_blat_against_genome = {
-//   output.dir=branch.name
-//   produce('genome_filtered.fasta'){
-//      exec "${code_base}/parse_genome_blat $ann_info $input.psl $input.fasta > $output"
-//   }
-//}
-
-//blat_against_transcriptome = {
-//   output.dir=branch.name
-//   produce('against_transcriptome.psl'){
-//      exec "blat $trans_fasta $input.fasta -minIdentity=98 -minScore=30 -mask=out $output"
-//   }
-//}
-//
-//filter_blat_against_transcriptome = {
-//   output.dir=branch.name
-//   produce('all.groupings','all.fasta'){
-//      exec """
-//         ${code_base}/parse_transcriptome_blat $ann_info $input.psl $input.fasta > $output.groupings ;
-//         python ${code_base}/filter_fasta.py $input.fasta $output.groupings > $output.dir/transcriptome_filtered.fasta ;
-//         cat $output.dir/transcriptome_filtered.fasta $trans_fasta > $output.fasta ;
-//     """
-//   }
-//}
-
 create_salmon_index = {
    def salmon_index=branch.name+"/all_fasta_index"
    output.dir=branch.name+"/all_fasta_index"
@@ -250,8 +219,7 @@ run_lace = {
 
 annotate_superTranscript = {
    output.dir=branch.name
-   produce("SuperDuper-Ann.gtf","SuperDuper-Ass.gtf","SuperDuper-Ann.bed",
-   "SuperDuper-Ass.bed", "SuperDuper-part.bed","SuperDuper-Ann.juncs","SuperDuper.bed"){
+   produce("SuperDuper-Ann.gtf","SuperDuper-Ass.gtf","SuperDuper-Ann.juncs"){
       exec """
          module load blat ;
          module load bedops ;
@@ -261,13 +229,15 @@ annotate_superTranscript = {
          $code_base/psl2gtf $output.dir/SuperDuper-Ann.psl | bedtools sort | awk '{if(length(\$1)<128){print \$0}}' > $output1 ;
          blat $input.fasta $output.dir/transcriptome_filtered.fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
          $code_base/psl2gtf $output.dir/SuperDuper-Ass.psl | bedtools sort > $output2 ;
-         $code_base/psl2sjdbFileChrStartEnd $output.dir/SuperDuper-Ann.psl > $output6 ;
-         $gtf2bed < $output1 > $output3 ; $gtf2bed < $output2 > $output4 ;
-         $bedops -p $output3 $output4 | cut -f1-3 | uniq - | awk '{if(\$3 - \$2 > 2){print}}' - > $output5 ;
-         python $code_base/get_intersect_bed.py $output3 $output4 $output5 > $output7 ;
+         $code_base/psl2sjdbFileChrStartEnd $output.dir/SuperDuper-Ann.psl > $output3 ;
       """
    }
 }
+         //blat $input.fasta $genome_fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper_against_genome.psl ;
+         //python annotate_supertranscript.py $output.dir/SuperDuper_against_genome.psl $gtf_tx $output4;
+         //$gtf2bed < $output1 > $output3 ; $gtf2bed < $output2 > $output4 ;
+         //$bedops -p $output3 $output4 | cut -f1-3 | uniq - | awk '{if(\$3 - \$2 > 2){print}}' - > $output5 ;
+         //python $code_base/get_intersect_bed.py $output3 $output4 $output5 > $output7 ;
 
 build_STAR_reference = {
     output.dir=branch.name+"/STARRef"
@@ -309,75 +279,6 @@ map_reads = {
    }
 }
 
-map_reads_controls = {
-    def out_prefix="STAR"
-    def ref="../STARRef"
-    def workingDir = System.getProperty("user.dir");
-
-    def reads = inputs.fastq.gz.split().collect { workingDir+"/$it" }
-    def (reads_r1, reads_r2) = [[],[]]
-    reads.eachWithIndex { readfile, idx ->
-        if (idx % 2 == 0)
-            reads_r1.add(readfile)
-        else
-            reads_r2.add(readfile)
-    }
-    def readPairs = [reads_r1, reads_r2].transpose().collect { it.join(" ") }
-
-    int n = reads.size / 2
-    def outPrefixes = (1..n).collect { "control${it}." }
-    def outBams = outPrefixes.collect { "${it}Aligned.sortedByCoord.out.bam" }
-    def outTabs = outPrefixes.collect { "${it}SJ.out.tab" }
-
-    output.dir = branch.parent.name+"/"+controls_dir
-    def args = [readPairs, outPrefixes, outBams].transpose()
-    def commands = args.collect {
-        "cd $output.dir; time STAR --genomeDir $ref --readFilesCommand zcat" +
-        " --readFilesIn " + it[0] +
-        " --outSAMtype BAM SortedByCoordinate --outFileNamePrefix " + it[1] +
-        " --runThreadN $threads --limitBAMsortRAM 3050000000 ; " +
-        "samtools index " + it[2] + " ; " +
-        "rm -rf " + it[1] + "_STARtmp ;"
-    }
-
-    produce(outBams, outTabs){
-        multiExec commands
-    }
-}
-
-get_info_on_novel_events = {
-    def out_prefix=""
-    output.dir=branch.name
-    bed_dir=branch.name
-    if(type=="controls"){
-        output.dir=branch.parent.name+"/"+controls_dir
-        out_prefix=branch.name+"."
-        bed_dir=branch.parent.name
-    }
-    produce(out_prefix+"novel.junctions",out_prefix+"novel.blocks"){
-    exec """
-        module load samtools ;
-        awk '\$6 == \"0\" { print \$0 }' $input.tab > $output1 ;
-        rm -rf $output2 ;
-        cat ${bed_dir}/SuperDuper.bed | while read line ; do
-            region=`echo $line | awk '{ printf "%s:%s-%s\\n", \$1, \$2 + 1, \$3}'` ;
-            ave=`samtools depth $input.bam -r \$region | awk '{sum+=\$3;} END { if (NR > 0){print sum/NR} else { print "0"} }'`;
-            echo -e "\$line\\t\$ave" >> $output2 ;
-        done ;
-    """
-    }
-}
-
-get_filtered_variants = {
-    output.dir=branch.name
-    produce("novel.summary"){
-    exec """
-        cd $output.dir ;
-        $code_base/parse_superTranscript_results novel.blocks novel.junctions all.groupings controls/*.novel.*  > ../$output
-    """
-    }
-}
-
 //fastqInputFormat="%_L001_R*.fastq.gz"
 fastqInputFormat="%_R*.fastq.gz"
 
@@ -386,8 +287,6 @@ run { fastqInputFormat * [ make_sample_dir +
                         SOAPassemble +
               align_contigs_against_genome +
               filter_contigs_against_genome +
-//              blat_against_genome +
-//              filter_blat_against_genome +
               align_contigs_against_transcriptome +
               filter_contigs_against_transcriptome +
               create_salmon_index +
@@ -398,9 +297,4 @@ run { fastqInputFormat * [ make_sample_dir +
               annotate_superTranscript +
               build_STAR_reference +
               map_reads
-//              get_info_on_novel_events +
-//              "controls/%.*.fastq.gz" *  [ map_reads.using(type:"controls") +
-//                            get_info_on_novel_events.using(type:"controls") ] +
-//              get_filtered_variants
-              ]
 }

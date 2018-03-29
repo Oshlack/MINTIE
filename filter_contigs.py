@@ -54,11 +54,11 @@ groupings = []
 def get_juncs(tx):
     '''
     return list of junctions in form
-    [(chr, start, end)] from transcript
-    info file
+    [(chr, start, end)] from transcript info file
+    note that exon *ends* become junction *starts*
     '''
-    starts = tx['exonStarts'].split(',')[1:-1]
-    ends = tx['exonEnds'].split(',')[:-2]
+    starts = tx['exonStarts'].split(',')[1:]
+    ends = tx['exonEnds'].split(',')[:-1]
     chroms = [tx['chrom']] * len(starts)
     return(list(zip(chroms, ends, starts)))
 
