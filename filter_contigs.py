@@ -17,8 +17,10 @@ import re
 from Bio import SeqIO
 
 parser = argparse.ArgumentParser()
-parser.add_argument(dest='samfile')
-parser.add_argument(dest='outbam_file')
+parser.add_argument(dest='samfile',
+                    help='''SAM or BAM format file containing contig alignments''')
+parser.add_argument(dest='outbam_file',
+                    help='''BAM file to write contigs which pass filtering''')
 parser.add_argument('--splice_juncs', dest='tx_info', default='',
                     help='''Reference file containing transcripts and their respective
                     splice junctions. Implies that contigs are being filtered against the
@@ -50,6 +52,9 @@ gaps = {1: 'insertion', 2: 'deletion', 6: 'silent_deletion'}
 clips = {4: 'soft', 5: 'hard'}
 outbam_file_unsort = '%s_unsorted.bam' % os.path.splitext(outbam_file)[0]
 groupings = []
+
+sam = pysam.AlignmentFile(samfile, 'rc')
+outbam = pysam.AlignmentFile(outbam_file_unsort, 'wb', template=sam)
 
 def get_juncs(tx):
     '''
@@ -164,9 +169,6 @@ if txome_fasta != '':
         lookup.append((tx_id, gname))
     lookup = pd.DataFrame(lookup, columns=['tx_id', 'gene_name'])
 
-sam = pysam.AlignmentFile(samfile, 'rc')
-outbam = pysam.AlignmentFile(outbam_file_unsort, 'wb', template=sam)
-
 # write novel contigs to bam file
 int_contigs = []
 for read in sam.fetch():
@@ -209,13 +211,13 @@ outdir = os.path.dirname(outbam_file)
 outdir = '.' if outdir == '' else outdir
 
 if len(lookup) > 0:
-    config_dict = {}
+    contig_dict = {}
     for annot in int_contigs:
         contig = annot[0]
         if contig in contig_dict:
-           contig_dict[contig] = np.append(contig_dict[contig], annot[2])
+           contig_dict[contig] = contig_dict[contig] + [annot[2]]
         else:
-           contig_dict[contig] = np.array(annot[2])
+           contig_dict[contig] = [annot[2]]
 
     groupings = pd.DataFrame()
     all_gns = pd.DataFrame()

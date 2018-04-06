@@ -15,11 +15,11 @@ trimmomatic="trimmomatic"
 soap="/usr/bin/time -v /group/bioi1/nadiad/software/SOAP/SOAPdenovo-Trans-127mer" ;
 trinity="Trinity"
 fasta_dedupe="/group/bioi1/nadiad/software/bbmap/dedupe.sh" ;
-fastq_dedupe="fastuniq" ;
+fastq_dedupe="/group/bioi1/marekc/apps/FastUniq/source/fastuniq" ;
 bowtie2="/usr/bin/time -v bowtie2"
 gtf2bed="gtf2bed"
 bedops="bedops"
-gmap="gmap"
+gmap="/group/bioi1/marekc/apps/GMAP-GSNAP/src/gmap"
 salmon="/group/bioi1/marekc/apps/Salmon-latest_linux_x86_64/bin/salmon"
 
 //reference
@@ -41,8 +41,8 @@ make_sample_dir= {
       output.dir=branch.name
       produce(branch.name+".ignore"){
          exec """
-            if [ ! -d $output.dir ]; then mkdir $output.dir ; fi ;
-                  touch $output #this is just to get around the dir. being passed.
+            mkdir -p $output.dir ;
+            touch $output
          """
        }
    }
@@ -292,9 +292,9 @@ run { fastqInputFormat * [ make_sample_dir +
               create_salmon_index +
               [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon.using(type:"controls") ]] +
               filter_on_significant_ecs +
-              annotate_diffspliced_contigs +
-              run_lace +
-              annotate_superTranscript +
-              build_STAR_reference +
-              map_reads
+              annotate_diffspliced_contigs]
+//              run_lace +
+//              annotate_superTranscript +
+//              build_STAR_reference +
+//              map_reads
 }
