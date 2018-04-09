@@ -74,11 +74,11 @@ def annotate_contig(read, tx_juncs):
     '''
     gap_idxs = [idx for idx, gap in enumerate(read.cigar) if gap[0] in gaps and gap[1] >= gap_min]
     clip_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] in clips and clip[1] >= gap_min]
-    contig_juncs = [] if tx_juncs is None else [txj for txj in tx_juncs if txj not in juncs]
+    #contig_juncs = [] if tx_juncs is None else [txj for txj in tx_juncs if txj not in juncs]
 
     annot = []
     match_idxs = [idx for idx,cig in enumerate(read.cigar) if cig[0] == 0]
-    blocks = [b for b in zip(match_idxs, read.blocks)]
+    blocks = [b for b in zip(match_idxs, read.get_blocks())]
     chrom1, chrom2 = read.reference_name, read.reference_name
 
     if len(gap_idxs) > 0:
@@ -91,7 +91,12 @@ def annotate_contig(read, tx_juncs):
             pos1 = int(block[1])
             pos2 = pos1 if gap_idx == 0 else int(read.blocks[block_idx][1])
 
-            annot.append([read.query_name, gtype, chrom1, pos1, chrom2, pos2, size])
+            # position of variant on contig
+            cpos1 = sum([v for c,v in read.cigar[:gap_idx]])
+            csize = size if read.cigar[gap_idx][0] == 1 else 1 # only insertions affect contig pos
+            cpos2 = cpos1 + csize
+
+            annot.append([read.query_name, gtype, chrom1, pos1, chrom2, pos2, cpos1, cpos2, size])
             print('%d %s at pos %s:%d-%d (cigar string = %s)' % (size, gtype, chrom1, pos1, pos2, read.cigarstring))
 
     if len(clip_idxs) > 0:
@@ -100,16 +105,31 @@ def annotate_contig(read, tx_juncs):
             gtype = 'fusion' if cigar[0]==5 else 'soft-clip'
 
             block_idx = 0 if clip_idx == 0 else np.max(np.where(np.array([b[0] for b in blocks])<clip_idx)[0])
-            block = read.blocks[block_idx]
+            block = read.get_blocks()[block_idx]
             pos1, size = block[1], read.cigar[clip_idx][1]
 
-            annot.append([read.query_name, gtype, chrom1, pos1, 'NA', 0, size])
+            # position of variant on contig
+            cpos1 = sum([v for c,v in read.cigar[:clip_idx]])
+            csize = size if read.cigar[clip_idx][0] == 1 else 1 # only insertions affect contig pos
+            cpos2 = cpos1 + csize
+
+            annot.append([read.query_name, gtype, chrom1, pos1, 'NA', 0, cpos1, cpos2, size])
             print('%d bp %s at pos %s:%d (cigar string = %s)' % (size, gtype, chrom1, pos1, read.cigarstring))
 
-    if len(contig_juncs) > 0:
-        for junc in contig_juncs:
+    if len(tx_juncs) > 0:
+        for junc in tx_juncs:
+            # don't consider if the junction is a deletion, insertion or clipped sequence
             pos1, pos2 = int(junc[1]), int(junc[2])
-            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, pos2 - pos1])
+            junc_idx = [idx for idx, block in blocks if block[1] == pos1][0]
+            junc_type = read.cigar[junc_idx+1][0]
+            if junc_type in gaps or junc_type in clips:
+                continue
+
+            # position of variant on contig
+            cpos1 = sum([v for c,v in read.cigar[:(junc_idx+1)]])
+            cpos2 = cpos1 + 1
+
+            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, cpos1, cpos2, pos2 - pos1])
             print('novel junction at pos %s:%s-%s (cigar string = %s)' % (chrom1, junc[1], junc[2], read.cigarstring))
 
     return(annot)
@@ -122,8 +142,8 @@ def nice_sort(ids):
     alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ]
     return sorted(ids, key = alphanum_key)
 
-def pair_fusions(int_contigs):
-    fusions = int_contigs[int_contigs.variant == 'fusion']
+def pair_fusions(novel_contigs):
+    fusions = novel_contigs[novel_contigs.variant == 'fusion']
     fusion_contigs = np.unique(fusions.contig).copy()
 
     fusions_new = pd.DataFrame()
@@ -131,15 +151,15 @@ def pair_fusions(int_contigs):
         tmp = fusions[fusions.contig==contig].reset_index(drop=True)
         if len(tmp) != 2:
             continue
-        chroms, pos = nice_sort(tmp.chrom1.values), np.sort(tmp.pos1.values)
+        chroms, pos = nice_sort(tmp.chrom1.values), np.sort(tmp.genome_pos1.values)
         if tmp.chrom1[0] != tmp.chrom1[1]:
-            pos1 = tmp[chroms[0] == tmp.chrom1].pos1.values[0]
-            pos2 = tmp[chroms[1] == tmp.chrom1].pos1.values[0]
-            pos = [pos1, pos2]
+            genome_pos1 = tmp[chroms[0] == tmp.chrom1].genome_pos1.values[0]
+            genome_pos2 = tmp[chroms[1] == tmp.chrom1].genome_pos1.values[0]
+            pos = [genome_pos1, genome_pos2]
         tmp.loc[0, 'chrom1'] = chroms[0]
         tmp.loc[0, 'chrom2'] = chroms[1]
-        tmp.loc[0, 'pos1'] = pos[0]
-        tmp.loc[0, 'pos2'] = pos[1]
+        tmp.loc[0, 'genome_pos1'] = pos[0]
+        tmp.loc[0, 'genome_pos2'] = pos[1]
         fusions_new = pd.concat([fusions_new, tmp.loc[0]], axis=1)
 
     fusions_new = fusions_new.transpose()
@@ -147,19 +167,27 @@ def pair_fusions(int_contigs):
     # set size to correspond to rearrangement proximity
     fusions_new.size = None
     intra_chrom = fusions_new.chrom1 == fusions_new.chrom2
-    fusions_new.loc[intra_chrom, 'size'] = fusions_new[intra_chrom].pos2.values - fusions_new[intra_chrom].pos1.values
+    fusions_new.loc[intra_chrom, 'size'] = fusions_new[intra_chrom].genome_pos2.values - fusions_new[intra_chrom].genome_pos1.values
 
-    int_contigs = pd.concat([int_contigs[int_contigs.variant != 'fusion'], fusions_new])
-    return(int_contigs.reset_index(drop=True))
+    novel_contigs = pd.concat([novel_contigs[novel_contigs.variant != 'fusion'], fusions_new])
+    return(novel_contigs.reset_index(drop=True))
 
 if tx_info != '':
+    print('Generating lookup for known splice junctions...')
     # aligning against genome
     genref = pd.read_csv(tx_info, sep='\t')
     juncs = genref.apply(lambda tx: get_juncs(tx), axis=1)
-    juncs = [(str(c), int(s), int(e)) for jv in juncs.values for c, s, e in jv] # flatten juncs list
+
+    #juncs = [(str(c), int(s), int(e)) for jv in juncs.values for c, s, e in jv] # flatten juncs list
+    juncs = ['%s:%s-%s' % (c, s, e) for jv in juncs.values for c, s, e in jv] # flatten juncs list
+    junc_dic = {}
+    for junc in juncs:
+        junc_dic[junc] = True
+    juncs = junc_dic
+    print('Finished generating lookup')
 else:
     # this means we are analysing against transcriptome (not genome)
-    gaps = {'insertion': 1, 'deletion': 2, 'skipped': 3, 'silent_deletion': 6} # also consider skipped regions as gaps
+    gaps = {1: 'insertion', 2: 'deletion', 3: 'skipped',  6: 'silent_deletion'} # consider skipped regins as gaps
 
 lookup = []
 if txome_fasta != '':
@@ -170,7 +198,8 @@ if txome_fasta != '':
     lookup = pd.DataFrame(lookup, columns=['tx_id', 'gene_name'])
 
 # write novel contigs to bam file
-int_contigs = []
+print('Checking contigs for non-reference content...')
+novel_contigs = []
 for read in sam.fetch():
     if read.reference_id < 0 or read.mapping_quality == 0:
         # skip unmapped or 0 MAPQ contigs
@@ -183,25 +212,26 @@ for read in sam.fetch():
     if (rlen < match_min) or (rlen / qlen) < match_perc_min:
         continue
 
-    has_gaps = any([op in gaps.keys() and val >= gap_min for op, val in read.cigar])
-    has_clips = any([op in clips.keys() and val >= clip_min for op, val in read.cigar])
+    has_gaps = any([op in gaps and val >= gap_min for op, val in read.cigar])
+    has_clips = any([op in clips and val >= clip_min for op, val in read.cigar])
 
-    tx_juncs = None
-    unknown_juncs = False
+    tx_juncs = []
+    unknown_juncs = []
     if tx_info != '':
         # check junctions
-        starts, ends = zip(*read.blocks)
+        starts, ends = zip(*read.get_blocks())
         chroms = [read.reference_name] * (len(starts)-1)
         tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
         tx_juncs = [junc for junc in tx_juncs if (junc[2] - junc[1]) > gap_min]
-        unknown_juncs = any([txj not in juncs for txj in tx_juncs])
+        unknown_juncs = ['%s:%s-%s' % (c, s, e) not in juncs for c, s, e in tx_juncs]
 
-    if has_gaps or has_clips or unknown_juncs:
+    if has_gaps or has_clips or any(unknown_juncs):
         if annotate:
-            annotation = annotate_contig(read, tx_juncs)
-            int_contigs.extend(annotation)
+            novel_juncs = [list(x) for x in np.array(tx_juncs)[unknown_juncs]]
+            annotation = annotate_contig(read, novel_juncs)
+            novel_contigs.extend(annotation)
         else:
-            int_contigs.append([read.query_name, 'novel_contig', read.reference_name])
+            novel_contigs.append([read.query_name, 'novel_contig', read.reference_name])
         outbam.write(read)
 
 sam.close()
@@ -210,9 +240,10 @@ outbam.close()
 outdir = os.path.dirname(outbam_file)
 outdir = '.' if outdir == '' else outdir
 
+print('Writing results...')
 if len(lookup) > 0:
     contig_dict = {}
-    for annot in int_contigs:
+    for annot in novel_contigs:
         contig = annot[0]
         if contig in contig_dict:
            contig_dict[contig] = contig_dict[contig] + [annot[2]]
@@ -245,14 +276,14 @@ else:
     write_header = False
     annot = ''
     if annotate:
-        int_contigs = pd.DataFrame(int_contigs, columns=['contig', 'variant', 'chrom1', 'pos1', 'chrom2', 'pos2', 'size'])
-        int_contigs = pair_fusions(int_contigs)
+        novel_contigs = pd.DataFrame(novel_contigs, columns=['contig', 'variant', 'chrom1', 'genome_pos1', 'chrom2', 'genome_pos2', 'contig_pos1', 'contig_pos2', 'size'])
+        novel_contigs = pair_fusions(novel_contigs)
         write_header = True
         annot = '_annotated'
     else:
-        int_contigs = np.unique(np.array([c[0] for c in int_contigs]))
-        int_contigs = pd.DataFrame(list(int_contigs))
-    int_contigs.to_csv('%s/novel_contigs%s.txt' % (outdir, annot), sep='\t', header=write_header, index=False)
+        novel_contigs = np.unique(np.array([c[0] for c in novel_contigs]))
+        novel_contigs = pd.DataFrame(list(novel_contigs))
+    novel_contigs.to_csv('%s/novel_contigs%s.txt' % (outdir, annot), sep='\t', header=write_header, index=False)
 
 pysam.sort('-o', outbam_file, outbam_file_unsort)
 pysam.index(outbam_file)
