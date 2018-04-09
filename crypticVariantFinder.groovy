@@ -129,8 +129,8 @@ filter_contigs_against_transcriptome = {
    produce('filtered_contigs_against_txome.bam', 'all.groupings', 'all.fasta'){
       exec """
       python ${code_base}/filter_contigs.py $input.sam $output.bam --groupings $trans_fasta ;
-      python ${code_base}/filter_fasta.py $input.fasta $output.groupings > $output.dir/transcriptome_filtered.fasta ;
-      cat $output.dir/transcriptome_filtered.fasta $trans_fasta > $output.fasta ;
+      python ${code_base}/filter_fasta.py $input.fasta $output.groupings > $output.dir/filtered_contigs_against_txome.fasta ;
+      cat $output.dir/filtered_contigs_against_txome.fasta $trans_fasta > $output.fasta ;
       """
    }
 }
@@ -183,7 +183,7 @@ filter_on_significant_ecs = {
             --sample=$sample_n_controls --iters=$bootstrap_iters ;
         python $code_base/filter_fasta.py $input.fasta $output2.txt --col_id transcript > $output3 ;
         cat $trans_fasta $output3 > $output4 ;
-        sed '1d' $output2.txt | cut -f 21 | tr ':' '\n' | sort | uniq > $output5 ;
+        grep -ohE "k[0-9]+_[0-9]+" $output2.txt | sort | uniq > $output5 ;
       """
    }
 }
@@ -227,7 +227,7 @@ annotate_superTranscript = {
          module load fastx-toolkit ;
          blat $input.fasta $trans_fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ann.psl ;
          $code_base/psl2gtf $output.dir/SuperDuper-Ann.psl | bedtools sort | awk '{if(length(\$1)<128){print \$0}}' > $output1 ;
-         blat $input.fasta $output.dir/transcriptome_filtered.fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
+         blat $input.fasta $output.dir/filtered_contigs_against_txome.fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
          $code_base/psl2gtf $output.dir/SuperDuper-Ass.psl | bedtools sort > $output2 ;
          $code_base/psl2sjdbFileChrStartEnd $output.dir/SuperDuper-Ann.psl > $output3 ;
       """
