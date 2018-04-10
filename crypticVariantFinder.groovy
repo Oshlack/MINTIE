@@ -195,7 +195,7 @@ annotate_diffspliced_contigs = {
         module load samtools ;
         samtools view -H $output.dir/filtered_contigs_against_genome.bam > tmp.sam ;
         samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $input5 >> tmp.sam ;
-        python ${code_base}/filter_contigs.py tmp.sam $output.bam --splice_juncs $ann_info --annotate ;
+        python ${code_base}/filter_contigs.py tmp.sam $output.bam --splice_juncs $ann_info --annotate $input5;
       """
    }
 }

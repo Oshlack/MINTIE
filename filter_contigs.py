@@ -31,8 +31,10 @@ parser.add_argument('--groupings', dest='groupings', default='',
                     Used to match transcriptome mappings of novel contigs to genes.
                     When this option is used, an all.groupings file is created instead
                     of an interesting_contigs.txt file.''')
-parser.add_argument('--annotate', dest='annotate', action='store_true',
-                    help='''Annotate all contigs in supplied SAM file''')
+parser.add_argument('--annotate', dest='annotate', default='',
+                    help='''Differential splicing results file. This option will annotate
+                    all contigs in the supplied SAM file, and write an annotation file
+                    containing the novel variant(s) per contig.''')
 
 args        = parser.parse_args()
 samfile     = args.samfile
@@ -55,6 +57,10 @@ groupings = []
 
 sam = pysam.AlignmentFile(samfile, 'rc')
 outbam = pysam.AlignmentFile(outbam_file_unsort, 'wb', template=sam)
+
+ds_output = None
+if annotate != '':
+    ds_output = pd.read_csv(annotate, sep='\t')
 
 def get_juncs(tx):
     '''
@@ -93,10 +99,10 @@ def annotate_contig(read, tx_juncs):
 
             # position of variant on contig
             cpos1 = sum([v for c,v in read.cigar[:gap_idx]])
-            csize = size if read.cigar[gap_idx][0] == 1 else 1 # only insertions affect contig pos
+            csize = size if read.cigar[gap_idx][0] == 1 else 0 # only insertions affect contig pos
             cpos2 = cpos1 + csize
 
-            annot.append([read.query_name, gtype, chrom1, pos1, chrom2, pos2, cpos1, cpos2, size])
+            annot.append([read.query_name, gtype, chrom1, pos1, chrom2, pos2, size, cpos1, cpos2, csize])
             print('%d %s at pos %s:%d-%d (cigar string = %s)' % (size, gtype, chrom1, pos1, pos2, read.cigarstring))
 
     if len(clip_idxs) > 0:
@@ -110,10 +116,10 @@ def annotate_contig(read, tx_juncs):
 
             # position of variant on contig
             cpos1 = sum([v for c,v in read.cigar[:clip_idx]])
-            csize = size if read.cigar[clip_idx][0] == 1 else 1 # only insertions affect contig pos
-            cpos2 = cpos1 + csize
+            csize = 0 if 'fusion' else cigar[1]
+            cpos2 = cpos1 if 'fusion' else cpos1 + csize
 
-            annot.append([read.query_name, gtype, chrom1, pos1, 'NA', 0, cpos1, cpos2, size])
+            annot.append([read.query_name, gtype, chrom1, pos1, 'NA', 0, size, cpos1, cpos2, csize])
             print('%d bp %s at pos %s:%d (cigar string = %s)' % (size, gtype, chrom1, pos1, read.cigarstring))
 
     if len(tx_juncs) > 0:
@@ -127,9 +133,9 @@ def annotate_contig(read, tx_juncs):
 
             # position of variant on contig
             cpos1 = sum([v for c,v in read.cigar[:(junc_idx+1)]])
-            cpos2 = cpos1 + 1
+            cpos2 = cpos1
 
-            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, cpos1, cpos2, pos2 - pos1])
+            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, pos2 - pos1, cpos1, cpos2, 0])
             print('novel junction at pos %s:%s-%s (cigar string = %s)' % (chrom1, junc[1], junc[2], read.cigarstring))
 
     return(annot)
@@ -275,9 +281,19 @@ else:
     # write interesting contigs list to file
     write_header = False
     annot = ''
-    if annotate:
-        novel_contigs = pd.DataFrame(novel_contigs, columns=['contig', 'variant', 'chrom1', 'genome_pos1', 'chrom2', 'genome_pos2', 'contig_pos1', 'contig_pos2', 'size'])
+    if annotate != '':
+        cols = ['contig', 'variant', 'chrom1', 'genome_pos1', 'chrom2', \
+                'genome_pos2', 'size', 'contig_pos1', 'contig_pos2', 'contig_varsize']
+        novel_contigs = pd.DataFrame(novel_contigs, columns=cols)
         novel_contigs = pair_fusions(novel_contigs)
+        novel_contigs = novel_contigs.merge(ds_output, left_on='contig', right_on='transcript', how='inner')
+        output_cols = ['gene', 'contig', 'variant', 'chrom1', 'genome_pos1',
+                       'chrom2', 'genome_pos2', 'size', 'contig_pos1',
+                       'contig_pos2', 'contig_varsize', 'ec_names', 'contigs',
+                       'padj', 'gene.FDR', 'UniqueCount', 'AmbigCount',
+                       'ambig_ratio']
+        novel_contigs = novel_contigs[output_cols].drop_duplicates()
+        novel_contigs = novel_contigs.sort_values(by=['padj'])
         write_header = True
         annot = '_annotated'
     else:
