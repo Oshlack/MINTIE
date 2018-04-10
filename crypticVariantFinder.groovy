@@ -167,23 +167,36 @@ run_salmon = {
    }
 }
 
-filter_on_significant_ecs = {
-   output.dir=branch.name
-   output_prefix = branch.name+"/eq_class_comp"
-   salmon_dir = branch.name+"/salmon_out/aux_info"
+create_ec_count_matrix = {
+   output.dir = branch.name
    def sample_names=inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
    sample_names.set(0, branch.name) // case sample, rest are controls
    sample_names = sample_names.join(',')
-   produce("ec_count_matrix.txt", "eq_class_comp_diffsplice.txt", "diffspliced_contigs.fasta", "all_filt.fasta", "ds_novel_contigs.txt"){
+   produce("ec_count_matrix.txt"){
+      exec """
+        python $code_base/create_ec_count_matrix.py $inputs $sample_names $output1 ;
+      """
+   }
+}
+
+run_diffsplice = {
+   output.dir = branch.name
+   salmon_dir = branch.name+"/salmon_out/aux_info"
+   produce("eq_class_comp_diffsplice.txt"){
       exec """
         module load R/3.3.2 ;
-        module load samtools ;
-        python $code_base/create_ec_count_matrix.py $inputs $sample_names $output1 ;
-        Rscript $code_base/compare_eq_classes.R $branch.name $output1 $output.dir/all.groupings $salmon_dir $output2 \
+        Rscript $code_base/compare_eq_classes.R $branch.name $input $output.dir/all.groupings $salmon_dir $output \
             --sample=$sample_n_controls --iters=$bootstrap_iters ;
-        python $code_base/filter_fasta.py $input.fasta $output2.txt --col_id transcript > $output3 ;
-        cat $trans_fasta $output3 > $output4 ;
-        grep -ohE "k[0-9]+_[0-9]+" $output2.txt | sort | uniq > $output5 ;
+      """
+   }
+}
+
+filter_on_significant_ecs = {
+   produce("diffspliced_contigs.fasta", "all_filt.fasta", "ds_novel_contigs.txt"){
+      exec """
+        python $code_base/filter_fasta.py $input.fasta $input.txt --col_id transcript > $output1 ;
+        cat $trans_fasta $output1 > $output2 ;
+        grep -ohE "k[0-9]+_[0-9]+" $input.txt | sort | uniq > $output3 ;
       """
    }
 }
@@ -291,6 +304,8 @@ run { fastqInputFormat * [ make_sample_dir +
               filter_contigs_against_transcriptome +
               create_salmon_index +
               [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon.using(type:"controls") ]] +
+              create_ec_count_matrix +
+              run_diffsplice +
               filter_on_significant_ecs +
               annotate_diffspliced_contigs]
 //              run_lace +
