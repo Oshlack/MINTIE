@@ -185,8 +185,8 @@ run_diffsplice = {
    produce("eq_class_comp_diffsplice.txt"){
       exec """
         module load R/3.3.2 ;
-        Rscript $code_base/compare_eq_classes.R $branch.name $input $output.dir/all.groupings $salmon_dir $output \
-            --sample=$sample_n_controls --iters=$bootstrap_iters ;
+        Rscript $code_base/compare_eq_classes.R $branch.name $input $output.dir/all.groupings \
+            $trans_fasta $salmon_dir $output ;
       """
    }
 }
@@ -203,12 +203,13 @@ filter_on_significant_ecs = {
 
 annotate_diffspliced_contigs = {
    output.dir=branch.name
+   ds_results = branch.name+"/eq_class_comp_diffsplice.txt"
    produce("novel_contigs_annotated.txt", "novel_contigs.bam"){
       exec """
         module load samtools ;
         samtools view -H $output.dir/filtered_contigs_against_genome.bam > tmp.sam ;
-        samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $input5 >> tmp.sam ;
-        python ${code_base}/filter_contigs.py tmp.sam $output.bam --splice_juncs $ann_info --annotate $input5;
+        samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $input3 >> tmp.sam ;
+        python ${code_base}/filter_contigs.py tmp.sam $output.bam --splice_juncs $ann_info --annotate $ds_results;
       """
    }
 }

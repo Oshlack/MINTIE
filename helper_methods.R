@@ -1,12 +1,8 @@
 library(dplyr)
 
 match_tx_to_genes <- function(ec_matrix, grp_novel, genes_tx) {
-    genes_tx <- data.frame(genes_tx)
-    genes_tx <- unique(genes_tx[,c('tx_id', 'symbol')])
-
+    ec_matrix$tx_id <- ec_matrix$transcript
     int_ec_matrix <- left_join(ec_matrix, grp_novel, by='transcript')
-    int_ec_matrix <- within(int_ec_matrix, tx_id <- substr(transcript, 1, 15)) # remove dots in tx IDs
-
     int_ec_matrix <- left_join(int_ec_matrix, genes_tx, by='tx_id')
     int_ec_matrix[is.na(int_ec_matrix$gene), 'gene'] <- int_ec_matrix[is.na(int_ec_matrix$gene), 'symbol']
 

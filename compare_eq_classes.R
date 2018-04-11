@@ -1,11 +1,12 @@
 suppressWarnings(suppressMessages(require(edgeR)))
 suppressMessages(require(reshape2))
 suppressMessages(require(dplyr))
-suppressMessages(require(EnsDb.Hsapiens.v86))
 suppressMessages(require(data.table))
 suppressMessages(require(IRanges))
 suppressMessages(require(UpSetR))
 suppressMessages(require(DEXSeq))
+suppressMessages(require(stringr))
+suppressMessages(require(seqinr))
 options(stringsAsFactors = FALSE)
 
 # load helper methods
@@ -27,7 +28,7 @@ if("--help" %in% args) {
         using equivalence classes as exons.
 
         Usage:
-        Rscript compare_eq_classes.R <case_name> <ec_matrix> <groupings> <salmon_outdir> <output> --iters=<n_iters> --sample=<N>\n\n
+        Rscript compare_eq_classes.R <case_name> <ec_matrix> <groupings> <annotation_file> <salmon_outdir> <output> --iters=<n_iters> --sample=<N>\n\n
 
         Default iterations is 1 and default sample number is equivalent to number of controls
         Note: at least two control samples are required.\n\n")
@@ -43,11 +44,12 @@ args <- args[c(grep('--', args, invert=T), grep('--', args))]
 case_name <- args[1]
 ec_matrix_file <- args[2]
 groupings_file <- args[3]
-salmon_outdir <- args[4]
-outfile <- args[5]
+annotation_file <- args[4]
+salmon_outdir <- args[5]
+outfile <- args[6]
 
-n_sample <- grep("--sample=",args,value=TRUE)
-n_iters <- grep("--iters=",args,value=TRUE)
+n_sample <- grep("--sample=",args, value=TRUE)
+n_iters <- grep("--iters=",args, value=TRUE)
 if (length(n_iters)==0) {
     n_iters <- 1
 } else {
@@ -56,7 +58,10 @@ if (length(n_iters)==0) {
 n_iters <- as.numeric(n_iters)
 
 ################## load data ##################
-ec_matrix <- read.delim(gzfile(ec_matrix_file), sep='\t')
+print('Reading input data...')
+ec_matrix <- fread(ec_matrix_file, sep='\t')
+#ec_matrix <- read.delim(gzfile(ec_matrix_file), sep='\t')
+annotation <- read.fasta(annotation_file, as.string=TRUE)
 all.groupings <- read.delim(groupings_file, sep='\t', header=F)
 colnames(all.groupings) <- c('transcript', 'gene')
 
@@ -68,9 +73,16 @@ if (length(n_sample)==0) {
 }
 n_sample <- as.numeric(n_sample)
 
+################## make transcript > gene lookup ##################
+print('Generating transcript to gene lookup from fasta file...')
+genes <- annotation %>% lapply(function(x){attributes(x)$Annot}) %>% str_match("gene_symbol:([a-zA-Z0-9.-]+)")
+genes_tx <- distinct(data.frame(tx_id=names(annotation), symbol=genes[,2]))
+rm(genes, annotation); gc() #cleanup
+
+##################  ##################
+print('Preparing expression table...')
 # match ECs to genes
 grp_novel <- all.groupings[grep(novel_contig_regex, all.groupings$transcript),]
-genes_tx <- transcripts(EnsDb.Hsapiens.v86, columns=c('tx_id', 'symbol'))
 info <- match_tx_to_genes(ec_matrix, grp_novel, genes_tx)
 
 tx_ec_gn <- info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
@@ -93,14 +105,18 @@ ec_path <- paste(salmon_outdir, 'eq_classes.txt', sep='/')
 ambig_info_path <- paste(salmon_outdir, 'ambig_info.tsv', sep='/')
 uac <- get_ambig_info(ec_path, ambig_info_path, tx_ec_gn)
 
+# cleanup
+rm(ec_matrix); gc()
+
 ################## diffsplice testing using ECs ##################
 
+print('Performing differential splicing analysis...')
 bs_results <- bootstrap_diffsplice(case_name, info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs, dirname(outfile))
 bs_results <- run_dexseq(case_name, info, int_genes, uniq_ecs, tx_to_ecs, dirname(outfile))
 
 ################## compile and write results ##################
 
-#print('Compiling and writing results...')
+print('Compiling and writing results...')
 #bs_genes <- NULL
 #for(i in 1:n_iters) {
 #    bs_genes[[i]] <- unique(bs_results[[i]]$spg$gene)
