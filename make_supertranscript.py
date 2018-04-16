@@ -15,16 +15,16 @@ from intervaltree import Interval, IntervalTree
 import ipdb
 
 parser = argparse.ArgumentParser()
-parser.add_argument(dest='samfile',
-                    help='''SAM or BAM format file containing contig alignments''')
-parser.add_argument(dest='novel_contigs_file',
-                    help='''Annotated novel contigs file''')
+#parser.add_argument(dest='samfile',
+#                    help='''SAM or BAM format file containing contig alignments''')
+#parser.add_argument(dest='novel_contigs_file',
+#                    help='''Annotated novel contigs file''')
 parser.add_argument(dest='gff_file',
                     help='''GTF reference annotation''')
 
 args        = parser.parse_args()
-samfile     = args.samfile
-nc_file     = args.novel_contigs_file
+#samfile     = args.samfile
+#nc_file     = args.novel_contigs_file
 gff_file    = args.gff_file
 
 db_name = '%s.db' % gff_file.split('.')[:-1][0]
@@ -45,23 +45,31 @@ for gene in db.features_of_type('gene'):
 exon_df = []
 for chrom in exons:
     for gene in exons[chrom]:
-        intervals = [[gene, chrom, x[0], x[1], x[2][0], x[2][1]] for x in exons[chrom][gene]]
+        intervals = [[gene, chrom, x[0], x[1], x[2][1], '.', x[2][0]] for x in exons[chrom][gene]]
         exon_df.extend(intervals)
 
 exon_df = pd.DataFrame(exon_df).drop_duplicates()
-exon_df = exon_df.groupby([0,1,2,3,4])[5].apply(lambda x: ','.join(x)).to_frame().reset_index()
-exon_df.columns = ['gene', 'chrom', 'start', 'end', 'strand', 'exons']
+exon_df = exon_df.groupby([0,1,2,3,5,6])[4].apply(lambda x: ','.join(x)).to_frame().reset_index()
+exon_df.columns = ['gene', 'chrom', 'start', 'end', 'score', 'strand', 'exons']
 
-novel_contigs = pd.read_csv(nc_file, sep='\t')
+exon_df['name'] = exon_df.gene + ' exons ' + exon_df.exons
+exon_df = exon_df[['chrom', 'start', 'end', 'name', 'score', 'strand']]
+exon_df.to_csv('exon_boundaries.bed', sep='\t', index=False, header=False)
+
+#novel_contigs = pd.read_csv(nc_file, sep='\t')
 #novel_contigs = novel_contigs[novel_contigs.variant != 'soft-clip']
 
-bamf = pysam.AlignmentFile(samfile)
-reads = pysam.IndexedReads(bamf)
-reads.build()
+#bamf = pysam.AlignmentFile(samfile)
+#reads = pysam.IndexedReads(bamf)
+#reads.build()
 
-genes = np.unique(novel_contigs.gene.values)
-for gene in genes:
-    nc = novel_contigs[novel_contigs.gene == gene] 
-
-    contig_mapping = reads.find(contig_row['contig'])
-    ipdb.set_trace()
+#gene_out = pd.DataFrame()
+#genes = np.unique(novel_contigs.gene.values)
+#for gene in genes:
+#    nc = novel_contigs[novel_contigs.gene == gene]
+#    if any(nc.contig_varsize.values > 0):
+#        ipdb.set_trace()
+#
+#    else:
+#        gene_out = gene_out.append(exon_df[exon_df.gene == gene])
+#    #contig_mapping = reads.find(contig_row['contig'])
