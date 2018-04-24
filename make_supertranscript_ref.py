@@ -78,8 +78,8 @@ for gene in genes:
                 seq = block_seqs['%s:%d-%d(%s)' % (chrom, block.start, block.end, block.strand)]
                 left_seq = seq[:block.end-gpos2] if antisense else seq[:gpos1-block.start]
                 right_seq = seq[block.end-gpos1:] if antisense else seq[gpos2-block.start:]
-                block_seqs['%s:%d-%d(%s)' % (chrom, block.start, gpos1, block.strand)] = left_seq
-                block_seqs['%s:%d-%d(%s)' % (chrom, gpos2, block.end, block.strand)] = right_seq
+                block_seqs['%s:%d-%d(%s)' % (chrom, block.start, gpos1, block.strand)] = right_seq if antisense else left_seq
+                block_seqs['%s:%d-%d(%s)' % (chrom, gpos2, block.end, block.strand)] = left_seq if antisense else right_seq
 
                 left_block = pd.DataFrame([[block.chrom, block.start, gpos1, block['name'],
                                             block.value, block.strand, block.gene, block['blocks']]], columns=gene_out.columns)
@@ -92,17 +92,15 @@ for gene in genes:
                 gene_out = gene_out.append([left_block, novel_block, right_block], ignore_index=True)
 
     gene_out = gene_out.sort_values(by=['start', 'end'], ascending=False) if antisense else gene_out.sort_values(by=['start','end'])
-    segs, seqs, names = [], [], []
-    seg_start = 1
+    seqs, names = [], []
     for idx,x in gene_out.iterrows():
         names.append(x['blocks'])
-        #chrom = 'MT' if x.chrom == 'chrM' else x.chrom.split('chr')[1]
         seq = str(block_seqs['%s:%d-%d(%s)' % (x.chrom, x.start, x.end, x.strand)])
         seqs.append(seq)
 
-        seg_end = seg_start + len(seq)
-        segs.append('%d-%d' % (seg_start, seg_end))
-        seg_start = seg_end+1
+    seq_ends = np.cumsum([len(s) for s in seqs])
+    seq_starts = np.concatenate([[0], seq_ends[:-1]])
+    segs = ['%s-%s' % (s1+1, s2) for s1,s2 in zip(seq_starts, seq_ends)]
 
     header = '>%s segs:%s names:%s\n' % (gene, ','.join(segs), ','.join(names))
     sequence = ''.join(seqs) + '\n'
