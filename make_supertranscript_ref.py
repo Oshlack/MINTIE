@@ -50,7 +50,8 @@ gene_out = pd.DataFrame()
 genes = np.unique([gn for gene in novel_contigs.gene.values for gn in gene.split('|')])
 for gene in genes:
     nc = novel_contigs[novel_contigs.gene == gene]
-    gene_out = exon_df[exon_df.gene == gene].copy()
+    gene_df = exon_df[exon_df.gene == gene]
+    gene_out = gene_df.copy()
     if len(gene_out) == 0:
         continue
     antisense = True if gene_out.strand.values[0]=='-' else False
@@ -64,32 +65,37 @@ for gene in genes:
             end = start + csize
 
             gpos1, gpos2 = contig_row.genome_pos1, contig_row.genome_pos2
-            blocks_affected = gene_out[np.logical_and(gene_out.start <= gpos1, gene_out.end >= gpos2)]
+            blocks_affected = gene_df[np.logical_and(gene_df.start < gpos1, gene_df.end > gpos2)]
 
             chrom = 'MT' if contig_row.chrom1 == 'chrM' else contig_row.chrom1.split('chr')[1]
             novel_seq = seq[start:end]
             novel_seq_info = (chrom, gpos1, gpos2, gene_out.strand.values[0])
             block_seqs['%s:%d-%d(%s)' % novel_seq_info] = novel_seq
 
-            if len(blocks_affected) > 1:
-                # this shouldn't happen.....
-                ipdb.set_trace()
+            assert len(blocks_affected) <= 1
             for idx, block in blocks_affected.iterrows():
                 seq = block_seqs['%s:%d-%d(%s)' % (chrom, block.start, block.end, block.strand)]
                 left_seq = seq[:block.end-gpos2] if antisense else seq[:gpos1-block.start]
                 right_seq = seq[block.end-gpos1:] if antisense else seq[gpos2-block.start:]
-                block_seqs['%s:%d-%d(%s)' % (chrom, block.start, gpos1, block.strand)] = right_seq if antisense else left_seq
-                block_seqs['%s:%d-%d(%s)' % (chrom, gpos2, block.end, block.strand)] = left_seq if antisense else right_seq
 
-                left_block = pd.DataFrame([[block.chrom, block.start, gpos1, block['name'],
-                                            block.value, block.strand, block.gene, block['blocks']]], columns=gene_out.columns)
-                right_block = pd.DataFrame([[block.chrom, gpos2, block.end, block['name'],
-                                             block.value, block.strand, block.gene, block['blocks']]], columns=gene_out.columns)
                 novel_block = pd.DataFrame([[block.chrom, gpos1, gpos2, '%s novel' % gene,
                                             block.value, block.strand, block.gene, 'novel']], columns=gene_out.columns)
+                add_blocks = [novel_block]
 
+                if gpos1 - block.start != 0:
+                    block_seqs['%s:%d-%d(%s)' % (chrom, block.start, gpos1, block.strand)] = right_seq if antisense else left_seq
+                    left_block = pd.DataFrame([[block.chrom, block.start, gpos1, block['name'],
+                                                block.value, block.strand, block.gene, block['blocks']]], columns=gene_out.columns)
+                    add_blocks.append(left_block)
+
+                if block.end - gpos2 != 0:
+                    block_seqs['%s:%d-%d(%s)' % (chrom, gpos2, block.end, block.strand)] = left_seq if antisense else right_seq
+                    right_block = pd.DataFrame([[block.chrom, gpos2, block.end, block['name'],
+                                                 block.value, block.strand, block.gene, block['blocks']]], columns=gene_out.columns)
+                    add_blocks.append(right_block)
+
+                gene_out = gene_out.append(add_blocks, ignore_index=True)
                 gene_out = gene_out[gene_out.index!=block.name]
-                gene_out = gene_out.append([left_block, novel_block, right_block], ignore_index=True)
 
     gene_out = gene_out.sort_values(by=['start', 'end'], ascending=False) if antisense else gene_out.sort_values(by=['start','end'])
     seqs, names = [], []

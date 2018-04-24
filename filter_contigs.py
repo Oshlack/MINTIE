@@ -116,10 +116,10 @@ def annotate_contig(read, tx_juncs):
 
             # position of variant on contig
             cpos1 = sum([v for c,v in read.cigar[:clip_idx]])
-            csize = 0 if 'fusion' else cigar[1]
-            cpos2 = cpos1 if 'fusion' else cpos1 + csize
+            csize = 0 if gtype == 'fusion' else cigar[1]
+            cpos2 = cpos1 if gtype == 'fusion' else cpos1 + csize
 
-            annot.append([read.query_name, gtype, chrom1, pos1, 'NA', 0, size, cpos1, cpos2, csize])
+            annot.append([read.query_name, gtype, chrom1, pos1, chrom1, pos1, size, cpos1, cpos2, csize])
             print('%d bp %s at pos %s:%d (cigar string = %s)' % (size, gtype, chrom1, pos1, read.cigarstring))
 
     if len(tx_juncs) > 0:
