@@ -70,7 +70,7 @@ for gene in genes:
             chrom = 'MT' if contig_row.chrom1 == 'chrM' else contig_row.chrom1.split('chr')[1]
             novel_seq = seq[start:end]
             novel_seq_info = (chrom, gpos1, gpos2, gene_out.strand.values[0])
-            block_seqs['%s:%d-%d(%s)' % novel_seq_info] = novel_seq
+            block_seqs['%s:%d-%d(%s)' % novel_seq_info] = str(novel_seq)
 
             assert len(blocks_affected) <= 1
             for idx, block in blocks_affected.iterrows():
@@ -94,8 +94,8 @@ for gene in genes:
                                                  block.value, block.strand, block.gene, block['blocks']]], columns=gene_out.columns)
                     add_blocks.append(right_block)
 
-                gene_out = gene_out.append(add_blocks, ignore_index=True)
                 gene_out = gene_out[gene_out.index!=block.name]
+                gene_out = gene_out.append(add_blocks, ignore_index=True)
 
     gene_out = gene_out.sort_values(by=['start', 'end'], ascending=False) if antisense else gene_out.sort_values(by=['start','end'])
     seqs, names = [], []
