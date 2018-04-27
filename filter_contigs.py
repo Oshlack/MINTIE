@@ -95,7 +95,9 @@ def annotate_contig(read, tx_juncs):
             block_idx = 0 if gap_idx == 0 else np.max(np.where(np.array([b[0] for b in blocks])<gap_idx)[0])
             block = blocks[block_idx][1]
             pos1 = int(block[1])
-            pos2 = pos1 if gap_idx == 0 else int(read.blocks[block_idx][1])
+            pos2 = pos1
+            if gap_idx != 0:
+                pos2 = int(read.blocks[block_idx+1][0]) if block_idx+1 < len(blocks) else pos1 + size
 
             # position of variant on contig
             cpos1 = sum([v for c,v in read.cigar[:gap_idx]])
