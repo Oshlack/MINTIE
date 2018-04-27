@@ -47,6 +47,9 @@ exon_df['name'] = exon_df.gene + ' ' + exon_df.exons
 exon_df = exon_df[['chrom', 'start', 'end', 'name', 'score', 'strand']]
 exon_df.chrom = exon_df.chrom.map(lambda x: x.split('chr')[1])
 exon_df.loc[exon_df.chrom == 'M', 'chrom'] = 'MT'
-exon_df.start = exon_df.start - 1 # bed coordinate offset
-exon_df.end = exon_df.end
+
+starts = exon_df.chrom.map(str) + ':' + exon_df.start.map(str)
+ends = exon_df.chrom.map(str) + ':' + exon_df.end.map(str)
+non_adjacent_blocks = np.array([s not in ends.values for s in starts])
+exon_df.loc[non_adjacent_blocks, 'start'] = exon_df.start - 1 # only offset blocks that are not adjacent
 exon_df.to_csv(out_bed, sep='\t', index=False, header=False)
