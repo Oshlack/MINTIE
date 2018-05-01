@@ -23,13 +23,14 @@ gmap="/group/bioi1/marekc/apps/GMAP-GSNAP/src/gmap"
 salmon="/group/bioi1/marekc/apps/Salmon-latest_linux_x86_64/bin/salmon"
 
 //reference
-genome_fasta="/group/bioi1/shared/genomes/hg38/fasta/hg38.fa"
+genome_fasta="/group/bioi1/shared/genomes/hg38/fasta/Homo_sapiens.GRCh38.dna.primary_assembly.fa"
 trans_fasta="/group/bioi1/shared/transcriptomes/hg38/Homo_sapiens.GRCh38.cdna.all.fa"
 //ann_info=code_base+"/gen24_hg38.info"
 ann_superTranscriptome=code_base+"/gen24_hg38.super_transcriptome.fasta"
 gmap_index="/group/bioi1/shared/genomes/hg38/gmapdb"
 gmap_tx_index="/group/bioi1/shared/transcriptomes/hg38/indexes/gmapdb"
 ann_info="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.info"
+tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.gz"
 
 controls_dir="controls"
 sample_n_controls=29
@@ -185,7 +186,7 @@ run_diffsplice = {
    produce("eq_class_comp_diffsplice.txt"){
       exec """
         module load R/3.3.2 ;
-        Rscript $code_base/compare_eq_classes.R $branch.name $input $output.dir/all.groupings \
+        Rscript $code_base/compare_eq_classes.R $output.dir $input $output.dir/all.groupings \
             $trans_fasta $salmon_dir $output ;
       """
    }
@@ -210,6 +211,24 @@ annotate_diffspliced_contigs = {
         samtools view -H $output.dir/filtered_contigs_against_genome.bam > tmp.sam ;
         samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $input3 >> tmp.sam ;
         python ${code_base}/filter_contigs.py tmp.sam $output.bam --splice_juncs $ann_info --annotate $ds_results;
+      """
+   }
+}
+
+create_supertranscript_reference = {
+   output.dir=branch.name
+   produce("tx_annotation.gtf", "st_blocks.bed", "st_blocks.fasta", "supertranscript.fasta"){
+      exec """
+          module load bedtools ;
+          echo "extracting relevant transcipts to gtf reference..." ;
+          cat $input1 | cut -f 1 | sort | uniq | awk '{split(\$0, x, "|")}{print x[1]"\\n"x[2]}' | sort | uniq | sed '/^ *\$/d' > $output.dir/gene_list.txt ;
+          zcat < $tx_annotation | fgrep -wf $output.dir/gene_list.txt > $output1 ;
+          echo "generating supertranscript blocks..." ;
+          python ${code_base}/generate_st_blocks.py $output1 $output2 ;
+          echo "extracting fasta sequence..." ;
+          bedtools getfasta -fi $genome_fasta -bed $output2 -fo $output3 -s ;
+          echo "making supertranscripts..." ;
+          python ${code_base}/make_supertranscript_ref.py $input.fasta $input1 $output2 $output3 $output4 ;
       """
    }
 }
@@ -308,7 +327,8 @@ run { fastqInputFormat * [ make_sample_dir +
               create_ec_count_matrix +
               run_diffsplice +
               filter_on_significant_ecs +
-              annotate_diffspliced_contigs]
+              annotate_diffspliced_contigs +
+              create_supertranscript_reference]
 //              run_lace +
 //              annotate_superTranscript +
 //              build_STAR_reference +
