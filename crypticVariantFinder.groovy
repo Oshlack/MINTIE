@@ -5,6 +5,7 @@ minQScore=20 //trimmomatic quality cut off
 threads=8
 scores=33
 min_read_length=50;
+genome_mem=5050000000
 
 //Assembly options
 Ks="79 49 19" //"31 25 19"
@@ -233,84 +234,143 @@ create_supertranscript_reference = {
    }
 }
 
-run_lace = {
-   output.dir=branch.name
-//       source /group/bioi1/nadiad/software/anaconda2/bin/activate lace ;
-   produce('SuperDuper.fasta'){
-    exec """
-       module load blat ;
-       if [ ! -d $output.dir/lace ]; then mkdir $output.dir/lace ; fi ;
-       python /group/bioi1/nadiad/software/Lace/Lace.py
-          --cores $threads
-          --outputDir $output.dir/lace
-          $input.fasta $input.groupings ;
-       mv $output.dir/lace/SuperDuper.fasta $output ;
-       rm -rf $output.dir/lace
-    """
-   }
-}
-
-annotate_superTranscript = {
-   output.dir=branch.name
-   produce("SuperDuper-Ann.gtf","SuperDuper-Ass.gtf","SuperDuper-Ann.juncs"){
+annotate_supertranscript = {
+   clinker_out=branch.name+"/clinker_out"
+   output.dir=clinker_out+"/reference"
+   produce("fst_reference.fasta"){
       exec """
-         module load blat ;
-         module load bedops ;
-         module load bedtools ;
-         module load fastx-toolkit ;
-         blat $input.fasta $trans_fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ann.psl ;
-         $code_base/psl2gtf $output.dir/SuperDuper-Ann.psl | bedtools sort | awk '{if(length(\$1)<128){print \$0}}' > $output1 ;
-         blat $input.fasta $output.dir/filtered_contigs_against_txome.fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
-         $code_base/psl2gtf $output.dir/SuperDuper-Ass.psl | bedtools sort > $output2 ;
-         $code_base/psl2sjdbFileChrStartEnd $output.dir/SuperDuper-Ann.psl > $output3 ;
+         python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7 -del t -header true -competitive false -st $input4 ;
       """
    }
 }
-         //blat $input.fasta $genome_fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper_against_genome.psl ;
-         //python annotate_supertranscript.py $output.dir/SuperDuper_against_genome.psl $gtf_tx $output4;
-         //$gtf2bed < $output1 > $output3 ; $gtf2bed < $output2 > $output4 ;
-         //$bedops -p $output3 $output4 | cut -f1-3 | uniq - | awk '{if(\$3 - \$2 > 2){print}}' - > $output5 ;
-         //python $code_base/get_intersect_bed.py $output3 $output4 $output5 > $output7 ;
 
-build_STAR_reference = {
-    output.dir=branch.name+"/STARRef"
-    produce("Genome"){
-        exec """
-            module load star ;
-            cd $branch.name ;
-            if [ ! -d STARRef ]; then mkdir STARRef ; fi ;
-            STAR --runMode genomeGenerate --genomeDir STARRef --sjdbFileChrStartEnd ../$input.juncs
-                --sjdbOverhang 99 --genomeFastaFiles ../$input.fasta  --runThreadN $threads  --genomeSAindexNbases 5 ;
-        """
+star_genome_gen = {
+    doc "Generate STAR genome index"
+
+    output.dir = branch.name+"/clinker_out"
+    genome_folder = output.dir+"/genome"
+
+    // Generate Fusion SuperTranscriptome Genome for STAR
+    produce("$genome_folder/Genome") {
+        exec """module load star ;
+                STAR --runMode genomeGenerate
+                --runThreadN $threads
+                --genomeDir $genome_folder
+                --genomeFastaFiles $input.fasta
+                --limitGenomeGenerateRAM $genome_mem
+                --genomeSAindexNbases 5""","stargen"
     }
 }
 
-map_reads = {
-   def out_prefix="STAR"
-   def ref="STARRef"
-   def workingDir = System.getProperty("user.dir");
-   def read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
-   if(type=="controls"){
-        output.dir=branch.parent.name+"/"+controls_dir
-        out_prefix=branch.name
-        ref="../"+ref
-   } else {
-         output.dir=branch.name
-   }
-   produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
-    exec """
-        module load star ;
-        module load samtools ;
-        cd $output.dir ;
-        time STAR --genomeDir $ref --readFilesCommand zcat
-           --readFilesIn $read_files
-           --outSAMtype BAM SortedByCoordinate --outFileNamePrefix $out_prefix
-           --runThreadN $threads --limitBAMsortRAM 5050000000 ;
-        samtools index ${workingDir}/${output1} ;
-        rm -rf ${out_prefix}_STARtmp ;
-    """
-   }
+star_align = {
+    doc "Map paired-end reads using the STAR aligner: 1st pass"
+
+    //Map paired-end reads using the STAR aligner: 1st pass
+    from("*.fastq.gz") {
+        transform("(.*)_R1.fastq.gz","(.*)_R2.fastq.gz"){
+
+            // Setup stage
+            files = inputs.toString()
+            output.dir = branch.name+"/clinker_out/alignment"
+            String bam = "$output.dir/Aligned.sortedByCoord.out.bam"
+
+            // Align to fusion SuperTranscriptome
+            produce("$bam"){
+                exec """module load star ; STAR --genomeDir $genome_folder
+                    --readFilesIn ${files}
+                    --readFilesCommand gunzip -c
+                    --outSAMtype BAM SortedByCoordinate
+                    --runThreadN $threads
+                    --outFileNamePrefix "$output.dir/"
+                    --limitBAMsortRAM $genome_mem
+                    --outWigType bedGraph
+                    --outWigNorm RPM
+                    --genomeSAindexNbases 5
+                    --outWigStrand Unstranded
+                """, "star1pass"
+            }
+        }
+    }
 }
+
+//run_lace = {
+//   output.dir=branch.name
+////       source /group/bioi1/nadiad/software/anaconda2/bin/activate lace ;
+//   produce('SuperDuper.fasta'){
+//    exec """
+//       module load blat ;
+//       if [ ! -d $output.dir/lace ]; then mkdir $output.dir/lace ; fi ;
+//       python /group/bioi1/nadiad/software/Lace/Lace.py
+//          --cores $threads
+//          --outputDir $output.dir/lace
+//          $input.fasta $input.groupings ;
+//       mv $output.dir/lace/SuperDuper.fasta $output ;
+//       rm -rf $output.dir/lace
+//    """
+//   }
+//}
+//
+//annotate_superTranscript = {
+//   output.dir=branch.name
+//   produce("SuperDuper-Ann.gtf","SuperDuper-Ass.gtf","SuperDuper-Ann.juncs"){
+//      exec """
+//         module load blat ;
+//         module load bedops ;
+//         module load bedtools ;
+//         module load fastx-toolkit ;
+//         blat $input.fasta $trans_fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ann.psl ;
+//         $code_base/psl2gtf $output.dir/SuperDuper-Ann.psl | bedtools sort | awk '{if(length(\$1)<128){print \$0}}' > $output1 ;
+//         blat $input.fasta $output.dir/filtered_contigs_against_txome.fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
+//         $code_base/psl2gtf $output.dir/SuperDuper-Ass.psl | bedtools sort > $output2 ;
+//         $code_base/psl2sjdbFileChrStartEnd $output.dir/SuperDuper-Ann.psl > $output3 ;
+//      """
+//   }
+//}
+//         //blat $input.fasta $genome_fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper_against_genome.psl ;
+//         //python annotate_supertranscript.py $output.dir/SuperDuper_against_genome.psl $gtf_tx $output4;
+//         //$gtf2bed < $output1 > $output3 ; $gtf2bed < $output2 > $output4 ;
+//         //$bedops -p $output3 $output4 | cut -f1-3 | uniq - | awk '{if(\$3 - \$2 > 2){print}}' - > $output5 ;
+//         //python $code_base/get_intersect_bed.py $output3 $output4 $output5 > $output7 ;
+//
+//build_STAR_reference = {
+//    output.dir=branch.name+"/STARRef"
+//    produce("Genome"){
+//        exec """
+//            module load star ;
+//            cd $branch.name ;
+//            if [ ! -d STARRef ]; then mkdir STARRef ; fi ;
+//            STAR --runMode genomeGenerate --genomeDir STARRef --sjdbFileChrStartEnd ../$input.juncs
+//                --sjdbOverhang 99 --genomeFastaFiles ../$input.fasta  --runThreadN $threads  --genomeSAindexNbases 5 ;
+//        """
+//    }
+//}
+//
+//map_reads = {
+//   def out_prefix="STAR"
+//   def ref="STARRef"
+//   def workingDir = System.getProperty("user.dir");
+//   def read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
+//   if(type=="controls"){
+//        output.dir=branch.parent.name+"/"+controls_dir
+//        out_prefix=branch.name
+//        ref="../"+ref
+//   } else {
+//         output.dir=branch.name
+//   }
+//   produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
+//    exec """
+//        module load star ;
+//        module load samtools ;
+//        cd $output.dir ;
+//        time STAR --genomeDir $ref --readFilesCommand zcat
+//           --readFilesIn $read_files
+//           --outSAMtype BAM SortedByCoordinate --outFileNamePrefix $out_prefix
+//           --runThreadN $threads --limitBAMsortRAM 5050000000 ;
+//        samtools index ${workingDir}/${output1} ;
+//        rm -rf ${out_prefix}_STARtmp ;
+//    """
+//   }
+//}
 
 //fastqInputFormat="%_L001_R*.fastq.gz"
 fastqInputFormat="%_R*.fastq.gz"
@@ -328,7 +388,9 @@ run { fastqInputFormat * [ make_sample_dir +
               run_diffsplice +
               filter_on_significant_ecs +
               annotate_diffspliced_contigs +
-              create_supertranscript_reference]
+              create_supertranscript_reference +
+              annotate_supertranscript +
+              star_genome_gen + star_align]
 //              run_lace +
 //              annotate_superTranscript +
 //              build_STAR_reference +
