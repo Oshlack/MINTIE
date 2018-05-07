@@ -21,6 +21,7 @@ bowtie2="/usr/bin/time -v bowtie2"
 gtf2bed="gtf2bed"
 bedops="bedops"
 gmap="/group/bioi1/marekc/apps/GMAP-GSNAP/src/gmap"
+gmap_build="perl /group/bioi1/marekc/apps/GMAP-GSNAP/util/gmap_build.pl -B=/group/bioi1/marekc/apps/GMAP-GSNAP/src"
 salmon="/group/bioi1/marekc/apps/Salmon-latest_linux_x86_64/bin/salmon"
 
 //reference
@@ -182,12 +183,13 @@ create_ec_count_matrix = {
 }
 
 run_diffsplice = {
+   case_name = branch.name
    output.dir = branch.name
    salmon_dir = branch.name+"/salmon_out/aux_info"
    produce("eq_class_comp_diffsplice.txt"){
       exec """
         module load R/3.3.2 ;
-        Rscript $code_base/compare_eq_classes.R $output.dir $input $output.dir/all.groupings \
+        Rscript $code_base/compare_eq_classes.R $case_name $input $output.dir/all.groupings \
             $trans_fasta $salmon_dir $output ;
       """
    }
@@ -221,7 +223,7 @@ create_supertranscript_reference = {
    produce("tx_annotation.gtf", "st_blocks.bed", "st_blocks.fasta", "supertranscript.fasta"){
       exec """
           module load bedtools ;
-          echo "extracting relevant transcipts to gtf reference..." ;
+          echo "extracting relevant transcripts to gtf reference..." ;
           cat $input1 | cut -f 1 | sort | uniq | awk '{split(\$0, x, "|")}{print x[1]"\\n"x[2]}' | sort | uniq | sed '/^ *\$/d' > $output.dir/gene_list.txt ;
           zcat < $tx_annotation | fgrep -wf $output.dir/gene_list.txt > $output1 ;
           echo "generating supertranscript blocks..." ;
@@ -240,6 +242,26 @@ annotate_supertranscript = {
    produce("fst_reference.fasta"){
       exec """
          python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7 -del t -header true -competitive false -st $input4 ;
+      """
+   }
+}
+
+make_supertranscript_gmap_reference = {
+   clinker_out=branch.name+"/clinker_out"
+   output.dir=branch.name
+   produce("st_gmap_ref"){
+      exec """
+         $gmap_build -s chrom -k 15 -d st_gmap_ref -D $branch.name $input.fasta ;
+      """
+   }
+}
+
+align_contigs_to_supertranscript = {
+   clinker_out=branch.name+"/clinker_out"
+   output.dir=branch.name
+   produce("novel_contigs_st_aligned.sam"){
+      exec """
+         $gmap -D $output.dir -d $input -f samse -t $threads -n 0 ${branch.name}/diffspliced_contigs.fasta > $output ;
       """
    }
 }
@@ -288,6 +310,10 @@ star_align = {
                     --genomeSAindexNbases 5
                     --outWigStrand Unstranded
                 """, "star1pass"
+                exec """
+                    module load samtools;
+                    samtools index $bam ;
+                """
             }
         }
     }
@@ -389,6 +415,8 @@ run { fastqInputFormat * [ make_sample_dir +
               filter_on_significant_ecs +
               annotate_diffspliced_contigs +
               create_supertranscript_reference +
+              make_supertranscript_gmap_reference +
+              align_contigs_to_supertranscript +
               annotate_supertranscript +
               star_genome_gen + star_align]
 //              run_lace +
