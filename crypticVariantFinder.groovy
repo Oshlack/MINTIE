@@ -224,7 +224,7 @@ create_supertranscript_reference = {
       exec """
           module load bedtools ;
           echo "extracting relevant transcripts to gtf reference..." ;
-          cat $input1 | cut -f 1 | sort | uniq | awk '{split(\$0, x, "|")}{print x[1]"\\n"x[2]}' | sort | uniq | sed '/^ *\$/d' > $output.dir/gene_list.txt ;
+          cat $input1 | cut -f 1 | sed 1d | sort | uniq | awk '{split(\$0, x, "|")}{print x[1]"\\n"x[2]}' | sort | uniq | sed '/^ *\$/d' > $output.dir/gene_list.txt ;
           zcat < $tx_annotation | fgrep -wf $output.dir/gene_list.txt > $output1 ;
           echo "generating supertranscript blocks..." ;
           python ${code_base}/generate_st_blocks.py $output1 $output2 ;
@@ -261,7 +261,7 @@ align_contigs_to_supertranscript = {
    output.dir=branch.name
    produce("novel_contigs_st_aligned.sam"){
       exec """
-         $gmap -D $output.dir -d $input -f samse -t $threads -n 0 ${branch.name}/diffspliced_contigs.fasta > $output ;
+         $gmap -D $output.dir -d st_gmap_ref -f samse -t $threads -n 0 ${branch.name}/diffspliced_contigs.fasta > $output ;
       """
    }
 }
@@ -415,9 +415,9 @@ run { fastqInputFormat * [ make_sample_dir +
               filter_on_significant_ecs +
               annotate_diffspliced_contigs +
               create_supertranscript_reference +
+              annotate_supertranscript +
               make_supertranscript_gmap_reference +
               align_contigs_to_supertranscript +
-              annotate_supertranscript +
               star_genome_gen + star_align]
 //              run_lace +
 //              annotate_superTranscript +
