@@ -166,6 +166,8 @@ def nice_sort(ids):
 def pair_fusions(novel_contigs):
     fusions = novel_contigs[novel_contigs.variant == 'fusion']
     fusion_contigs = np.unique(fusions.contig).copy()
+    if len(fusion_contigs) == 0:
+        return novel_contigs
 
     fusions_new = pd.DataFrame()
     for contig in fusion_contigs:
@@ -186,7 +188,7 @@ def pair_fusions(novel_contigs):
     fusions_new = fusions_new.transpose()
 
     # set size to correspond to rearrangement proximity
-    fusions_new.size = None
+    fusions_new['size'] = None
     intra_chrom = fusions_new.chrom1 == fusions_new.chrom2
     fusions_new.loc[intra_chrom, 'size'] = fusions_new[intra_chrom].genome_pos2.values - fusions_new[intra_chrom].genome_pos1.values
 

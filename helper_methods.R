@@ -100,7 +100,7 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
     genes <- genes[keep,]
 
     group <- rep('control', ncol(counts))
-    case_name <- gsub('-', '.', case_name)
+    #case_name <- gsub('-', '.', case_name)
     group[colnames(counts)==case_name] <- 'cancer'
 
     sampleTable <- data.frame(condition=factor(group, levels=c('control', 'cancer')))

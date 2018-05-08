@@ -111,7 +111,7 @@ rm(ec_matrix); gc()
 ################## diffsplice testing using ECs ##################
 
 print('Performing differential splicing analysis...')
-bs_results <- bootstrap_diffsplice(case_name, info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs, dirname(outfile))
+#bs_results <- bootstrap_diffsplice(case_name, info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs, dirname(outfile))
 bs_results <- run_dexseq(case_name, info, int_genes, uniq_ecs, tx_to_ecs, dirname(outfile))
 
 ################## compile and write results ##################
