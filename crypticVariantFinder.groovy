@@ -385,7 +385,6 @@ star_align = {
     exec """
         module load star ;
         module load samtools ;
-        cd $output.dir ;
         time STAR --genomeDir $genome_folder
            --readFilesCommand zcat
            --readFilesIn $read_files
