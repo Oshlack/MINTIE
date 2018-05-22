@@ -135,4 +135,9 @@ print('Compiling and writing results...')
 concat_results <- bs_results
 concat_results <- left_join(concat_results, uac, by=c('ec_names','gene'))
 concat_results <- concat_results[order(concat_results$gene.FDR),]
-write.table(concat_results, outfile, row.names=F, quote=F, sep='\t')
+
+if (nrow(concat_results) > 0) {
+    write.table(concat_results, outfile, row.names=F, quote=F, sep='\t')
+} else {
+    print('No significant ECs associated with novel contigs! Pipeline cannot continue.')
+}

@@ -196,6 +196,7 @@ run_diffsplice = {
 }
 
 filter_on_significant_ecs = {
+   output.dir=branch.name
    produce("diffspliced_contigs.fasta", "all_filt.fasta", "ds_novel_contigs.txt"){
       exec """
         python $code_base/filter_fasta.py $input.fasta $input.txt --col_id transcript > $output1 ;
@@ -211,9 +212,10 @@ annotate_diffspliced_contigs = {
    produce("novel_contigs_annotated.txt", "novel_contigs.bam"){
       exec """
         module load samtools ;
-        samtools view -H $output.dir/filtered_contigs_against_genome.bam > tmp.sam ;
-        samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $input3 >> tmp.sam ;
-        python ${code_base}/filter_contigs.py tmp.sam $output.bam --splice_juncs $ann_info --annotate $ds_results;
+        samtools view -H $output.dir/filtered_contigs_against_genome.bam > $output.dir/tmp.sam ;
+        samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $input3 >> $output.dir/tmp.sam ;
+        python ${code_base}/filter_contigs.py $output.dir/tmp.sam $output.bam --splice_juncs $ann_info --annotate $ds_results ;
+        rm $output.dir/tmp.sam ;
       """
    }
 }
@@ -284,41 +286,39 @@ star_genome_gen = {
     }
 }
 
-star_align = {
-    doc "Map paired-end reads using the STAR aligner: 1st pass"
-
-    //Map paired-end reads using the STAR aligner: 1st pass
-    from("*.fastq.gz") {
-        transform("(.*)_R1.fastq.gz","(.*)_R2.fastq.gz"){
-
-            // Setup stage
-            files = inputs.toString()
-            output.dir = branch.name+"/clinker_out/alignment"
-            String bam = "$output.dir/Aligned.sortedByCoord.out.bam"
-
-            // Align to fusion SuperTranscriptome
-            produce("$bam"){
-                exec """module load star ; STAR --genomeDir $genome_folder
-                    --readFilesIn ${files}
-                    --readFilesCommand gunzip -c
-                    --outSAMtype BAM SortedByCoordinate
-                    --runThreadN $threads
-                    --outFileNamePrefix "$output.dir/"
-                    --limitBAMsortRAM $genome_mem
-                    --outWigType bedGraph
-                    --outWigNorm RPM
-                    --genomeSAindexNbases 5
-                    --outWigStrand Unstranded
-                """, "star1pass"
-                exec """
-                    module load samtools;
-                    samtools index $bam ;
-                """
-            }
-        }
-    }
-}
-
+//star_align = {
+//    doc "Map paired-end reads using the STAR aligner: 1st pass"
+//
+//    //Map paired-end reads using the STAR aligner: 1st pass
+//    from("*.fastq.gz") {
+//        transform("(.*)_R1.fastq.gz","(.*)_R2.fastq.gz"){
+//
+//            // Setup stage
+//            files = inputs.toString()
+//            output.dir = branch.name+"/clinker_out/alignment"
+//            String bam = "$output.dir/Aligned.sortedByCoord.out.bam"
+//
+//            // Align to fusion SuperTranscriptome
+//            produce("$bam"){
+//                exec """module load star ; STAR --genomeDir $genome_folder
+//                    --readFilesIn ${files}
+//                    --readFilesCommand gunzip -c
+//                    --outSAMtype BAM SortedByCoordinate
+//                    --runThreadN $threads
+//                    --outFileNamePrefix "$output.dir/"
+//                    --limitBAMsortRAM $genome_mem
+//                    --outWigType bedGraph
+//                    --outWigNorm RPM
+//                    --genomeSAindexNbases 5
+//                    --outWigStrand Unstranded ;
+//                    module load samtools ;
+//                    samtools index $bam
+//                """, "star1pass"
+//            }
+//        }
+//    }
+//}
+//
 //run_lace = {
 //   output.dir=branch.name
 ////       source /group/bioi1/nadiad/software/anaconda2/bin/activate lace ;
@@ -370,33 +370,38 @@ star_align = {
 //        """
 //    }
 //}
-//
-//map_reads = {
-//   def out_prefix="STAR"
-//   def ref="STARRef"
-//   def workingDir = System.getProperty("user.dir");
-//   def read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
-//   if(type=="controls"){
-//        output.dir=branch.parent.name+"/"+controls_dir
-//        out_prefix=branch.name
-//        ref="../"+ref
-//   } else {
-//         output.dir=branch.name
-//   }
-//   produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
-//    exec """
-//        module load star ;
-//        module load samtools ;
-//        cd $output.dir ;
-//        time STAR --genomeDir $ref --readFilesCommand zcat
-//           --readFilesIn $read_files
-//           --outSAMtype BAM SortedByCoordinate --outFileNamePrefix $out_prefix
-//           --runThreadN $threads --limitBAMsortRAM 5050000000 ;
-//        samtools index ${workingDir}/${output1} ;
-//        rm -rf ${out_prefix}_STARtmp ;
-//    """
-//   }
-//}
+
+star_align = {
+   def out_prefix=branch.name+"/clinker_out/alignment/"
+   def workingDir=System.getProperty("user.dir");
+   def read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
+   output.dir=branch.name+"/clinker_out/alignment"
+   if(type=="controls"){
+        output.dir=branch.name+"/clinker_out/alignment/controls/"
+        sample_name=read_files.split()[0].split('/').last().split('\\.').first()
+        out_prefix=out_prefix+"controls/"+sample_name
+   }
+   produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
+    exec """
+        module load star ;
+        module load samtools ;
+        cd $output.dir ;
+        time STAR --genomeDir $genome_folder
+           --readFilesCommand zcat
+           --readFilesIn $read_files
+           --outSAMtype BAM SortedByCoordinate
+           --outFileNamePrefix $out_prefix
+           --runThreadN $threads
+           --limitBAMsortRAM 5050000000
+           --genomeSAindexNbases 5
+           --outWigStrand Unstranded
+           --outWigType bedGraph
+           --outWigNorm RPM ;
+        samtools index ${workingDir}/${output1} ;
+        rm -rf ${out_prefix}_STARtmp ;
+    """
+   }
+}
 
 //fastqInputFormat="%_L001_R*.fastq.gz"
 fastqInputFormat="%_R*.fastq.gz"

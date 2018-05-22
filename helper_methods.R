@@ -102,6 +102,7 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
     group <- rep('control', ncol(counts))
     #case_name <- gsub('-', '.', case_name)
     group[colnames(counts)==case_name] <- 'cancer'
+    colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub('-', '_',x)}))
 
     sampleTable <- data.frame(condition=factor(group, levels=c('control', 'cancer')))
     rownames(sampleTable) <- colnames(counts)
@@ -153,7 +154,7 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
     # write full results
     write.table(dx_df, file=paste(outdir, 'full_dexseq_results.txt', sep='/'), row.names=F, quote=F, sep='\t')
 
-    dx_df <- dx_df[!is.na(dx_df$significant_gene) & !is.na(dx_df$contigs) & !is.na(dx_df$significant_gene),]
+    dx_df <- dx_df[!is.na(dx_df$significant_gene) & !is.na(dx_df$contigs) & !is.na(dx_df$significant_ec),]
     dx_df <- dx_df[dx_df$significant_gene & dx_df$significant_ec & dx_df$novel_ec,]
 
     return(dx_df)
@@ -192,6 +193,8 @@ bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_
         # construct DGE object
         group <- rep('control', ncol(counts))
         group[colnames(counts)==case_name] <- 'cancer'
+        colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub('-', '_',x)}))
+
         dge <- DGEList(counts=counts, group=as.factor(group), genes=genes)
         dge <- calcNormFactors(dge)
         des <- model.matrix(~0+as.factor(group))
