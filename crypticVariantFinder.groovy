@@ -377,7 +377,7 @@ star_align = {
    def read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
    output.dir=branch.name+"/clinker_out/alignment"
    if(type=="controls"){
-        output.dir=branch.name+"/clinker_out/alignment/controls/"
+        output.dir=branch.parent.parent.name+"/clinker_out/alignment/controls/"
         sample_name=read_files.split()[0].split('/').last().split('\\.').first()
         out_prefix=out_prefix+"controls/"+sample_name
    }
@@ -422,7 +422,7 @@ run { fastqInputFormat * [ make_sample_dir +
               annotate_supertranscript +
               make_supertranscript_gmap_reference +
               align_contigs_to_supertranscript +
-              star_genome_gen + star_align]
+              star_genome_gen + star_align + ["controls/%.*.fastq.gz" * [ star_align.using(type:"controls") ]]]
 //              run_lace +
 //              annotate_superTranscript +
 //              build_STAR_reference +
