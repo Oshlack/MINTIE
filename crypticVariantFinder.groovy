@@ -379,10 +379,11 @@ star_align = {
    if(type=="controls"){
         output.dir=branch.parent.parent.name+"/clinker_out/alignment/controls/"
         sample_name=read_files.split()[0].split('/').last().split('\\.').first()
-        out_prefix=out_prefix+"controls/"+sample_name
+        out_prefix=output.dir+'/'+sample_name+'_'
    }
    produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
     exec """
+        mkdir -p $output.dir ;
         module load star ;
         module load samtools ;
         time STAR --genomeDir $genome_folder
