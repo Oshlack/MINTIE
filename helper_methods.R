@@ -154,8 +154,10 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
     # write full results
     write.table(dx_df, file=paste(outdir, 'full_dexseq_results.txt', sep='/'), row.names=F, quote=F, sep='\t')
 
-    dx_df <- dx_df[!is.na(dx_df$significant_gene) & !is.na(dx_df$contigs) & !is.na(dx_df$significant_ec),]
-    dx_df <- dx_df[dx_df$significant_gene & dx_df$significant_ec & dx_df$novel_ec,]
+    #dx_df <- dx_df[!is.na(dx_df$significant_gene) & !is.na(dx_df$contigs) & !is.na(dx_df$significant_ec),]
+    #dx_df <- dx_df[dx_df$significant_gene & dx_df$significant_ec & dx_df$novel_ec,]
+    dx_df <- dx_df[!is.na(dx_df$contigs) & !is.na(dx_df$significant_ec),]
+    dx_df <- dx_df[dx_df$significant_ec & dx_df$novel_ec,]
 
     return(dx_df)
 }

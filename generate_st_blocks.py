@@ -26,7 +26,8 @@ for gene in db.features_of_type('gene'):
     gene_name = gene.attributes['gene_name'][0]
     gene_intervals = IntervalTree()
     for exon in db.children(gene, featuretype='exon'):
-        gene_intervals[exon.start:exon.end] = [exon.strand, exon.attributes['exon_number'][0]]
+        if exon.end - exon.start > 0:
+            gene_intervals[exon.start:exon.end] = [exon.strand, exon.attributes['exon_number'][0]]
 
     IntervalTree.split_overlaps(gene_intervals)
     if gene.chrom not in exons.keys():
