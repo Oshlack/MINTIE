@@ -152,7 +152,8 @@ for gene in novel_contigs.gene.values:
                 block = blocks_affected.loc[blocks_affected.index.values[0]]
                 gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos1, gpos2)
 
-    gene_out = gene_out.sort_values(by=['start', 'end'], ascending=False).reset_index() if antisense else gene_out.sort_values(by=['start','end']).reset_index()
+    gene_out = gene_out.drop_duplicates().sort_values(by=['start', 'end'], ascending=False).reset_index() \
+                    if antisense else gene_out.drop_duplicates().sort_values(by=['start','end']).reset_index()
     seqs, names = [], []
     for idx,x in gene_out.iterrows():
         names.append(x['blocks'])

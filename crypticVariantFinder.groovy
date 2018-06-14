@@ -261,9 +261,14 @@ make_supertranscript_gmap_reference = {
 align_contigs_to_supertranscript = {
    clinker_out=branch.name+"/clinker_out"
    output.dir=branch.name
-   produce("novel_contigs_st_aligned.sam"){
+   produce("novel_contigs_st_aligned.bam"){
       exec """
-         $gmap -D $output.dir -d st_gmap_ref -f samse -t $threads -n 0 ${branch.name}/diffspliced_contigs.fasta > $output ;
+         outfile=$output ; basename="\${outfile%.*}" ;
+         $gmap -D $output.dir -d st_gmap_ref -f samse -t $threads -n 0 ${branch.name}/diffspliced_contigs.fasta > \${basename}.sam ;
+         module load samtools;
+         samtools view -hb \${basename}.sam > \${basename}_unsort.bam ;
+         samtools sort \${basename}_unsort.bam > $output ;
+         samtools index $output ; rm \${basename}_unsort.bam ; rm \${basename}.sam
       """
    }
 }
