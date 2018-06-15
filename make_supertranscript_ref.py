@@ -6,9 +6,8 @@ import argparse
 import pandas as pd
 import numpy as np
 import gffutils
+import math
 from Bio import SeqIO
-
-import ipdb
 
 parser = argparse.ArgumentParser()
 parser.add_argument(dest='contigs_fasta',
@@ -28,6 +27,18 @@ nc_file     = args.novel_contigs_file
 blocks      = args.block_bed
 block_fasta = args.block_fasta
 st_file     = args.output_fasta
+
+# for reverse-complementing
+lookup = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
+
+def reverse_complement(seq):
+    if seq == '':
+        return ''
+    if type(seq) == float and math.isnan(seq):
+        return ''
+    seq = seq[::-1]
+    seq = ''.join([lookup[base] for base in list(seq)])
+    return(seq)
 
 def split_block(nc_row, gene_out, seq, block, gpos1, gpos2):
     seq = block_seqs['%s:%d-%d(%s)' % (chrom, block.start, block.end, block.strand)]
@@ -112,7 +123,8 @@ for gene in novel_contigs.gene.values:
             continue
 
         chrom = 'MT' if nc_row.chrom1 == 'chrM' else nc_row.chrom1.split('chr')[1]
-        novel_seq = seq[start:end]
+        gene_strand = '-' if antisense else '+'
+        novel_seq = nc_row.variant_seq if nc_row.contig_align_strand == gene_strand else reverse_complement(nc_row.variant_seq)
         novel_seq_info = (chrom, gpos1, gpos2, gene_out.strand.values[0])
 
         blocks_affected = pd.DataFrame()
@@ -136,7 +148,6 @@ for gene in novel_contigs.gene.values:
                 if len(ba2) > 0:
                     block = gene_out.loc[ba2.index.values[0]]
                     gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos2, gpos2)
-
             else:
                 chrom = chrom1 if chrom1 == gene_df.chrom.values[0] else chrom2
                 gpos = gpos1 if chrom1 == gene_df.chrom.values[0] else gpos2

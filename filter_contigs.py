@@ -86,6 +86,8 @@ def annotate_contig(read, tx_juncs):
     match_idxs = [idx for idx,cig in enumerate(read.cigar) if cig[0] == 0]
     blocks = [b for b in zip(match_idxs, read.get_blocks())]
     chrom1, chrom2 = read.reference_name, read.reference_name
+    strand = '-' if read.is_reverse else '+'
+    print(read.query_name)
 
     if len(gap_idxs) > 0:
         for gap_idx in gap_idxs:
@@ -106,11 +108,11 @@ def annotate_contig(read, tx_juncs):
 
             var_seq = ''
             if csize > 0:
-                seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c!=5])
+                seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c not in [3, 5]])
                 seq_pos2 = seq_pos1 + csize
                 var_seq = read.query_sequence[seq_pos1:seq_pos2]
 
-            annot.append([read.query_name, gtype, chrom1, pos1, chrom2, pos2, size, cpos1, cpos2, csize, var_seq])
+            annot.append([read.query_name, gtype, chrom1, pos1, chrom2, pos2, size, cpos1, cpos2, strand, csize, var_seq])
             print('%d %s at pos %s:%d-%d (cigar string = %s)' % (size, gtype, chrom1, pos1, pos2, read.cigarstring))
 
     if len(clip_idxs) > 0:
@@ -120,7 +122,7 @@ def annotate_contig(read, tx_juncs):
 
             block_idx = 0 if clip_idx == 0 else np.max(np.where(np.array([b[0] for b in blocks])<clip_idx)[0])
             block = read.get_blocks()[block_idx]
-            pos1, size = block[1], read.cigar[clip_idx][1]
+            pos1, size = block[0], read.cigar[clip_idx][1]
 
             # position of variant on contig
             cpos1 = sum([v for c,v in read.cigar[:clip_idx]])
@@ -129,11 +131,11 @@ def annotate_contig(read, tx_juncs):
 
             var_seq = ''
             if csize > 0:
-                seq_pos1 = sum([v for c,v in read.cigar[:clip_idx] if c!=5])
+                seq_pos1 = sum([v for c,v in read.cigar[:clip_idx] if c not in [3, 5]])
                 seq_pos2 = seq_pos1 + csize
                 var_seq = read.query_sequence[seq_pos1:seq_pos2]
 
-            annot.append([read.query_name, gtype, chrom1, pos1, chrom1, pos1, size, cpos1, cpos2, csize, var_seq])
+            annot.append([read.query_name, gtype, chrom1, pos1, chrom1, pos1, size, cpos1, cpos2, strand, csize, var_seq])
             print('%d bp %s at pos %s:%d (cigar string = %s)' % (size, gtype, chrom1, pos1, read.cigarstring))
 
     if len(tx_juncs) > 0:
@@ -150,7 +152,7 @@ def annotate_contig(read, tx_juncs):
             cpos2 = cpos1
 
             #TODO: extract intra/intergenic sequence from novel junction
-            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, pos2 - pos1, cpos1, cpos2, 0, ''])
+            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, pos2 - pos1, cpos1, cpos2, strand, 0, ''])
             print('novel junction at pos %s:%s-%s (cigar string = %s)' % (chrom1, junc[1], junc[2], read.cigarstring))
 
     return(annot)
@@ -301,15 +303,16 @@ else:
     if annotate != '':
         cols = ['contig', 'variant', 'chrom1', 'genome_pos1', 'chrom2', \
                 'genome_pos2', 'size', 'contig_pos1', 'contig_pos2', \
-                'contig_varsize', 'variant_seq']
+                'contig_align_strand', 'contig_varsize', 'variant_seq']
         novel_contigs = pd.DataFrame(novel_contigs, columns=cols)
         novel_contigs = pair_fusions(novel_contigs)
         novel_contigs = novel_contigs.merge(ds_output, left_on='contig', right_on='transcript', how='inner')
         output_cols = ['gene', 'contig', 'variant', 'chrom1', 'genome_pos1',
                        'chrom2', 'genome_pos2', 'size', 'contig_pos1',
-                       'contig_pos2', 'contig_varsize', 'variant_seq',
-                       'ec_names', 'contigs', 'padj', 'gene.FDR',
-                       'UniqueCount', 'AmbigCount', 'ambig_ratio']
+                       'contig_pos2', 'contig_align_strand',
+                       'contig_varsize', 'variant_seq', 'ec_names',
+                       'contigs', 'padj', 'gene.FDR', 'UniqueCount',
+                       'AmbigCount', 'ambig_ratio']
         novel_contigs = novel_contigs[output_cols].drop_duplicates()
         novel_contigs = novel_contigs.sort_values(by=['padj'])
         write_header = True

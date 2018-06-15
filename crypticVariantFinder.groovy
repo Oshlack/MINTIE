@@ -428,7 +428,7 @@ run { fastqInputFormat * [ make_sample_dir +
               annotate_supertranscript +
               make_supertranscript_gmap_reference +
               align_contigs_to_supertranscript +
-              star_genome_gen + star_align + ["controls/%.*.fastq.gz" * [ star_align.using(type:"controls") ]]]
+              star_genome_gen + [star_align, "controls/%.*.fastq.gz" * [ star_align.using(type:"controls") ]]]
 //              run_lace +
 //              annotate_superTranscript +
 //              build_STAR_reference +
