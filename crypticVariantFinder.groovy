@@ -105,7 +105,9 @@ SOAPassemble = {
 align_contigs_against_genome = {
    output.dir=branch.name
    produce('aligned_contigs_against_genome.sam'){
-      exec "$gmap -D $gmap_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam"
+      exec """
+        $gmap -D $gmap_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam
+      """, "align_contigs_against_genome"
    }
 }
 
@@ -123,7 +125,9 @@ filter_contigs_against_genome = {
 align_contigs_against_transcriptome = {
    output.dir=branch.name
    produce('aligned_contigs_against_txome.sam'){
-      exec "$gmap -D $gmap_tx_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam"
+      exec """
+        $gmap -D $gmap_tx_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam
+      """, "align_contigs_against_transcriptome"
    }
 }
 
@@ -166,7 +170,7 @@ run_salmon = {
       exec """
         cd $output.dir/../.. ;
         $salmon quant --dumpEq --gcBias --seqBias -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $base_outdir
-     """
+     """, "run_salmon"
    }
 }
 
@@ -191,7 +195,7 @@ run_diffsplice = {
         module load R/3.3.2 ;
         Rscript $code_base/compare_eq_classes.R $case_name $input $output.dir/all.groupings \
             $trans_fasta $salmon_dir $output ;
-      """
+      """, "run_diffsplice"
    }
 }
 
@@ -269,7 +273,7 @@ align_contigs_to_supertranscript = {
          samtools view -hb \${basename}.sam > \${basename}_unsort.bam ;
          samtools sort \${basename}_unsort.bam > $output ;
          samtools index $output ; rm \${basename}_unsort.bam ; rm \${basename}.sam
-      """
+      """, "align_contigs_to_supertranscript"
    }
 }
 
@@ -377,17 +381,22 @@ star_genome_gen = {
 //}
 
 star_align = {
-   def out_prefix=branch.name+"/clinker_out/alignment/"
+   println(branch.name)
+   println(branch.parent.name)
+   println(branch.parent.parent.name)
+   output.dir=branch.parent.name+"/clinker_out/alignment/"
+   println(branch.parent.name+"/clinker_out/alignment/")
+   println(output.dir)
    def workingDir=System.getProperty("user.dir");
    def read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
-   output.dir=branch.name+"/clinker_out/alignment"
+   def sample_name=read_files.split()[0].split('/').last().split('\\.').first()
+   def out_prefix=output.dir+'/'+sample_name
    if(type=="controls"){
         output.dir=branch.parent.parent.name+"/clinker_out/alignment/controls/"
-        sample_name=read_files.split()[0].split('/').last().split('\\.').first()
-        out_prefix=output.dir+'/'+sample_name+'_'
+        out_prefix=output.dir+'/'+sample_name
    }
    produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
-    exec """
+        exec """
         mkdir -p $output.dir ;
         module load star ;
         module load samtools ;
@@ -404,33 +413,30 @@ star_align = {
            --outWigNorm RPM ;
         samtools index ${workingDir}/${output1} ;
         rm -rf ${out_prefix}_STARtmp ;
-    """
+    """, "star_align"
    }
 }
 
 //fastqInputFormat="%_L001_R*.fastq.gz"
 fastqInputFormat="%_R*.fastq.gz"
 
-run { fastqInputFormat * [ make_sample_dir +
-                        dedupe +
-                        SOAPassemble +
-              align_contigs_against_genome +
-              filter_contigs_against_genome +
-              align_contigs_against_transcriptome +
-              filter_contigs_against_transcriptome +
-              create_salmon_index +
-              [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon.using(type:"controls") ]] +
-              create_ec_count_matrix +
-              run_diffsplice +
-              filter_on_significant_ecs +
-              annotate_diffspliced_contigs +
-              create_supertranscript_reference +
-              annotate_supertranscript +
-              make_supertranscript_gmap_reference +
-              align_contigs_to_supertranscript +
-              star_genome_gen + [star_align, "controls/%.*.fastq.gz" * [ star_align.using(type:"controls") ]]]
-//              run_lace +
-//              annotate_superTranscript +
-//              build_STAR_reference +
-//              map_reads
+run { fastqInputFormat * [make_sample_dir +
+                          dedupe +
+                          SOAPassemble +
+                          align_contigs_against_genome +
+                          filter_contigs_against_genome +
+                          align_contigs_against_transcriptome +
+                          filter_contigs_against_transcriptome +
+                          create_salmon_index +
+                          [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon.using(type:"controls") ]] +
+                          create_ec_count_matrix +
+                          run_diffsplice +
+                          filter_on_significant_ecs +
+                          annotate_diffspliced_contigs +
+                          create_supertranscript_reference +
+                          annotate_supertranscript +
+                          make_supertranscript_gmap_reference +
+                          align_contigs_to_supertranscript +
+                          star_genome_gen +
+                          [star_align, "controls/%.*.fastq.gz" * [ star_align.using(type:"controls") ]]]
 }
