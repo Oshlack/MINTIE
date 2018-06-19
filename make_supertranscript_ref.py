@@ -99,10 +99,10 @@ novel_contigs = novel_contigs.join(tmp)
 del novel_contigs['gene_name']
 
 gene_out = pd.DataFrame()
-#genes = np.unique([gn for gene in novel_contigs.gene.values for gn in gene.split('|')])
-for gene in novel_contigs.gene.values:
-    nc = novel_contigs[novel_contigs.gene == gene]
-    gene_df = exon_df[exon_df.gene == gene]
+genes = np.unique([gn for gene in novel_contigs.gene.values for gn in gene.split('|')])
+for gene in genes:
+    nc = novel_contigs[[gene in gn.split('|') for gn in novel_contigs.gene.values]]
+    gene_df = exon_df[[gene in gn.split('|') for gn in exon_df.gene.values]]
     gene_out = gene_df.copy()
     if len(gene_out) == 0:
         continue

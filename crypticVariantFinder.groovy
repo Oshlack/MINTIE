@@ -381,12 +381,7 @@ star_genome_gen = {
 //}
 
 star_align = {
-   println(branch.name)
-   println(branch.parent.name)
-   println(branch.parent.parent.name)
    output.dir=branch.parent.name+"/clinker_out/alignment/"
-   println(branch.parent.name+"/clinker_out/alignment/")
-   println(output.dir)
    def workingDir=System.getProperty("user.dir");
    def read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
    def sample_name=read_files.split()[0].split('/').last().split('\\.').first()
@@ -437,6 +432,6 @@ run { fastqInputFormat * [make_sample_dir +
                           annotate_supertranscript +
                           make_supertranscript_gmap_reference +
                           align_contigs_to_supertranscript +
-                          star_genome_gen +
-                          [star_align, "controls/%.*.fastq.gz" * [ star_align.using(type:"controls") ]]]
+                          star_genome_gen + [star_align]]
+//                          [star_align, "controls/%.*.fastq.gz" * [ star_align.using(type:"controls") ]]]
 }
