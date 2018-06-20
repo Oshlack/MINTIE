@@ -35,6 +35,9 @@ parser.add_argument('--annotate', dest='annotate', default='',
                     help='''Differential splicing results file. This option will annotate
                     all contigs in the supplied SAM file, and write an annotation file
                     containing the novel variant(s) per contig.''')
+parser.add_argument('--tx_align', dest='tx_align', default='',
+                    help='''Alignment of novel contigs to transcriptome. Used for more detailed
+                    annotation.''')
 
 args        = parser.parse_args()
 samfile     = args.samfile
@@ -42,6 +45,7 @@ outbam_file = args.outbam_file
 tx_info     = args.tx_info
 txome_fasta = args.groupings
 annotate    = args.annotate
+tx_align    = args.tx_align
 
 # cutoff parameters
 gap_min = 7
@@ -52,15 +56,31 @@ match_perc_min = 0.3
 # CIGAR specification codes
 gaps = {1: 'insertion', 2: 'deletion', 6: 'silent_deletion'}
 clips = {4: 'soft', 5: 'hard'}
+ref_only_gaps = {2: 'deletion', 3: 'skipped', 5: 'hard-clip'}
 outbam_file_unsort = '%s_unsorted.bam' % os.path.splitext(outbam_file)[0]
 groupings = []
 
 sam = pysam.AlignmentFile(samfile, 'rc')
 outbam = pysam.AlignmentFile(outbam_file_unsort, 'wb', template=sam)
+tx_bam = None
+if tx_align != '':
+    tx_bam = pysam.AlignmentFile(tx_align, 'rc')
+    tx_idx = pysam.IndexedReads(tx_bam)
+    tx_idx.build()
 
 ds_output = None
 if annotate != '':
     ds_output = pd.read_csv(annotate, sep='\t')
+
+def reverse_complement(seq):
+    base_lookup = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
+    if seq == '':
+        return ''
+    if type(seq) == float and math.isnan(seq):
+        return ''
+    seq = seq[::-1]
+    seq = ''.join([base_lookup[base] for base in list(seq)])
+    return(seq)
 
 def get_juncs(tx):
     '''
@@ -82,13 +102,11 @@ def annotate_contig(read, tx_juncs):
     clip_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] in clips and clip[1] >= gap_min]
     #contig_juncs = [] if tx_juncs is None else [txj for txj in tx_juncs if txj not in juncs]
 
-    annot = []
+    annot, var_seq = [], ''
     match_idxs = [idx for idx,cig in enumerate(read.cigar) if cig[0] == 0]
     blocks = [b for b in zip(match_idxs, read.get_blocks())]
     chrom1, chrom2 = read.reference_name, read.reference_name
     strand = '-' if read.is_reverse else '+'
-    print(read.query_name)
-
     if len(gap_idxs) > 0:
         for gap_idx in gap_idxs:
             cigar = read.cigar[gap_idx]
@@ -108,7 +126,7 @@ def annotate_contig(read, tx_juncs):
 
             var_seq = ''
             if csize > 0:
-                seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c not in [3, 5]])
+                seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c not in ref_only_gaps])
                 seq_pos2 = seq_pos1 + csize
                 var_seq = read.query_sequence[seq_pos1:seq_pos2]
 
@@ -131,7 +149,7 @@ def annotate_contig(read, tx_juncs):
 
             var_seq = ''
             if csize > 0:
-                seq_pos1 = sum([v for c,v in read.cigar[:clip_idx] if c not in [3, 5]])
+                seq_pos1 = sum([v for c,v in read.cigar[:clip_idx] if c not in ref_only_gaps])
                 seq_pos2 = seq_pos1 + csize
                 var_seq = read.query_sequence[seq_pos1:seq_pos2]
 
@@ -151,8 +169,37 @@ def annotate_contig(read, tx_juncs):
             cpos1 = sum([v for c,v in read.cigar[:(junc_idx+1)]])
             cpos2 = cpos1
 
-            #TODO: extract intra/intergenic sequence from novel junction
-            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, pos2 - pos1, cpos1, cpos2, strand, 0, ''])
+            if not tx_bam:
+                annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2,
+                              pos2 - pos1, cpos1, cpos2, strand, 0, ''])
+                continue
+
+            tx_reads = [tx_read for tx_read in tx_idx.find(read.query_name)]
+            if len(tx_reads) > 2:
+                print('WARNING: cannot annotate contig %s because it maps to >2 transcripts.' % read.query_name)
+                annot.append([read.query_name, 'novel junction; multimap', chrom1, pos1, chrom2, pos2,
+                              pos2 - pos1, cpos1, cpos2, strand, 0, ''])
+                continue
+
+            for tx_read in tx_reads:
+                is_softclip = [o == 4 for o,v in tx_read.cigar]
+                if not any(is_softclip):
+                    continue
+                sc_start = is_softclip[0]
+                if is_softclip[0] and is_softclip[-1]:
+                    sc_start = tx_read.cigar[0][1] > tx_read.cigar[-1][1]
+                    #TODO: include both ends?
+                    print('WARNING: contig %s is soft-clipped at both ends. Picking the longest soft-clip for annotation.' % read.query_name)
+                var_seq = str(tx_read.query_sequence)
+                sc_size = tx_read.cigar[0][1] if sc_start else tx_read.cigar[-1][1]
+                var_seq = var_seq[:sc_size] if sc_start else var_seq[-sc_size:]
+                if read.is_reverse != tx_read.is_reverse:
+                    var_seq = reverse_complement(var_seq)
+                cpos1 = 0 if sc_start else len(tx_read.query_sequence) - sc_size
+                cpos2 = cpos1 + sc_size
+
+            csize = len(var_seq)
+            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, pos2 - pos1, cpos1, cpos2, strand, csize, var_seq])
             print('novel junction at pos %s:%s-%s (cigar string = %s)' % (chrom1, junc[1], junc[2], read.cigarstring))
 
     return(annot)
@@ -261,6 +308,7 @@ for read in sam.fetch():
 
 sam.close()
 outbam.close()
+tx_bam.close()
 
 outdir = os.path.dirname(outbam_file)
 outdir = '.' if outdir == '' else outdir
