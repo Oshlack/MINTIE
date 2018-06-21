@@ -72,16 +72,6 @@ ds_output = None
 if annotate != '':
     ds_output = pd.read_csv(annotate, sep='\t')
 
-def reverse_complement(seq):
-    base_lookup = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
-    if seq == '':
-        return ''
-    if type(seq) == float and math.isnan(seq):
-        return ''
-    seq = seq[::-1]
-    seq = ''.join([base_lookup[base] for base in list(seq)])
-    return(seq)
-
 def get_juncs(tx):
     '''
     return list of junctions in form
@@ -193,8 +183,6 @@ def annotate_contig(read, tx_juncs):
                 var_seq = str(tx_read.query_sequence)
                 sc_size = tx_read.cigar[0][1] if sc_start else tx_read.cigar[-1][1]
                 var_seq = var_seq[:sc_size] if sc_start else var_seq[-sc_size:]
-                if read.is_reverse != tx_read.is_reverse:
-                    var_seq = reverse_complement(var_seq)
                 cpos1 = 0 if sc_start else len(tx_read.query_sequence) - sc_size
                 cpos2 = cpos1 + sc_size
 
@@ -308,7 +296,8 @@ for read in sam.fetch():
 
 sam.close()
 outbam.close()
-tx_bam.close()
+if tx_align != '' :
+    tx_bam.close()
 
 outdir = os.path.dirname(outbam_file)
 outdir = '.' if outdir == '' else outdir
