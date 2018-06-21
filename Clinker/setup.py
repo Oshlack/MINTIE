@@ -170,8 +170,8 @@ def superTranscriptIndex(st_file):
             # remove the gene indicator, ">", spaces and breaks
             line_parts = line.split(" ")
             gene_name = general.stripStringChars(line_parts[0], ["\n", ">"])
-            exon_coordinates = line_parts[1].strip("segs:")
-            exon_names = line_parts[2].strip("names:").strip()
+            exon_coordinates = line_parts[1].split("segs:")[-1].strip()
+            exon_names = line_parts[2].split("names:")[-1].strip()
             st_genes[gene_name] = ""
 
             # Start collating a new sequence
