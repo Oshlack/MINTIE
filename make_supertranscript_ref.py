@@ -75,7 +75,6 @@ def split_block(nc_row, gene_out, seq, block, gpos1, gpos2):
     return gene_out, block_seqs
 
 novel_contigs = pd.read_csv(nc_file, sep='\t')
-#novel_contigs = novel_contigs[novel_contigs.variant != 'soft-clip']
 exon_df =  pd.read_csv(blocks, sep='\t', header = None, names = ['chrom', 'start', 'end', 'name', 'value', 'strand'])
 exon_df[['gene', 'blocks']] = exon_df['name'].str.split(' ', expand=True)
 
@@ -108,8 +107,6 @@ for gene in genes:
         continue
     antisense = True if gene_out.strand.values[0]=='-' else False
 
-    #contigs_with_novel_bits = nc[nc.contig_varsize.values > 0]
-    #if any(nc.contig_varsize.values > 0):
     for idx, nc_row in nc.iterrows():
         seq = contig_seqs[nc_row['contig']]
         csize = nc_row.contig_varsize
@@ -118,16 +115,16 @@ for gene in genes:
 
         gpos1, gpos2 = nc_row.genome_pos1, nc_row.genome_pos2
         blocks_affected = []
-        #TODO: special case for fusions and junctions
-        if nc_row.variant in ['novel junction']:
-            continue
 
         chrom = 'MT' if nc_row.chrom1 == 'chrM' else nc_row.chrom1.split('chr')[1]
         gene_strand = '-' if antisense else '+'
-        novel_seq = nc_row.variant_seq if nc_row.contig_align_strand == gene_strand else reverse_complement(nc_row.variant_seq)
+        novel_seq = nc_row.variant_seq
+        if nc_row.variant not in ['novel junction'] and antisense:
+            novel_seq = reverse_complement(nc_row.variant_seq)
         novel_seq_info = (chrom, gpos1, gpos2, gene_out.strand.values[0])
 
         blocks_affected = pd.DataFrame()
+        #TODO: handle novel sequence in fusions
         if nc_row.variant == 'fusion':
             chrom1 = 'MT' if nc_row.chrom1 == 'chrM' else nc_row.chrom1.split('chr')[1]
             chrom2 = 'MT' if nc_row.chrom2 == 'chrM' else nc_row.chrom2.split('chr')[1]
@@ -156,6 +153,19 @@ for gene in genes:
                 if len(blocks_affected) > 0:
                     block = blocks_affected.loc[blocks_affected.index.values[0]]
                     gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos, gpos)
+        elif nc_row.variant == 'novel junction':
+            if type(nc_row.variant_seq) is str and len(nc_row.variant_seq) == 0:
+                continue
+            elif type(nc_row.variant_seq) is float and math.isnan(nc_row.variant_seq):
+                continue
+            block_seqs['%s:%d-%d(%s)' % novel_seq_info] = str(novel_seq)
+            if len(blocks_affected) > 0:
+                block = blocks_affected.loc[blocks_affected.index.values[0]]
+                gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos1, gpos2)
+            else:
+                block = pd.DataFrame([[chrom, gpos1, gpos2, 'novel', '.', gene_strand,
+                                       'unknown', 'novel']], columns=gene_out.columns)
+                gene_out = gene_out.append(block, ignore_index=True)
         else:
             block_seqs['%s:%d-%d(%s)' % novel_seq_info] = str(novel_seq)
             blocks_affected = gene_df[np.logical_and(gene_df.start < gpos1, gene_df.end > gpos2)]
@@ -163,8 +173,8 @@ for gene in genes:
                 block = blocks_affected.loc[blocks_affected.index.values[0]]
                 gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos1, gpos2)
 
-    gene_out = gene_out.drop_duplicates().sort_values(by=['start', 'end'], ascending=False).reset_index() \
-                    if antisense else gene_out.drop_duplicates().sort_values(by=['start','end']).reset_index()
+    gene_out = gene_out.drop_duplicates().sort_values(by=['start', 'end'], ascending=False).reset_index(drop=True) \
+                    if antisense else gene_out.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
     seqs, names = [], []
     for idx,x in gene_out.iterrows():
         names.append(x['blocks'])

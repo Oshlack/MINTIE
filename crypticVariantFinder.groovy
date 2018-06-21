@@ -213,13 +213,15 @@ filter_on_significant_ecs = {
 annotate_diffspliced_contigs = {
    output.dir=branch.name
    ds_results = branch.name+"/eq_class_comp_diffsplice.txt"
+   tx_align = branch.name+"/filtered_contigs_against_txome.bam"
    produce("novel_contigs_annotated.txt", "novel_contigs.bam"){
       exec """
         module load samtools ;
         samtools view -H $output.dir/filtered_contigs_against_genome.bam > $output.dir/tmp.sam ;
         samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $input3 >> $output.dir/tmp.sam ;
-        python ${code_base}/filter_contigs.py $output.dir/tmp.sam $output.bam --splice_juncs $ann_info --annotate $ds_results ;
-        rm $output.dir/tmp.sam ;
+        python ${code_base}/filter_contigs.py $output.dir/tmp.sam $output.bam --splice_juncs $ann_info \
+            --annotate $ds_results --tx_align $tx_align ;
+        rm $output.dir/tmp.sam
       """
    }
 }
