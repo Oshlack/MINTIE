@@ -40,7 +40,8 @@ bootstrap_iters=1
 
 //Make a directory for each sample
 make_sample_dir= {
-   from("*.gz"){
+    output.dir=branch.name
+    from("*.gz"){
       output.dir=branch.name
       produce(branch.name+".ignore"){
          exec """
@@ -414,10 +415,15 @@ star_align = {
    }
 }
 
-//fastqInputFormat="%_L001_R*.fastq.gz"
-fastqInputFormat="%_R*.fastq.gz"
 
-run { fastqInputFormat * [make_sample_dir +
+if(!binding.variables.containsKey("fastqCaseFormat")){
+    fastqCaseFormat="cases/%_R*.fastq.gz"
+}
+if(!binding.variables.containsKey("fastqControlFormat")){
+    fastqControlFormat="controls/%_R*.fastq.gz"
+}
+
+run { fastqCaseFormat * [ make_sample_dir +
                           dedupe +
                           SOAPassemble +
                           align_contigs_against_genome +
@@ -425,15 +431,16 @@ run { fastqInputFormat * [make_sample_dir +
                           align_contigs_against_transcriptome +
                           filter_contigs_against_transcriptome +
                           create_salmon_index +
-                          [run_salmon, "controls/%.*.fastq.gz" * [ run_salmon.using(type:"controls") ]] +
+                          [run_salmon, fastqControlFormat * [ run_salmon.using(type:"controls") ]] +
                           create_ec_count_matrix +
                           run_diffsplice +
                           filter_on_significant_ecs +
                           annotate_diffspliced_contigs +
                           create_supertranscript_reference +
-                          annotate_supertranscript +
-                          make_supertranscript_gmap_reference +
-                          align_contigs_to_supertranscript +
-                          star_genome_gen +
-                          [star_align, "controls/%.*.fastq.gz" * [ star_align.using(type:"controls") ]]]
-}
+                          annotate_supertranscript ] }
+//                          make_super_supertranscript }
+//                          make_supertranscript_gmap_reference +
+//                         align_contigs_to_supertranscript +
+//                          star_genome_gen +
+//                          [star_align, fastqControlFormat * [ star_align.using(type:"controls") ]]]
+//}
