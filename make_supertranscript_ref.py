@@ -10,6 +10,8 @@ import math
 from Bio import SeqIO
 
 parser = argparse.ArgumentParser()
+parser.add_argument(dest='sample_name',
+                    help='''Sample name''')
 parser.add_argument(dest='contigs_fasta',
                     help='''Fasta file containing contig sequences''')
 parser.add_argument(dest='novel_contigs_file',
@@ -22,6 +24,7 @@ parser.add_argument(dest='output_fasta',
                     help='''Output supertranscript file''')
 
 args        = parser.parse_args()
+sample      = args.sample_name
 con_fasta   = args.contigs_fasta
 nc_file     = args.novel_contigs_file
 blocks      = args.block_bed
@@ -185,7 +188,7 @@ for gene in genes:
     seg_starts = np.concatenate([[0], seg_ends[:-1]])
     segs = ['%s-%s' % (s1+1, s2) for s1,s2 in zip(seg_starts, seg_ends)]
 
-    header = '>%s segs:%s names:%s\n' % (gene, ','.join(segs), ','.join(names))
+    header = '>%s_%s segs:%s names:%s\n' % (gene, sample, ','.join(segs), ','.join(names))
     sequence = ''.join(seqs) + '\n'
     with open(st_file, 'a') as st_fasta:
         st_fasta.writelines([header, sequence])
