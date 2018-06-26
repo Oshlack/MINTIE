@@ -229,28 +229,33 @@ annotate_diffspliced_contigs = {
 
 create_supertranscript_reference = {
    output.dir=branch.name
-   sample=branch.name.split('_')[0]
+   def sample=branch.name.split('_')[0]
    produce("tx_annotation.gtf", "supertranscript.fasta"){
       exec """
           module load bedtools ;
           echo "extracting relevant transcripts to gtf reference..." ;
-          cat $input1 | cut -f 1 | sed 1d | sort | uniq | awk '{split(\$0, x, "|")}{print x[1]"\\n"x[2]}' | sort | uniq | sed '/^ *\$/d' > $output.dir/gene_list.txt ;
+          cat $input1 | cut -f 1 | sed 1d | sort | uniq | awk '{split(\$0, x, "|")}{print x[1]"\\n"x[2]}' | \
+                sort | uniq | sed '/^ *\$/d' > $output.dir/gene_list.txt ;
           zcat < $tx_annotation | fgrep -wf $output.dir/gene_list.txt > $output1 ;
           echo "generating supertranscript blocks..." ;
           python ${code_base}/generate_st_blocks.py $output1 ${output.dir}/st_blocks.bed ;
           echo "extracting fasta sequence..." ;
           bedtools getfasta -fi $genome_fasta -bed ${output.dir}/st_blocks.bed -fo ${output.dir}/st_blocks.fasta -s ;
           echo "making supertranscripts..." ;
-          python ${code_base}/make_supertranscript_ref.py $sample $input.fasta $input1 ${output.dir}/st_blocks.bed ${output.dir}/st_blocks.fasta $output2 ;
+          python ${code_base}/make_supertranscript_ref.py $sample $input.fasta \
+                $input1 ${output.dir}/st_blocks.bed ${output.dir}/st_blocks.fasta $output2 ;
       """
    }
 }
 
 make_super_supertranscript = {
     output.dir='collated_output'
-    produce('supersupertranscript.fa'){
+    produce('novel_contigs_annotated.txt', 'supersupertranscript.fasta'){
         exec """
-            cat $inputs.fasta $ann_superTranscriptome > $output
+            cat $inputs.fasta > $output.fasta ;
+            file1=`echo "$inputs.txt" | cut -f1 -d' '` ;
+            head -1 \$file1 > $output.txt ;
+            for file in $inputs.txt; do sed 1d $file >> $output.txt ; done ;
         """
     }
 }
@@ -261,18 +266,17 @@ annotate_supertranscript = {
    output.dir=clinker_out+"/reference"
    produce("fst_reference.fasta"){
       exec """
-         python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7 -del t -header true -competitive true -st $input1 ;
+         python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7 -del t -header true -competitive true -st $input.fasta ;
       """
    }
 }
 
 make_supertranscript_gmap_reference = {
    //clinker_out=branch.name+"/clinker_out"
-   clinker_out='collated_output/clinker'
-   output.dir=branch.name
+   output.dir='collated_output/clinker/reference'
    produce("st_gmap_ref"){
       exec """
-         $gmap_build -s chrom -k 15 -d st_gmap_ref -D $branch.name $input.fasta ;
+         $gmap_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
       """
    }
 }

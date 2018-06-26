@@ -77,6 +77,22 @@ def split_block(nc_row, gene_out, seq, block, gpos1, gpos2):
 
     return gene_out, block_seqs
 
+def write_gene(gene_out, block_seqs, name, st_file):
+    seqs, names = [], []
+    for idx,x in gene_out.iterrows():
+        names.append(x['blocks'])
+        seq = str(block_seqs['%s:%d-%d(%s)' % (x.chrom, x.start, x.end, x.strand)])
+        seqs.append(seq)
+
+    seg_ends = np.cumsum([len(s) for s in seqs])
+    seg_starts = np.concatenate([[0], seg_ends[:-1]])
+    segs = ['%s-%s' % (s1+1, s2) for s1,s2 in zip(seg_starts, seg_ends)]
+
+    header = '>%s segs:%s names:%s\n' % (name, ','.join(segs), ','.join(names))
+    sequence = ''.join(seqs) + '\n'
+    with open(st_file, 'a') as st_fasta:
+        st_fasta.writelines([header, sequence])
+
 novel_contigs = pd.read_csv(nc_file, sep='\t')
 exon_df =  pd.read_csv(blocks, sep='\t', header = None, names = ['chrom', 'start', 'end', 'name', 'value', 'strand'])
 exon_df[['gene', 'blocks']] = exon_df['name'].str.split(' ', expand=True)
@@ -176,19 +192,15 @@ for gene in genes:
                 block = blocks_affected.loc[blocks_affected.index.values[0]]
                 gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos1, gpos2)
 
+    # write modified supertranscript
     gene_out = gene_out.drop_duplicates().sort_values(by=['start', 'end'], ascending=False).reset_index(drop=True) \
                     if antisense else gene_out.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
-    seqs, names = [], []
-    for idx,x in gene_out.iterrows():
-        names.append(x['blocks'])
-        seq = str(block_seqs['%s:%d-%d(%s)' % (x.chrom, x.start, x.end, x.strand)])
-        seqs.append(seq)
+    gene_normal = gene_df.drop_duplicates().sort_values(by=['start', 'end'], ascending=False).reset_index(drop=True) \
+                    if antisense else gene_df.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
 
-    seg_ends = np.cumsum([len(s) for s in seqs])
-    seg_starts = np.concatenate([[0], seg_ends[:-1]])
-    segs = ['%s-%s' % (s1+1, s2) for s1,s2 in zip(seg_starts, seg_ends)]
-
-    header = '>%s_%s segs:%s names:%s\n' % (gene, sample, ','.join(segs), ','.join(names))
-    sequence = ''.join(seqs) + '\n'
-    with open(st_file, 'a') as st_fasta:
-        st_fasta.writelines([header, sequence])
+    # only write normal gene if reference supertranscript is unmodified
+    if gene_out.equals(gene_normal):
+        write_gene(gene_normal, block_seqs, gene, st_file)
+    else:
+        write_gene(gene_out, block_seqs, '%s:%s' % (gene, sample), st_file)
+        write_gene(gene_normal, block_seqs, gene, st_file)

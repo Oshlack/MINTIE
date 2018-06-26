@@ -155,7 +155,6 @@ def superTranscriptIndex(st_file):
 
     # don't use readlines, commits whole file to memory
     for line in st_file:
-
         # if the first characters is >, gene name, else, sequence.
         first_char = line[0]
         if first_char == ">":
