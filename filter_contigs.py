@@ -344,12 +344,14 @@ else:
         novel_contigs = pd.DataFrame(novel_contigs, columns=cols)
         novel_contigs = pair_fusions(novel_contigs)
         novel_contigs = novel_contigs.merge(ds_output, left_on='contig', right_on='transcript', how='inner')
+        sample = os.path.dirname(annotate).split('/')[-1].split('_')[0]
+        novel_contigs['sample'] = sample
         output_cols = ['gene', 'contig', 'variant', 'chrom1', 'genome_pos1',
                        'chrom2', 'genome_pos2', 'size', 'contig_pos1',
                        'contig_pos2', 'contig_align_strand',
                        'contig_varsize', 'variant_seq', 'ec_names',
                        'contigs', 'padj', 'gene.FDR', 'UniqueCount',
-                       'AmbigCount', 'ambig_ratio']
+                       'AmbigCount', 'ambig_ratio', 'sample']
         novel_contigs = novel_contigs[output_cols].drop_duplicates()
         novel_contigs = novel_contigs.sort_values(by=['padj'])
         write_header = True

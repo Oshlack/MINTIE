@@ -202,5 +202,5 @@ for gene in genes:
     if gene_out.equals(gene_normal):
         write_gene(gene_normal, block_seqs, gene, st_file)
     else:
-        write_gene(gene_out, block_seqs, '%s:%s' % (gene, sample), st_file)
+        write_gene(gene_out, block_seqs, '%s_%s' % (gene, sample), st_file)
         write_gene(gene_normal, block_seqs, gene, st_file)

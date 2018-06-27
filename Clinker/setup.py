@@ -49,7 +49,7 @@ def programInput(user_input):
                 print("ERROR: " + user_input[argument] + " is not a valid argument. Please use the following options:\n")
                 print("-in (path/to/fusions OR custom, space delimited list)")
                 print("-out (path/to/results_folder)")
-                print("-pos (1 2 3 4 - columns for chr1 start chr2 start for your input -in)")
+                print("-pos (1 2 3 4 5 - columns for chr1 start chr2 start sample for your input -in)")
                 print("-st (path/to/st/resources, default 'resources')\n")
                 sys.exit(1)
 
@@ -100,7 +100,7 @@ def programInput(user_input):
         fusion_input = False
 
     if "pos" not in locals():
-        pos = [1, 2, 3, 4]
+        pos = [1, 2, 3, 4, 5]
 
     if "header" not in locals() or "fusion_input" not in locals():
         print("Assuming header in fusion caller output. Change with -header true/false")

@@ -52,7 +52,7 @@ else:
 if "pos" in locals():
 	fusions = fusiontools.createFusionList(fusion_results, pos, gene_list_location, st_genes, header, delimiter)
 else:
-	pos = [1, 2, 3, 4]
+	pos = [1, 2, 3, 4, 5]
 	fusions = fusiontools.createFusionList(fusion_results, pos, gene_list_location, st_genes, header, delimiter)
 
 # Create the results folder structure

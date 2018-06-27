@@ -343,7 +343,7 @@ def createAnnotationFiles(fusions, st_genes, annotation_folder):
         gene_1_blocks = st_genes[fusion.gene_name_1][2].split(",")
 
         exon_no = 0
-        sep = ':' if fusion.gene_name_2 != '' else ''
+        sep = '__' if fusion.gene_name_2 != '' else ''
 
         for exons, block in zip(gene_1_exons, gene_1_blocks):
 
@@ -469,12 +469,13 @@ def createFusionList(fusion_results, pos, gene_list_location, st_genes, header, 
             # Map gene names from breakpoint coordinates
             #gene_1 = mapGene(chromosomes, chr_1, bp_1, total)
             #gene_2 = mapGene(chromosomes, chr_2, bp_2, total)
+            sample = columns[int(pos[-1])-1].strip()
             contig = columns[0].split('|')
-            gene_1 = contig[0]
-            gene_2 = contig[1] if len(contig) > 1 else ''
+            gene_1 = contig[0]+'_'+sample
+            gene_2 = contig[1]+'_'+sample if len(contig) > 1 else ''
 
         else:
-            gene_entry = line.split(":")
+            gene_entry = line.split("__")
 
             gene_1 = gene_entry[0]
             gene_2 = gene_entry[1]
@@ -522,17 +523,16 @@ def createFusionList(fusion_results, pos, gene_list_location, st_genes, header, 
 def createFusionFasta(fusions, reference_folder, st_genes, competitive):
 
     fusion_st_fasta = open(reference_folder+'/fst_reference.fasta','w')
-    first_line = True
 
+    output_fusions = []
     for fusion in fusions.list:
-        if not first_line:
-            fusion_st_fasta.write("\n")
-        else:
-            first_line = False
-
-        sep = ':' if fusion.gene_name_2 != '' else ''
-        fusion_st_fasta.write(">" + fusion.gene_name_1 + sep + fusion.gene_name_2 + "\n")
-        fusion_st_fasta.write(fusion.fused_sequence)
+        sep = '__' if fusion.gene_name_2 != '' else ''
+        fusion_name = fusion.gene_name_1 + sep + fusion.gene_name_2
+        # skip fusions that create the same gene name
+        if fusion_name not in output_fusions:
+            output_fusions.append(fusion_name)
+            fusion_st_fasta.write(">" + fusion_name + "\n")
+            fusion_st_fasta.write(fusion.fused_sequence + "\n")
 
 
     # Add competitive
@@ -542,9 +542,10 @@ def createFusionFasta(fusions, reference_folder, st_genes, competitive):
 
             try:
                 st_seq = st_genes[key][0]
-
-                fusion_st_fasta.write(">" + key + "\n")
-                fusion_st_fasta.write(str(st_seq) + "\n")
+                if key not in output_fusions:
+                    output_fusions.append(key)
+                    fusion_st_fasta.write(">" + key + "\n")
+                    fusion_st_fasta.write(str(st_seq) + "\n")
             except:
                 print(st_genes[key])
 

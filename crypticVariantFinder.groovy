@@ -213,8 +213,8 @@ filter_on_significant_ecs = {
 
 annotate_diffspliced_contigs = {
    output.dir=branch.name
-   ds_results = branch.name+"/eq_class_comp_diffsplice.txt"
-   tx_align = branch.name+"/filtered_contigs_against_txome.bam"
+   def ds_results = branch.name+"/eq_class_comp_diffsplice.txt"
+   def tx_align = branch.name+"/filtered_contigs_against_txome.bam"
    produce("novel_contigs_annotated.txt", "novel_contigs.bam"){
       exec """
         module load samtools ;
@@ -266,7 +266,9 @@ annotate_supertranscript = {
    output.dir=clinker_out+"/reference"
    produce("fst_reference.fasta"){
       exec """
-         python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7 -del t -header true -competitive true -st $input.fasta ;
+         python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7,21 \
+            -del t -header true -competitive true -st $input.fasta ;
+         faidx $output ;
       """
    }
 }
@@ -282,12 +284,12 @@ make_supertranscript_gmap_reference = {
 }
 
 align_contigs_to_supertranscript = {
-   clinker_out=branch.name+"/clinker_out"
-   output.dir=branch.name
-   produce("novel_contigs_st_aligned.bam"){
+   output.dir="collated_output/clinker/alignment"
+   index_dir="collated_output/clinker/reference"
+   produce(branch.name+"_novel_contigs_st_aligned.bam"){
       exec """
          outfile=$output ; basename="\${outfile%.*}" ;
-         $gmap -D $output.dir -d st_gmap_ref -f samse -t $threads -n 0 ${branch.name}/diffspliced_contigs.fasta > \${basename}.sam ;
+         $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${branch.name}/diffspliced_contigs.fasta > \${basename}.sam ;
          module load samtools;
          samtools view -hb \${basename}.sam > \${basename}_unsort.bam ;
          samtools sort \${basename}_unsort.bam > $output ;
@@ -298,11 +300,8 @@ align_contigs_to_supertranscript = {
 
 star_genome_gen = {
     doc "Generate STAR genome index"
-
-    output.dir = branch.name+"/clinker_out"
+    output.dir="collated_output/clinker/"
     genome_folder = output.dir+"/genome"
-
-    // Generate Fusion SuperTranscriptome Genome for STAR
     produce("$genome_folder/Genome") {
         exec """module load star ;
                 STAR --runMode genomeGenerate
@@ -314,104 +313,22 @@ star_genome_gen = {
     }
 }
 
-//star_align = {
-//    doc "Map paired-end reads using the STAR aligner: 1st pass"
-//
-//    //Map paired-end reads using the STAR aligner: 1st pass
-//    from("*.fastq.gz") {
-//        transform("(.*)_R1.fastq.gz","(.*)_R2.fastq.gz"){
-//
-//            // Setup stage
-//            files = inputs.toString()
-//            output.dir = branch.name+"/clinker_out/alignment"
-//            String bam = "$output.dir/Aligned.sortedByCoord.out.bam"
-//
-//            // Align to fusion SuperTranscriptome
-//            produce("$bam"){
-//                exec """module load star ; STAR --genomeDir $genome_folder
-//                    --readFilesIn ${files}
-//                    --readFilesCommand gunzip -c
-//                    --outSAMtype BAM SortedByCoordinate
-//                    --runThreadN $threads
-//                    --outFileNamePrefix "$output.dir/"
-//                    --limitBAMsortRAM $genome_mem
-//                    --outWigType bedGraph
-//                    --outWigNorm RPM
-//                    --genomeSAindexNbases 5
-//                    --outWigStrand Unstranded ;
-//                    module load samtools ;
-//                    samtools index $bam
-//                """, "star1pass"
-//            }
-//        }
-//    }
-//}
-//
-//run_lace = {
-//   output.dir=branch.name
-////       source /group/bioi1/nadiad/software/anaconda2/bin/activate lace ;
-//   produce('SuperDuper.fasta'){
-//    exec """
-//       module load blat ;
-//       if [ ! -d $output.dir/lace ]; then mkdir $output.dir/lace ; fi ;
-//       python /group/bioi1/nadiad/software/Lace/Lace.py
-//          --cores $threads
-//          --outputDir $output.dir/lace
-//          $input.fasta $input.groupings ;
-//       mv $output.dir/lace/SuperDuper.fasta $output ;
-//       rm -rf $output.dir/lace
-//    """
-//   }
-//}
-//
-//annotate_superTranscript = {
-//   output.dir=branch.name
-//   produce("SuperDuper-Ann.gtf","SuperDuper-Ass.gtf","SuperDuper-Ann.juncs"){
-//      exec """
-//         module load blat ;
-//         module load bedops ;
-//         module load bedtools ;
-//         module load fastx-toolkit ;
-//         blat $input.fasta $trans_fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ann.psl ;
-//         $code_base/psl2gtf $output.dir/SuperDuper-Ann.psl | bedtools sort | awk '{if(length(\$1)<128){print \$0}}' > $output1 ;
-//         blat $input.fasta $output.dir/filtered_contigs_against_txome.fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper-Ass.psl ;
-//         $code_base/psl2gtf $output.dir/SuperDuper-Ass.psl | bedtools sort > $output2 ;
-//         $code_base/psl2sjdbFileChrStartEnd $output.dir/SuperDuper-Ann.psl > $output3 ;
-//      """
-//   }
-//}
-//         //blat $input.fasta $genome_fasta -minScore=30 -minIdentity=98 $output.dir/SuperDuper_against_genome.psl ;
-//         //python annotate_supertranscript.py $output.dir/SuperDuper_against_genome.psl $gtf_tx $output4;
-//         //$gtf2bed < $output1 > $output3 ; $gtf2bed < $output2 > $output4 ;
-//         //$bedops -p $output3 $output4 | cut -f1-3 | uniq - | awk '{if(\$3 - \$2 > 2){print}}' - > $output5 ;
-//         //python $code_base/get_intersect_bed.py $output3 $output4 $output5 > $output7 ;
-//
-//build_STAR_reference = {
-//    output.dir=branch.name+"/STARRef"
-//    produce("Genome"){
-//        exec """
-//            module load star ;
-//            cd $branch.name ;
-//            if [ ! -d STARRef ]; then mkdir STARRef ; fi ;
-//            STAR --runMode genomeGenerate --genomeDir STARRef --sjdbFileChrStartEnd ../$input.juncs
-//                --sjdbOverhang 99 --genomeFastaFiles ../$input.fasta  --runThreadN $threads  --genomeSAindexNbases 5 ;
-//        """
-//    }
-//}
-
 star_align = {
-   output.dir=branch.parent.name+"/clinker_out/alignment/"
+   //output.dir=branch.parent.name+"/clinker_out/alignment/"
+   output.dir="collated_output/clinker/alignment/"
    def workingDir=System.getProperty("user.dir");
    def read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
    def sample_name=read_files.split()[0].split('/').last().split('\\.').first()
    def out_prefix=output.dir+'/'+sample_name
    if(type=="controls"){
-        output.dir=branch.parent.parent.name+"/clinker_out/alignment/controls/"
+        //output.dir=branch.parent.parent.name+"/clinker_out/alignment/controls/"
+        output.dir="collated_output/clinker/alignment/controls/"
         out_prefix=output.dir+'/'+sample_name
    }
    produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
+        //mkdir -p $output.dir ;
         exec """
-        mkdir -p $output.dir ;
+        rm -rf ${out_prefix}_STARtmp ;
         module load star ;
         module load samtools ;
         time STAR --genomeDir $genome_folder
@@ -455,12 +372,8 @@ run { fastqCaseFormat * [ make_sample_dir +
                           create_supertranscript_reference ] +
        make_super_supertranscript +
        annotate_supertranscript +
-       make_supertranscript_gmap_reference
-    }
-    //                      annotate_supertranscript +
-//                          make_super_supertranscript }
-//                          make_supertranscript_gmap_reference +
-//                         align_contigs_to_supertranscript +
-//                          star_genome_gen +
-//                          [star_align, fastqControlFormat * [ star_align.using(type:"controls") ]]]
-//}
+       make_supertranscript_gmap_reference +
+       star_genome_gen +
+       fastqCaseFormat * [ align_contigs_to_supertranscript, star_align] +
+       fastqControlFormat * [ star_align.using(type:"controls") ]
+}
