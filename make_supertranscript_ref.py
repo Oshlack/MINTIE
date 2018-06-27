@@ -48,16 +48,16 @@ def split_block(nc_row, gene_out, seq, block, gpos1, gpos2):
     left_seq = seq[:block.end-gpos2] if antisense else seq[:gpos1-block.start]
     right_seq = seq[block.end-gpos1:] if antisense else seq[gpos2-block.start:]
     add_blocks = []
-
+    variant = nc_row.variant.replace(' ', '_')
     if nc_row.contig_varsize > 0:
-        novel_block = pd.DataFrame([[block.chrom, gpos1, gpos2, '%s %s' % (gene, nc_row.variant),
-                                    block.value, block.strand, block.gene, nc_row.variant]], columns=gene_out.columns)
+        novel_block = pd.DataFrame([[block.chrom, gpos1, gpos2, '%s %s' % (gene, variant),
+                                    block.value, block.strand, block.gene, variant]], columns=gene_out.columns)
         add_blocks = [novel_block]
     else:
         var_seq = seq[block.end-gpos2:block.end-gpos1] if antisense else seq[gpos1-block.start:gpos2-block.start] #actually a reference sequence
         block_seqs['%s:%d-%d(%s)' % novel_seq_info] = str(var_seq)
-        var_block = pd.DataFrame([[block.chrom, gpos1, gpos2, '%s %s|%s' % (gene, nc_row.variant, block['blocks']),
-                                   block.value, block.strand, block.gene, '%s|%s' % (nc_row.variant, block['blocks'])]], columns=gene_out.columns)
+        var_block = pd.DataFrame([[block.chrom, gpos1, gpos2, '%s %s|%s' % (gene, variant, block['blocks']),
+                                   block.value, block.strand, block.gene, '%s|%s' % (variant, block['blocks'])]], columns=gene_out.columns)
         add_blocks = [var_block]
 
     if gpos1 - block.start != 0:
@@ -178,6 +178,7 @@ for gene in genes:
             elif type(nc_row.variant_seq) is float and math.isnan(nc_row.variant_seq):
                 continue
             block_seqs['%s:%d-%d(%s)' % novel_seq_info] = str(novel_seq)
+            blocks_affected = gene_df[np.logical_and(gene_df.start < gpos1, gene_df.end > gpos2)]
             if len(blocks_affected) > 0:
                 block = blocks_affected.loc[blocks_affected.index.values[0]]
                 gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos1, gpos2)
