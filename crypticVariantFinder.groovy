@@ -286,10 +286,12 @@ make_supertranscript_gmap_reference = {
 align_contigs_to_supertranscript = {
    output.dir="collated_output/clinker/alignment"
    index_dir="collated_output/clinker/reference"
-   produce(branch.name+"_novel_contigs_st_aligned.bam"){
+   //TODO: this needs to play nicely with the given mask for cases
+   def sample_name=inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
+   produce(sample_name+"_novel_contigs_st_aligned.bam"){
       exec """
          outfile=$output ; basename="\${outfile%.*}" ;
-         $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${branch.name}/diffspliced_contigs.fasta > \${basename}.sam ;
+         $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${sample_name}/diffspliced_contigs.fasta > \${basename}.sam ;
          module load samtools;
          samtools view -hb \${basename}.sam > \${basename}_unsort.bam ;
          samtools sort \${basename}_unsort.bam > $output ;
