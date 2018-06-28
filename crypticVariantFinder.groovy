@@ -229,7 +229,6 @@ annotate_diffspliced_contigs = {
 
 create_supertranscript_reference = {
    output.dir=branch.name
-   def sample=branch.name.split('_')[0]
    produce("tx_annotation.gtf", "supertranscript.fasta"){
       exec """
           module load bedtools ;
@@ -242,7 +241,7 @@ create_supertranscript_reference = {
           echo "extracting fasta sequence..." ;
           bedtools getfasta -fi $genome_fasta -bed ${output.dir}/st_blocks.bed -fo ${output.dir}/st_blocks.fasta -s ;
           echo "making supertranscripts..." ;
-          python ${code_base}/make_supertranscript_ref.py $sample $input.fasta \
+          python ${code_base}/make_supertranscript_ref.py $input.fasta \
                 $input1 ${output.dir}/st_blocks.bed ${output.dir}/st_blocks.fasta $output2 ;
       """
    }
@@ -266,7 +265,7 @@ annotate_supertranscript = {
    output.dir=clinker_out+"/reference"
    produce("fst_reference.fasta"){
       exec """
-         python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7,21 \
+         python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7,22 \
             -del t -header true -competitive true -st $input.fasta ;
          faidx $output ;
       """

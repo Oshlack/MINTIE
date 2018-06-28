@@ -7,11 +7,10 @@ import pandas as pd
 import numpy as np
 import gffutils
 import math
+import os
 from Bio import SeqIO
 
 parser = argparse.ArgumentParser()
-parser.add_argument(dest='sample_name',
-                    help='''Sample name''')
 parser.add_argument(dest='contigs_fasta',
                     help='''Fasta file containing contig sequences''')
 parser.add_argument(dest='novel_contigs_file',
@@ -24,12 +23,12 @@ parser.add_argument(dest='output_fasta',
                     help='''Output supertranscript file''')
 
 args        = parser.parse_args()
-sample      = args.sample_name
 con_fasta   = args.contigs_fasta
 nc_file     = args.novel_contigs_file
 blocks      = args.block_bed
 block_fasta = args.block_fasta
 st_file     = args.output_fasta
+sample      = os.path.dirname(con_fasta).split('/')[-1].split('_')[0]
 
 # for reverse-complementing
 lookup = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
@@ -177,12 +176,31 @@ for gene in genes:
                 continue
             elif type(nc_row.variant_seq) is float and math.isnan(nc_row.variant_seq):
                 continue
-            block_seqs['%s:%d-%d(%s)' % novel_seq_info] = str(novel_seq)
-            blocks_affected = gene_df[np.logical_and(gene_df.start < gpos1, gene_df.end > gpos2)]
-            if len(blocks_affected) > 0:
-                block = blocks_affected.loc[blocks_affected.index.values[0]]
-                gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos1, gpos2)
+
+            # determine whether novel sequence should be inserted on left or right of an exon
+            on_sense = nc_row.contig_align_strand == '+'
+            seq_on_contig_start = (nc_row.contig_pos1 == 0)
+            left_side = (on_sense and seq_on_contig_start) or (not on_sense and not seq_on_contig_start)
+
+            left_affected_block = gene_df[np.logical_and(gene_df.start < gpos1, gene_df.end > gpos1)]
+            right_affected_block = gene_df[np.logical_and(gene_df.start < gpos2, gene_df.end > gpos2)]
+
+            if len(left_affected_block) > 0 or len(right_affected_block) > 0:
+                affected_blocks = left_affected_block.append(right_affected_block).drop_duplicates()
+                if left_side:
+                    gpos2 = affected_blocks.start.values[0]
+                    gpos1 = gpos2
+                else:
+                    gpos1 = affected_blocks.end.values[0]
+                    gpos2 = gpos1
+
+                novel_seq_info = (chrom, gpos1, gpos2, gene_out.strand.values[0])
+                block_seqs['%s:%d-%d(%s)' % novel_seq_info] = str(novel_seq)
+                block = pd.DataFrame([[chrom, gpos1, gpos2, 'novel', '.', gene_strand,
+                                       'novel_junction', 'novel']], columns=gene_out.columns)
+                gene_out = gene_out.append(block, ignore_index=True)
             else:
+                block_seqs['%s:%d-%d(%s)' % novel_seq_info] = str(novel_seq)
                 block = pd.DataFrame([[chrom, gpos1, gpos2, 'novel', '.', gene_strand,
                                        'unknown', 'novel']], columns=gene_out.columns)
                 gene_out = gene_out.append(block, ignore_index=True)
