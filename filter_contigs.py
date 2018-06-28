@@ -90,7 +90,7 @@ def annotate_contig(read, tx_juncs):
     '''
     gap_idxs = [idx for idx, gap in enumerate(read.cigar) if gap[0] in gaps and gap[1] >= gap_min]
     clip_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] in clips and clip[1] >= gap_min]
-    #contig_juncs = [] if tx_juncs is None else [txj for txj in tx_juncs if txj not in juncs]
+    contig_size = sum([v for c,v in read.cigar if c in [0, 1, 4, 5]]) # count if match, insertion or clip
 
     annot, var_seq = [], ''
     match_idxs = [idx for idx,cig in enumerate(read.cigar) if cig[0] == 0]
@@ -120,7 +120,7 @@ def annotate_contig(read, tx_juncs):
                 seq_pos2 = seq_pos1 + csize
                 var_seq = read.query_sequence[seq_pos1:seq_pos2]
 
-            annot.append([read.query_name, gtype, chrom1, pos1, chrom2, pos2, size, cpos1, cpos2, strand, csize, var_seq])
+            annot.append([read.query_name, gtype, chrom1, pos1, chrom2, pos2, contig_size, size, cpos1, cpos2, strand, csize, var_seq])
             print('%d %s at pos %s:%d-%d (cigar string = %s)' % (size, gtype, chrom1, pos1, pos2, read.cigarstring))
 
     if len(clip_idxs) > 0:
@@ -143,7 +143,7 @@ def annotate_contig(read, tx_juncs):
                 seq_pos2 = seq_pos1 + csize
                 var_seq = read.query_sequence[seq_pos1:seq_pos2]
 
-            annot.append([read.query_name, gtype, chrom1, pos1, chrom1, pos1, size, cpos1, cpos2, strand, csize, var_seq])
+            annot.append([read.query_name, gtype, chrom1, pos1, chrom1, pos1, contig_size, size, cpos1, cpos2, strand, csize, var_seq])
             print('%d bp %s at pos %s:%d (cigar string = %s)' % (size, gtype, chrom1, pos1, read.cigarstring))
 
     if len(tx_juncs) > 0:
@@ -161,14 +161,14 @@ def annotate_contig(read, tx_juncs):
 
             if not tx_bam:
                 annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2,
-                              pos2 - pos1, cpos1, cpos2, strand, 0, ''])
+                              contig_size, pos2 - pos1, cpos1, cpos2, strand, 0, ''])
                 continue
 
             tx_reads = [tx_read for tx_read in tx_idx.find(read.query_name)]
             if len(tx_reads) > 2:
                 print('WARNING: cannot annotate contig %s because it maps to >2 transcripts.' % read.query_name)
                 annot.append([read.query_name, 'novel junction; multimap', chrom1, pos1, chrom2, pos2,
-                              pos2 - pos1, cpos1, cpos2, strand, 0, ''])
+                              contig_size, pos2 - pos1, cpos1, cpos2, strand, 0, ''])
                 continue
 
             for tx_read in tx_reads:
@@ -187,7 +187,7 @@ def annotate_contig(read, tx_juncs):
                 cpos2 = cpos1 + sc_size
 
             csize = len(var_seq)
-            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, pos2 - pos1, cpos1, cpos2, strand, csize, var_seq])
+            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, contig_size, pos2 - pos1, cpos1, cpos2, strand, csize, var_seq])
             print('novel junction at pos %s:%s-%s (cigar string = %s)' % (chrom1, junc[1], junc[2], read.cigarstring))
 
     return(annot)
@@ -339,7 +339,7 @@ else:
     annot = ''
     if annotate != '':
         cols = ['contig', 'variant', 'chrom1', 'genome_pos1', 'chrom2', \
-                'genome_pos2', 'size', 'contig_pos1', 'contig_pos2', \
+                'genome_pos2', 'contig_size', 'genome_varsize', 'contig_pos1', 'contig_pos2', \
                 'contig_align_strand', 'contig_varsize', 'variant_seq']
         novel_contigs = pd.DataFrame(novel_contigs, columns=cols)
         novel_contigs = pair_fusions(novel_contigs)
@@ -347,8 +347,8 @@ else:
         sample = os.path.dirname(annotate).split('/')[-1].split('_')[0]
         novel_contigs['sample'] = sample
         output_cols = ['gene', 'contig', 'variant', 'chrom1', 'genome_pos1',
-                       'chrom2', 'genome_pos2', 'size', 'contig_pos1',
-                       'contig_pos2', 'contig_align_strand',
+                       'chrom2', 'genome_pos2', 'contig_size', 'genome_varsize',
+                       'contig_pos1', 'contig_pos2', 'contig_align_strand',
                        'contig_varsize', 'variant_seq', 'ec_names',
                        'contigs', 'padj', 'gene.FDR', 'UniqueCount',
                        'AmbigCount', 'ambig_ratio', 'sample']
