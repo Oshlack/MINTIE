@@ -188,9 +188,9 @@ create_ec_count_matrix = {
 }
 
 run_diffsplice = {
-   case_name = branch.name
    output.dir = branch.name
-   salmon_dir = branch.name+"/salmon_out/aux_info"
+   def case_name = branch.name
+   def salmon_dir = branch.name+"/salmon_out/aux_info"
    produce("eq_class_comp_diffsplice.txt"){
       exec """
         module load R/3.3.2 ;
