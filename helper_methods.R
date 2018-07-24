@@ -1,4 +1,5 @@
 library(dplyr)
+library(data.table)
 
 match_tx_to_genes <- function(ec_matrix, grp_novel, genes_tx) {
     ec_matrix$tx_id <- ec_matrix$transcript
@@ -84,16 +85,23 @@ get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
 
 run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2) {
     tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
-    info <- distinct(full_info[,!colnames(full_info)%in%'transcript'])
-    info <- info[info$gene%in%int_genes,] #consider only ECs mapping to interesting genes
+    info <- distinct(full_info[full_info$gene%in%int_genes, !colnames(full_info)%in%'transcript'])
+    print(head(info))
+
+    # collapse reference equivalence classes
+    print('Collapsing reference equivalence classes')
+    info$ec <- 'reference'
+    info$ec[info$ec_names%in%select_ecs] <- info$ec_names[info$ec_names%in%select_ecs]
+    info <- data.table(info[,!colnames(info)%in%'ec_names'])[, lapply(.SD, sum), by=c('gene','ec')]
+    colnames(info)[colnames(info)=='ec'] <- 'ec_names'
 
     results <- NULL
     print('Performing differential splicing analysis with DEXSeq...')
     start.time <- Sys.time(); print(start.time)
 
-    counts <- info[,!colnames(info)%in%c('ec_names','gene')]
+    counts <- data.frame(info)[,!colnames(info)%in%c('ec_names','gene')]
     counts <- as.matrix(apply(counts, 2, as.numeric))
-    genes <- info[,c('gene', 'ec_names')]
+    genes <- data.frame(info)[,c('gene', 'ec_names')]
 
     keep <- rowSums(cpm(counts) > cpm_cutoff) >= 1
     counts <- counts[keep,]
@@ -110,16 +118,14 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
     BPPARAM=MulticoreParam(workers=threads)
     dx <- DEXSeqDataSet(counts, sampleData = sampleTable,
                         groupID = genes$gene, featureID = genes$ec_names)
-
     dx <- estimateSizeFactors(dx)
 
-    print('Estimating dispersions...')
-    dx <- estimateDispersions(dx, BPPARAM=BPPARAM)
+    #print('Estimating dispersions...')
+    #dx <- estimateDispersions(dx, BPPARAM=BPPARAM)
+    #dx <- testForDEU(dx)
+    #dx <- estimateExonFoldChanges(dx)
 
     print('Performing DEU test...')
-    dx <- testForDEU(dx)
-    dx <- estimateExonFoldChanges(dx)
-
     dxr <- DEXSeq(dx, BPPARAM=BPPARAM)
     pgq <- perGeneQValue(dxr)
     pgq <- data.frame(gene=names(pgq), gene.FDR=pgq)
