@@ -112,7 +112,8 @@ rm(ec_matrix); gc()
 
 #print('Performing differential splicing analysis...')
 #bs_results <- bootstrap_diffsplice(case_name, info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs, dirname(outfile))
-bs_results <- run_dexseq(case_name, info, int_genes, uniq_ecs, tx_to_ecs, dirname(outfile))
+#bs_results <- run_dexseq(case_name, info, int_genes, uniq_ecs, tx_to_ecs, dirname(outfile))
+bs_results <- run_edgeR(case_name, info, int_genes, uniq_ecs, tx_to_ecs, dirname(outfile))
 
 ################## compile and write results ##################
 
@@ -133,8 +134,8 @@ print('Compiling and writing results...')
 
 #concat_results <- concatenate_bs_results(bs_results, n_iters)
 concat_results <- bs_results
-concat_results <- left_join(concat_results, uac, by=c('ec_names','gene'))
-concat_results <- concat_results[order(concat_results$gene.FDR),]
+concat_results <- left_join(concat_results, uac, by=c('ec_names','gene','transcript'))
+concat_results <- concat_results[order(concat_results$FDR),]
 
 if (nrow(concat_results) > 0) {
     write.table(concat_results, outfile, row.names=F, quote=F, sep='\t')

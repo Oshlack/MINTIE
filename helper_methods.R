@@ -1,5 +1,6 @@
 library(dplyr)
 library(data.table)
+library(edgeR)
 
 match_tx_to_genes <- function(ec_matrix, grp_novel, genes_tx) {
     ec_matrix$tx_id <- ec_matrix$transcript
@@ -81,6 +82,72 @@ get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
     uac$ambig_ratio <- uac$AmbigCount / (uac$AmbigCount +  uac$UniqueCount)
 
     return(uac)
+}
+
+#TODO: write method for extracting counts matrix
+run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2, qval=0.05) {
+    tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
+    info <- distinct(full_info[full_info$gene%in%int_genes, !colnames(full_info)%in%'transcript'])
+    print(head(info))
+
+    # collapse reference equivalence classes
+    print('Collapsing reference equivalence classes')
+    info$ec <- 'reference'
+    info$ec[info$ec_names%in%select_ecs] <- info$ec_names[info$ec_names%in%select_ecs]
+    info <- data.table(info[,!colnames(info)%in%'ec_names'])[, lapply(.SD, sum), by=c('gene','ec')]
+    colnames(info)[colnames(info)=='ec'] <- 'ec_names'
+
+    results <- NULL
+    print('Performing differential splicing analysis with DEXSeq...')
+    start.time <- Sys.time(); print(start.time)
+
+    counts <- data.frame(info)[,!colnames(info)%in%c('ec_names','gene')]
+    counts <- as.matrix(apply(counts, 2, as.numeric))
+    genes <- data.frame(info)[,c('gene', 'ec_names')]
+
+    keep <- rowSums(cpm(counts) > cpm_cutoff) >= 1
+    counts <- counts[keep,]
+    genes <- genes[keep,]
+
+    group <- rep('control', ncol(counts))
+    group[colnames(counts)==case_name] <- 'cancer'
+    colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub('-', '_',x)}))
+
+    sampleTable <- data.frame(condition=factor(group, levels=c('control', 'cancer')))
+    rownames(sampleTable) <- colnames(counts)
+
+    dge <- DGEList(counts = counts, genes = paste(genes$ec_names, genes$gene), group = group)
+    dge <- calcNormFactors(dge)
+
+    des <- model.matrix(~group)
+    colnames(des)[2] <- 'cancer'
+
+    dge <- estimateGLMCommonDisp(dge, design=des, verbose=T)
+    dge <- estimateGLMTrendedDisp(dge, design=des)
+    dge <- estimateGLMTagwiseDisp(dge, design=des)
+    disp <- dge$common.dispersion
+
+    fit <- glmQLFit(dge, design=des)
+    qlf <- glmQLFTest(fit, coef=2)
+
+    top <- data.frame(topTags(qlf, n=Inf))
+    tmp <- data.frame(t(data.frame(strsplit(top$genes, ' '))))
+    colnames(tmp) <- c('ec_names', 'gene')
+    dx_df <- cbind(top, tmp)
+    dx_df <- merge(dx_df, tx_ec_gn, by=c('ec_names', 'gene'), all.x=T)
+
+    txs_in_ec <- data.frame(table(tx_ec_gn$ec_names))
+    txs_in_ec$Var1 <- as.character(txs_in_ec$Var1)
+    colnames(txs_in_ec) <- c('ec_names', 'n_txs_in_ec')
+
+    dx_df <- left_join(dx_df, txs_in_ec, by='ec_names')
+    dx_df <- left_join(dx_df, tx_to_ecs, by='ec_names')
+
+    # write full results
+    write.table(dx_df, file=paste(outdir, 'full_edgeR_results.txt', sep='/'), row.names=F, quote=F, sep='\t')
+    dx_df <- dx_df[dx_df$FDR<qval,]
+
+    return(dx_df)
 }
 
 run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2) {

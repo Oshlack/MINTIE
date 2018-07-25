@@ -350,10 +350,10 @@ else:
                        'chrom2', 'genome_pos2', 'contig_size', 'genome_varsize',
                        'contig_pos1', 'contig_pos2', 'contig_align_strand',
                        'contig_varsize', 'variant_seq', 'ec_names',
-                       'contigs', 'padj', 'gene.FDR', 'UniqueCount',
+                       'contigs', 'FDR', 'UniqueCount',
                        'AmbigCount', 'ambig_ratio', 'sample']
         novel_contigs = novel_contigs[output_cols].drop_duplicates()
-        novel_contigs = novel_contigs.sort_values(by=['padj'])
+        novel_contigs = novel_contigs.sort_values(by=['FDR'])
         write_header = True
         annot = '_annotated'
     else:
