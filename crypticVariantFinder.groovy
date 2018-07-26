@@ -265,7 +265,7 @@ annotate_supertranscript = {
    output.dir=clinker_out+"/reference"
    produce("fst_reference.fasta"){
       exec """
-         python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7,20 \
+         python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7,21 \
             -del t -header true -competitive true -st $input.fasta ;
          faidx $output ;
       """
