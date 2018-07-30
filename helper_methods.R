@@ -88,7 +88,6 @@ get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
 run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2, qval=0.05) {
     tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
     info <- distinct(full_info[full_info$gene%in%int_genes, !colnames(full_info)%in%'transcript'])
-    print(head(info))
 
     # collapse reference equivalence classes
     print('Collapsing reference equivalence classes')
@@ -111,6 +110,9 @@ run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, ou
 
     group <- rep('control', ncol(counts))
     group[colnames(counts)==case_name] <- 'cancer'
+    if(!'cancer'%in%group){
+        group[colnames(counts)==gsub('-','.',case_name)] <- 'cancer'
+    }
     colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub('-', '_',x)}))
 
     sampleTable <- data.frame(condition=factor(group, levels=c('control', 'cancer')))
