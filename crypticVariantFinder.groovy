@@ -170,7 +170,7 @@ run_salmon = {
    produce("eq_classes.txt"){
       exec """
         cd $output.dir/../.. ;
-        $salmon quant --dumpEq --gcBias --seqBias -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $base_outdir
+        $salmon quant --dumpEq --seqBias -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $base_outdir
      """, "run_salmon"
    }
 }
@@ -183,7 +183,7 @@ create_ec_count_matrix = {
    produce("ec_count_matrix.txt"){
       exec """
         python $code_base/create_ec_count_matrix.py $inputs $sample_names $output1 ;
-      """
+      """, "create_ec_count_matrix"
    }
 }
 
