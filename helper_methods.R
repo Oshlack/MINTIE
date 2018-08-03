@@ -97,7 +97,7 @@ run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, ou
     colnames(info)[colnames(info)=='ec'] <- 'ec_names'
 
     results <- NULL
-    print('Performing differential splicing analysis with DEXSeq...')
+    print('Performing differential expression analysis with edgeR...')
     start.time <- Sys.time(); print(start.time)
 
     counts <- data.frame(info)[,!colnames(info)%in%c('ec_names','gene')]
@@ -113,10 +113,8 @@ run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, ou
     if(!'cancer'%in%group){
         group[colnames(counts)==gsub('-','.',case_name)] <- 'cancer'
     }
+    group <- factor(group, levels=c('control', 'cancer'))
     colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub('-', '_',x)}))
-
-    sampleTable <- data.frame(condition=factor(group, levels=c('control', 'cancer')))
-    rownames(sampleTable) <- colnames(counts)
 
     dge <- DGEList(counts = counts, genes = paste(genes$ec_names, genes$gene), group = group)
     dge <- calcNormFactors(dge)
