@@ -113,6 +113,12 @@ run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, ou
     if(!'cancer'%in%group){
         group[colnames(counts)==gsub('-','.',case_name)] <- 'cancer'
     }
+    if(!'cancer'%in%group){
+        group[colnames(counts)==paste0('X',case_name)] <- 'cancer'
+    }
+    if(!'cancer'%in%group){
+        group[colnames(counts)==gsub('-','.',paste0('X',case_name))] <- 'cancer'
+    }
     group <- factor(group, levels=c('control', 'cancer'))
     colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub('-', '_',x)}))
 
