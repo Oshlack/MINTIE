@@ -66,7 +66,7 @@ dedupe = {
          echo "Reads after:" ; wc -l $output1.prefix ;
          gzip $output1.prefix $output2.prefix ;
          rm $branch.name/fastq.list $branch.name/temp1.fastq $branch.name/temp2.fastq
-      """
+      """, "dedupe"
       }
    }
 }
@@ -248,7 +248,11 @@ create_supertranscript_reference = {
 }
 
 make_super_supertranscript = {
-    output.dir='collated_output'
+    colpath=inputs.fastq.gz.split()
+    colpath = colpath[(0..(colpath.length-1)).step(2)]
+    colpath = colpath.collect { it.split('/').last().split('_').first() }.join('_')
+    colpath = colpath+'_collated_output'
+    output.dir = colpath
     produce('novel_contigs_annotated.txt', 'supersupertranscript.fasta'){
         exec """
             cat $inputs.fasta > $output.fasta ;
@@ -261,7 +265,7 @@ make_super_supertranscript = {
 
 annotate_supertranscript = {
    //clinker_out=branch.name+"/clinker_out"
-   clinker_out='collated_output/clinker'
+   clinker_out=colpath+'/clinker'
    output.dir=clinker_out+"/reference"
    produce("fst_reference.fasta"){
       exec """
@@ -274,7 +278,7 @@ annotate_supertranscript = {
 
 make_supertranscript_gmap_reference = {
    //clinker_out=branch.name+"/clinker_out"
-   output.dir='collated_output/clinker/reference'
+   output.dir=colpath+'/clinker/reference'
    produce("st_gmap_ref"){
       exec """
          $gmap_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
@@ -283,8 +287,8 @@ make_supertranscript_gmap_reference = {
 }
 
 align_contigs_to_supertranscript = {
-   output.dir="collated_output/clinker/alignment"
-   index_dir="collated_output/clinker/reference"
+   output.dir=colpath+"/clinker/alignment"
+   index_dir=colpath+"/clinker/reference"
    //TODO: this needs to play nicely with the given mask for cases
    def sample_name=inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
    produce(sample_name+"_novel_contigs_st_aligned.bam"){
@@ -301,7 +305,7 @@ align_contigs_to_supertranscript = {
 
 star_genome_gen = {
     doc "Generate STAR genome index"
-    output.dir="collated_output/clinker/"
+    output.dir=colpath+"/clinker/"
     genome_folder = output.dir+"/genome"
     produce("$genome_folder/Genome") {
         exec """module load star ;
@@ -316,14 +320,14 @@ star_genome_gen = {
 
 star_align = {
    //output.dir=branch.parent.name+"/clinker_out/alignment/"
-   output.dir="collated_output/clinker/alignment/"
+   output.dir=colpath+"/clinker/alignment/"
    def workingDir=System.getProperty("user.dir");
    def read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
    def sample_name=read_files.split()[0].split('/').last().split('\\.').first()
    def out_prefix=output.dir+'/'+sample_name
    if(type=="controls"){
         //output.dir=branch.parent.parent.name+"/clinker_out/alignment/controls/"
-        output.dir="collated_output/clinker/alignment/controls/"
+        output.dir=colpath+"/clinker/alignment/controls/"
         out_prefix=output.dir+'/'+sample_name
    }
    produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
