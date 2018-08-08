@@ -332,6 +332,28 @@ def breakpointLocation(pos, columns):
 #
 ---------------------------------------------------------'''
 
+def appendExonBoundaries(gene_name, gene_info, annotation_folder):
+    segs = gene_info[1].split(",")
+    names = gene_info[2].split(",")
+
+    with open(annotation_folder+'/exon_boundaries.bed','a') as exon_boundaries:
+        for exon, name in zip(segs, names):
+
+            exon_range = exon.split("-")
+            exon_start = max(0, int(exon_range[0]) - 1)
+            exon_end = int(exon_range[1])
+
+            R = str(randint(0,255))
+            G = str(randint(0,255))
+            B = str(randint(0,255))
+
+            RGB = R+","+G+","+B
+
+            exons = gene_name + "\t" + str(exon_start) + "\t" + str(exon_end) + \
+                    "\t" + str(name) + "\t" + "0" + "\t" + "." + "\t" +  str(exon_start) + \
+                    "\t" +  str(exon_end) + "\t" + RGB + "\n"
+            exon_boundaries.write(exons)
+
 def createAnnotationFiles(fusions, st_genes, annotation_folder):
 
     exon_boundaries = open(annotation_folder+'/exon_boundaries.bed','w')
@@ -520,7 +542,7 @@ def createFusionList(fusion_results, pos, gene_list_location, st_genes, header, 
 
 # Create a fasta file of the found fusions, save into results folder
 
-def createFusionFasta(fusions, reference_folder, st_genes, competitive):
+def createFusionFasta(fusions, reference_folder, annotation_folder, st_genes, competitive):
 
     fusion_st_fasta = open(reference_folder+'/fst_reference.fasta','w')
 
@@ -543,6 +565,7 @@ def createFusionFasta(fusions, reference_folder, st_genes, competitive):
             try:
                 st_seq = st_genes[key][0]
                 if key not in output_fusions:
+                    appendExonBoundaries(key, st_genes[key], annotation_folder)
                     output_fusions.append(key)
                     fusion_st_fasta.write(">" + key + "\n")
                     fusion_st_fasta.write(str(st_seq) + "\n")

@@ -84,8 +84,8 @@ if not os.path.exists(alignment_folder):
 print("Creating fused superTranscriptome and annotation files")
 
 # create a new fasta file containing the fusion supertranscripts, save to results
-fusiontools.createFusionFasta(fusions, reference_folder, st_genes, competitive)
 fusiontools.createAnnotationFiles(fusions, st_genes, annotation_folder)
+fusiontools.createFusionFasta(fusions, reference_folder, annotation_folder, st_genes, competitive)
 
 # Clean up
 if supplied_fusions == False:
