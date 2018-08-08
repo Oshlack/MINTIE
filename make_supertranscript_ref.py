@@ -137,22 +137,21 @@ for gene in genes:
         chrom = 'MT' if nc_row.chrom1 == 'chrM' else nc_row.chrom1.split('chr')[1]
         gene_strand = '-' if antisense else '+'
         novel_seq = nc_row.variant_seq
-        if nc_row.variant not in ['novel junction'] and antisense:
+
+        if nc_row.variant not in ['novel junction', 'fusion'] and antisense:
             novel_seq = reverse_complement(nc_row.variant_seq)
         novel_seq_info = (chrom, gpos1, gpos2, gene_out.strand.values[0])
 
         blocks_affected = pd.DataFrame()
-        #TODO: handle novel sequence in fusions
         if nc_row.variant == 'fusion':
             chrom1 = 'MT' if nc_row.chrom1 == 'chrM' else nc_row.chrom1.split('chr')[1]
             chrom2 = 'MT' if nc_row.chrom2 == 'chrM' else nc_row.chrom2.split('chr')[1]
 
             novel_seq_info = (chrom1, gpos1, gpos1, gene_out.strand.values[0])
-            block_seqs['%s:%d-%d(%s)' % novel_seq_info] = ''
+            block_seqs['%s:%d-%d(%s)' % novel_seq_info] = novel_seq
 
             novel_seq_info = (chrom2, gpos2, gpos2, gene_out.strand.values[0])
-            block_seqs['%s:%d-%d(%s)' % novel_seq_info] = ''
-
+            block_seqs['%s:%d-%d(%s)' % novel_seq_info] = novel_seq
             if chrom1 == chrom2:
                 ba1 = gene_df[np.logical_and(gene_df.start < gpos1, gene_df.end > gpos1)]
                 if len(ba1) > 0:

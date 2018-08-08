@@ -570,6 +570,7 @@ def createFusionFasta(fusions, reference_folder, annotation_folder, st_genes, co
                     fusion_st_fasta.write(">" + key + "\n")
                     fusion_st_fasta.write(str(st_seq) + "\n")
             except:
-                print(st_genes[key])
+                pass
+                #print(st_genes[key])
 
     fusion_st_fasta.close()

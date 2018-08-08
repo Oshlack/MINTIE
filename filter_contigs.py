@@ -143,6 +143,24 @@ def annotate_contig(read, tx_juncs):
                 seq_pos2 = seq_pos1 + csize
                 var_seq = read.query_sequence[seq_pos1:seq_pos2]
 
+            if gtype == 'fusion' and tx_bam:
+                tx_reads = [tx_read for tx_read in tx_idx.find(read.query_name)]
+                if len(tx_reads) == 1:
+                    tx_read = tx_reads[0]
+                    is_softclip = [o == 4 for o,v in tx_read.cigar]
+
+                    if any(is_softclip):
+                        sc_start = is_softclip[0]
+                        if is_softclip[0] and is_softclip[-1]:
+                            sc_start = tx_read.cigar[0][1] > tx_read.cigar[-1][1]
+                            print('WARNING: contig %s is soft-clipped at both ends. Picking the longest soft-clip for annotation.' % read.query_name)
+
+                        var_seq = str(tx_read.query_sequence)
+                        sc_size = tx_read.cigar[0][1] if sc_start else tx_read.cigar[-1][1]
+                        var_seq = var_seq[:sc_size] if sc_start else var_seq[-sc_size:]
+                        cpos1 = 0 if sc_start else len(tx_read.query_sequence) - sc_size
+                        cpos2 = cpos1 + sc_size
+
             annot.append([read.query_name, gtype, chrom1, pos1, chrom1, pos1, contig_size, size, cpos1, cpos2, strand, csize, var_seq])
             print('%d bp %s at pos %s:%d (cigar string = %s)' % (size, gtype, chrom1, pos1, read.cigarstring))
 
