@@ -242,7 +242,7 @@ def mapSupertranscript(gene_1, gene_2, duplicates, found, not_found, total, st_g
         found += 1
 
         # Check if this is a duplicate
-        sep = ":" if gene_2 != '' else ''
+        sep = "--" if gene_2 != '' else ''
         try:
             if duplicates[gene_1+sep+gene_2] == True:
                 return False, duplicates, found, not_found
@@ -255,6 +255,16 @@ def mapSupertranscript(gene_1, gene_2, duplicates, found, not_found, total, st_g
 
         blocks_1 = getBlocks(st_genes, gene_1)
         blocks_2 = getBlocks(st_genes, gene_2) if gene_1 != gene_2 and gene_2 != '' else ''
+
+        if not sequence_1:
+            gene_1 = gene_1.split('_')[0]
+            sequence_1 = getSequence(st_genes, gene_1)
+            blocks_1 = getBlocks(st_genes, gene_1)
+
+        if not sequence_2:
+            gene_2 = gene_2.split('_')[0]
+            sequence_2 = getSequence(st_genes, gene_2)
+            blocks_2 = getBlocks(st_genes, gene_2)
 
         # We have the gene names and sequences, create a fusion and add it to the list of fusions
         if sequence_1 != False and sequence_2 != False:
@@ -360,12 +370,11 @@ def createAnnotationFiles(fusions, st_genes, annotation_folder):
     gene_boundaries =  open(annotation_folder+'/gene_boundaries.bed','w')
 
     for fusion in fusions.list:
-
         gene_1_exons = st_genes[fusion.gene_name_1][1].split(",")
         gene_1_blocks = st_genes[fusion.gene_name_1][2].split(",")
 
         exon_no = 0
-        sep = '__' if fusion.gene_name_2 != '' else ''
+        sep = '--' if fusion.gene_name_2 != '' else ''
 
         for exons, block in zip(gene_1_exons, gene_1_blocks):
 
@@ -493,11 +502,12 @@ def createFusionList(fusion_results, pos, gene_list_location, st_genes, header, 
             #gene_2 = mapGene(chromosomes, chr_2, bp_2, total)
             sample = columns[int(pos[-1])-1].strip()
             contig = columns[0].split('|')
+
             gene_1 = contig[0]+'_'+sample
             gene_2 = contig[1]+'_'+sample if len(contig) > 1 else ''
 
         else:
-            gene_entry = line.split("__")
+            gene_entry = line.split("--")
 
             gene_1 = gene_entry[0]
             gene_2 = gene_entry[1]
@@ -548,7 +558,7 @@ def createFusionFasta(fusions, reference_folder, annotation_folder, st_genes, co
 
     output_fusions = []
     for fusion in fusions.list:
-        sep = '__' if fusion.gene_name_2 != '' else ''
+        sep = '--' if fusion.gene_name_2 != '' else ''
         fusion_name = fusion.gene_name_1 + sep + fusion.gene_name_2
         # skip fusions that create the same gene name
         if fusion_name not in output_fusions:
