@@ -152,6 +152,7 @@ for gene in genes:
 
             novel_seq_info = (chrom2, gpos2, gpos2, gene_out.strand.values[0])
             block_seqs['%s:%d-%d(%s)' % novel_seq_info] = novel_seq
+
             if chrom1 == chrom2:
                 ba1 = gene_df[np.logical_and(gene_df.start < gpos1, gene_df.end > gpos1)]
                 if len(ba1) > 0:

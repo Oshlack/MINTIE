@@ -130,10 +130,12 @@ def annotate_contig(read, tx_juncs):
 
             block_idx = 0 if clip_idx == 0 else np.max(np.where(np.array([b[0] for b in blocks])<clip_idx)[0])
             block = read.get_blocks()[block_idx]
-            pos1, size = block[0], read.cigar[clip_idx][1]
+            size = read.cigar[clip_idx][1]
+            pos1 = block[1] if clip_idx > 0 else block[0] # pick coord based on which side clip is on
 
             # position of variant on contig
             cpos1 = sum([v for c,v in read.cigar[:clip_idx]])
+            cpos1 = contig_size - size if ((read.is_reverse and clip_idx == 0) or (not read.is_reverse and clip_idx > 0)) else size
             csize = 0 if gtype == 'fusion' else cigar[1]
             cpos2 = cpos1 if gtype == 'fusion' else cpos1 + csize
 
@@ -156,7 +158,11 @@ def annotate_contig(read, tx_juncs):
                             print('WARNING: contig %s is soft-clipped at both ends. Picking the longest soft-clip for annotation.' % read.query_name)
 
                         var_seq = str(tx_read.query_sequence)
-                        sc_size = tx_read.cigar[0][1] if sc_start else tx_read.cigar[-1][1]
+                        #sc_size = tx_read.cigar[0][1] if sc_start else tx_read.cigar[-1][1]
+                        sc_size = read.cigar[clip_idx][1]
+                        # ^ actually the hard clip len from genome alignment, pick this as the sc_size
+                        # (even though it may differ from the txome alignment), otherwise we don't know
+                        # the genomic pos where novel seq is inserted (need this to build supertranscript)
                         var_seq = var_seq[:sc_size] if sc_start else var_seq[-sc_size:]
                         cpos1 = 0 if sc_start else len(tx_read.query_sequence) - sc_size
                         cpos2 = cpos1 + sc_size
