@@ -66,7 +66,7 @@ If you are running the pipeline outside of the `${cv_code}` directory, you'll wa
 Users might like to separate the pipeline into two parts: detection and visualisation. As the visualisation part is more time-consuming and aligns all the controls to the supertranscipt, you may want to analyse the results for significant contigs, then visualise only the samples you care about. Reducing the number of controls that you run the visualisation with is also a really good idea.
 
 ```
-bpipe run -n 120 -u make_super_supertranscript /group/bioi1/marekc/20170918_cryptic_variant/CrypticVariant/crypticVariantFinder.groovy $cases $controls
+bpipe run -n 120 -u make_super_supertranscript ${cv_code}/crypticVariantFinder.groovy $cases $controls
 ```
 
 Running the above in place of the run step will run everything for cases up to collating and visualising the results. Once you've done this, you can run without the -u make_super_supertranscript to finish up the pipeline.

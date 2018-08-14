@@ -122,6 +122,13 @@ run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, ou
     group <- factor(group, levels=c('control', 'cancer'))
     colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub('-', '_',x)}))
 
+    # write counts table to file for reference
+    can_counts <- counts[, group=='cancer']
+    con_counts <- data.frame(counts[, group=='control'])
+    counts_summary <- data.frame(cbind(genes, cbind(case_reads=can_counts, controls_total_reads=apply(con_counts, 1, sum))))
+    counts_out <- data.frame(cbind(genes, cbind(can_counts, con_counts)))
+    write.table(counts_out, file=paste(outdir, 'counts_table.txt', sep='/'), row.names=F, quote=F, sep='\t')
+
     dge <- DGEList(counts = counts, genes = paste(genes$ec_names, genes$gene), group = group)
     dge <- calcNormFactors(dge)
 
@@ -148,6 +155,7 @@ run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, ou
 
     dx_df <- left_join(dx_df, txs_in_ec, by='ec_names')
     dx_df <- left_join(dx_df, tx_to_ecs, by='ec_names')
+    dx_df <- left_join(dx_df, counts_summary, by=c('gene', 'ec_names'))
 
     # write full results
     write.table(dx_df, file=paste(outdir, 'full_edgeR_results.txt', sep='/'), row.names=F, quote=F, sep='\t')

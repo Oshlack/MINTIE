@@ -75,8 +75,6 @@ SOAPassemble = {
      output.dir=branch.name ;
      produce(branch.name+'_denovo_filt.fasta', branch.name+'.fasta'){
          exec """
-             module load trimmomatic ;
-             module load fastx-toolkit ;
              $trimmomatic PE -threads $threads -phred$scores $input1.gz $input2.gz
                  $branch.name/trim1.fastq /dev/null $branch.name/trim2.fastq /dev/null
                  LEADING:$minQScore TRAILING:$minQScore MINLEN:$min_read_length ;
@@ -193,7 +191,6 @@ run_diffsplice = {
    def salmon_dir = branch.name+"/salmon_out/aux_info"
    produce("eq_class_comp_diffsplice.txt"){
       exec """
-        module load R/3.3.2 ;
         Rscript $code_base/compare_eq_classes.R $case_name $input $output.dir/all.groupings \
             $trans_fasta $salmon_dir $output ;
       """, "run_diffsplice"
@@ -217,7 +214,6 @@ annotate_diffspliced_contigs = {
    def tx_align = branch.name+"/filtered_contigs_against_txome.bam"
    produce("novel_contigs_annotated.txt", "novel_contigs.bam"){
       exec """
-        module load samtools ;
         samtools view -H $output.dir/filtered_contigs_against_genome.bam > $output.dir/tmp.sam ;
         samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $input3 >> $output.dir/tmp.sam ;
         python ${code_base}/filter_contigs.py $output.dir/tmp.sam $output.bam --splice_juncs $ann_info \
@@ -231,7 +227,6 @@ create_supertranscript_reference = {
    output.dir=branch.name
    produce("tx_annotation.gtf", "supertranscript.fasta"){
       exec """
-          module load bedtools ;
           echo "extracting relevant transcripts to gtf reference..." ;
           cat $input1 | cut -f 1 | sed 1d | sort | uniq | awk '{split(\$0, x, "|")}{print x[1]"\\n"x[2]}' | \
                 sort | uniq | sed '/^ *\$/d' > $output.dir/gene_list.txt ;
@@ -295,7 +290,6 @@ align_contigs_to_supertranscript = {
       exec """
          outfile=$output ; basename="\${outfile%.*}" ;
          $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${sample_name}/diffspliced_contigs.fasta > \${basename}.sam ;
-         module load samtools;
          samtools view -hb \${basename}.sam > \${basename}_unsort.bam ;
          samtools sort \${basename}_unsort.bam > $output ;
          samtools index $output ; rm \${basename}_unsort.bam ; rm \${basename}.sam
@@ -308,8 +302,7 @@ star_genome_gen = {
     output.dir=colpath+"/clinker/"
     genome_folder = output.dir+"/genome"
     produce("$genome_folder/Genome") {
-        exec """module load star ;
-                STAR --runMode genomeGenerate
+        exec """STAR --runMode genomeGenerate
                 --runThreadN $threads
                 --genomeDir $genome_folder
                 --genomeFastaFiles $input.fasta
@@ -334,8 +327,6 @@ star_align = {
         //mkdir -p $output.dir ;
         exec """
         rm -rf ${out_prefix}_STARtmp ;
-        module load star ;
-        module load samtools ;
         time STAR --genomeDir $genome_folder
            --readFilesCommand zcat
            --readFilesIn $read_files
