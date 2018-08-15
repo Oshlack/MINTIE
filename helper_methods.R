@@ -16,14 +16,14 @@ match_tx_to_genes <- function(ec_matrix, grp_novel, genes_tx) {
     int_ec_matrix <- int_ec_matrix[!is.na(int_ec_matrix$gene),]
     int_ec_matrix <- int_ec_matrix[int_ec_matrix$gene!='',]
 
-    print('Grouping together all genes involved in fusions...')
-    # collapse all genes involved in fusion into one 'super' gene
-    fusion_contigs <- unique(int_ec_matrix[grep('\\|', int_ec_matrix$gene), 'gene'])
-    fusion_contigs <- sapply(fusion_contigs, strsplit, split='\\|')
-    rename_gns <- sapply(fusion_contigs, function(x){which(int_ec_matrix$gene%in%x)})
-    for(i in 1:length(rename_gns)) {
-        int_ec_matrix[rename_gns[[i]], 'gene'] <- names(rename_gns)[i]
-    }
+    #print('Grouping together all genes involved in fusions...')
+    ## collapse all genes involved in fusion into one 'super' gene
+    #fusion_contigs <- unique(int_ec_matrix[grep('\\|', int_ec_matrix$gene), 'gene'])
+    #fusion_contigs <- sapply(fusion_contigs, strsplit, split='\\|')
+    #rename_gns <- sapply(fusion_contigs, function(x){which(int_ec_matrix$gene%in%x)})
+    #for(i in 1:length(rename_gns)) {
+    #    int_ec_matrix[rename_gns[[i]], 'gene'] <- names(rename_gns)[i]
+    #}
 
     ntx <- nrow(distinct(int_ec_matrix[,c('transcript', 'gene')]))
     info <- int_ec_matrix[, !colnames(int_ec_matrix)%in%c('tx_id', 'symbol')]
