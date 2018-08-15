@@ -123,9 +123,22 @@ for gene in genes:
     gene_out = gene_df.copy()
     if len(gene_out) == 0:
         continue
-    antisense = True if gene_out.strand.values[0]=='-' else False
 
+    antisense = True if gene_out.strand.values[0]=='-' else False
+    gene_df = gene_df.drop_duplicates().sort_values(by=['start', 'end'], ascending=False).reset_index(drop=True) \
+                    if antisense else gene_df.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
+
+    var_count = 0
     for idx, nc_row in nc.iterrows():
+        # not necessary to annotate deletions or junctions with no novel sequence
+        if nc_row.variant == 'deletion':
+            continue
+        if nc_row.variant in ['novel junction', 'fusion']:
+            if type(nc_row.variant_seq) is str and len(nc_row.variant_seq) == 0:
+                continue
+            elif type(nc_row.variant_seq) is float and math.isnan(nc_row.variant_seq):
+                continue
+
         seq = contig_seqs[nc_row['contig']]
         csize = nc_row.contig_varsize
         start = (len(seq) - nc_row.contig_pos2) if antisense else nc_row.contig_pos1
@@ -172,11 +185,6 @@ for gene in genes:
                     block = blocks_affected.loc[blocks_affected.index.values[0]]
                     gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos, gpos)
         elif nc_row.variant == 'novel junction':
-            if type(nc_row.variant_seq) is str and len(nc_row.variant_seq) == 0:
-                continue
-            elif type(nc_row.variant_seq) is float and math.isnan(nc_row.variant_seq):
-                continue
-
             # determine whether novel sequence should be inserted on left or right of an exon
             on_sense = nc_row.contig_align_strand == '+'
             seq_on_contig_start = (nc_row.contig_pos1 == 0)
@@ -211,15 +219,14 @@ for gene in genes:
                 block = blocks_affected.loc[blocks_affected.index.values[0]]
                 gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos1, gpos2)
 
-    # write modified supertranscript
-    gene_out = gene_out.drop_duplicates().sort_values(by=['start', 'end'], ascending=False).reset_index(drop=True) \
-                    if antisense else gene_out.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
-    gene_normal = gene_df.drop_duplicates().sort_values(by=['start', 'end'], ascending=False).reset_index(drop=True) \
-                    if antisense else gene_df.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
+        gene_out = gene_out.drop_duplicates().sort_values(by=['start', 'end'], ascending=False).reset_index(drop=True) \
+                        if antisense else gene_out.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
+        # only write normal gene if reference supertranscript is unmodified
+        if not gene_out.equals(gene_df):
+            var_count += 1
+            var = '_v%s' % var_count if len(nc) > 1 else ''
+            write_gene(gene_out, block_seqs, '%s_%s%s' % (gene, sample, var), st_file)
+            gene_out = gene_df.copy()
 
-    # only write normal gene if reference supertranscript is unmodified
-    if gene_out.equals(gene_normal):
-        write_gene(gene_normal, block_seqs, gene, st_file)
-    else:
-        write_gene(gene_out, block_seqs, '%s_%s' % (gene, sample), st_file)
-        write_gene(gene_normal, block_seqs, gene, st_file)
+    # write modified supertranscript
+    write_gene(gene_df, block_seqs, gene, st_file)
