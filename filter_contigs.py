@@ -285,8 +285,8 @@ if txome_fasta != '':
 print('Checking contigs for non-reference content...')
 novel_contigs = []
 for read in sam.fetch():
-    if read.reference_id < 0 or (read.mapping_quality == 0 and tx_info != ''):
-        # skip unmapped, or 0 MAPQ contigs (for genome alignments)
+    if read.reference_id < 0:
+        # skip unmapped contigs
         continue
 
     # only consider the contig if at least match_min bases align
