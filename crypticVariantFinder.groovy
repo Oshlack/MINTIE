@@ -5,7 +5,7 @@ minQScore=20 //trimmomatic quality cut off
 threads=8
 scores=33
 min_read_length=50;
-genome_mem=5050000000
+genome_mem=32212254720
 
 //Assembly options
 Ks="79 49 19" //"31 25 19"
@@ -333,7 +333,7 @@ star_align = {
            --outSAMtype BAM SortedByCoordinate
            --outFileNamePrefix $out_prefix
            --runThreadN $threads
-           --limitBAMsortRAM 5050000000
+           --limitBAMsortRAM $genome_mem
            --genomeSAindexNbases 5
            --outWigStrand Unstranded
            --outWigType bedGraph
