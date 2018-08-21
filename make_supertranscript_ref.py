@@ -153,7 +153,7 @@ for gene in genes:
 
         if nc_row.variant not in ['novel junction', 'fusion'] and antisense:
             novel_seq = reverse_complement(nc_row.variant_seq)
-        novel_seq_info = (chrom, gpos1, gpos2, gene_out.strand.values[0])
+        novel_seq_info = (chrom, gpos1, gpos2, gene_strand)
 
         blocks_affected = pd.DataFrame()
         if nc_row.variant == 'fusion':
@@ -176,6 +176,17 @@ for gene in genes:
                 if len(ba2) > 0:
                     block = gene_out.loc[ba2.index.values[0]]
                     gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos2, gpos2)
+
+                if len(ba1) == 0 and len(ba2) == 0:
+                    # fusion component is before the gene
+                    if gpos1 < gene_out.start.values[0]:
+                        novel_block = pd.DataFrame([[chrom, gpos1, gpos1, '%s_%s' % (gene, nc_row.variant),
+                                                    '.', gene_strand, gene, nc_row.variant]], columns=gene_out.columns)
+                    # fusion component after end of gene
+                    if gpos2 > gene_out.end.values[0]:
+                        novel_block = pd.DataFrame([[chrom, gpos2, gpos2, '%s_%s' % (gene, nc_row.variant),
+                                                    '.', gene_strand, gene, nc_row.variant]], columns=gene_out.columns)
+                    gene_out = gene_out.append(novel_block)
             else:
                 chrom = chrom1 if chrom1 == gene_df.chrom.values[0] else chrom2
                 gpos = gpos1 if chrom1 == gene_df.chrom.values[0] else gpos2
@@ -184,6 +195,10 @@ for gene in genes:
                 if len(blocks_affected) > 0:
                     block = blocks_affected.loc[blocks_affected.index.values[0]]
                     gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos, gpos)
+                else:
+                    novel_block = pd.DataFrame([[chrom, gpos, gpos, '%s_%s' % (gene, nc_row.variant),
+                                                '.', gene_strand, gene, nc_row.variant]], columns=gene_out.columns)
+                    gene_out = gene_out.append(novel_block)
         elif nc_row.variant == 'novel junction':
             # determine whether novel sequence should be inserted on left or right of an exon
             on_sense = nc_row.contig_align_strand == '+'
