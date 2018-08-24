@@ -5,7 +5,8 @@ minQScore=20 //trimmomatic quality cut off
 threads=8
 scores=33
 min_read_length=50;
-genome_mem=32212254720
+genome_mem=31000000000
+sort_ram=4 //ram per code for bam sorting
 
 //Assembly options
 Ks="79 49 19" //"31 25 19"
@@ -23,6 +24,8 @@ bedops="bedops"
 gmap="/group/bioi1/marekc/apps/GMAP-GSNAP/src/gmap"
 gmap_build="perl /group/bioi1/marekc/apps/GMAP-GSNAP/util/gmap_build.pl -B=/group/bioi1/marekc/apps/GMAP-GSNAP/src"
 salmon="/group/bioi1/marekc/apps/Salmon-latest_linux_x86_64/bin/salmon"
+hisat="/group/bioi1/marekc/apps/hisat-0.1.6-beta/hisat"
+hisat_build="/group/bioi1/marekc/apps/hisat-0.1.6-beta/hisat-build"
 
 //reference
 genome_fasta="/group/bioi1/shared/genomes/hg38/fasta/Homo_sapiens.GRCh38.dna.primary_assembly.fa"
@@ -243,7 +246,7 @@ create_supertranscript_reference = {
 }
 
 make_super_supertranscript = {
-    colpath=inputs.fastq.gz.split()
+    colpath = inputs.fastq.gz.split()
     colpath = colpath[(0..(colpath.length-1)).step(2)]
     colpath = colpath.collect { it.split('/').last().split('_').first() }.join('_')
     colpath = colpath+'_collated_output'
@@ -307,7 +310,7 @@ star_genome_gen = {
                 --genomeDir $genome_folder
                 --genomeFastaFiles $input.fasta
                 --limitGenomeGenerateRAM $genome_mem
-                --genomeSAindexNbases 5""","stargen"
+                --genomeSAindexNbases 5""", "star_genome_gen"
     }
 }
 
@@ -339,11 +342,44 @@ star_align = {
            --outWigType bedGraph
            --outWigNorm RPM ;
         samtools index ${workingDir}/${output1} ;
-        rm -rf ${out_prefix}_STARtmp ;
     """, "star_align"
    }
 }
 
+hisat_index = {
+    output.dir=colpath+"/clinker/"
+    genome_folder = output.dir+"/genome"
+    def idx_prefix = genome_folder+"/hisat_index"
+    produce(genome_folder+"/hisat_index.rev.1.bt2") {
+        exec """
+        $hisat_build $input.fasta $idx_prefix
+        """
+    }
+}
+
+hisat_align = {
+   output.dir=colpath+"/clinker/alignment/"
+   def workingDir=System.getProperty("user.dir");
+   def (r1, r2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
+   def sample_name=r1.split('/').last().split('\\.').first()
+   def out_prefix=output.dir+'/'+sample_name
+   if(type=="controls"){
+        output.dir=colpath+"/clinker/alignment/controls/"
+        out_prefix=output.dir+'/'+sample_name
+   }
+   produce(out_prefix+"_hisatAligned.bam"){
+        exec """
+        outfile=$output.bam ; basename="\${outfile%.*}" ;
+        hisat_idx=$input.bt2; idx=\${hisat_idx%.rev.1.bt2} ;
+        time $hisat --threads $threads -x \$idx -1 $r1 -2 $r2 > \${basename}.sam ;
+        samtools sort -@ $threads -m ${sort_ram}G \${basename}.sam -o $output ;
+        samtools index $output ;
+        if [[ -f $output ]] ; then
+            rm -f \${basename}.sam ;
+        fi
+    """, "hisat_align"
+   }
+}
 
 if(!binding.variables.containsKey("fastqCaseFormat")){
     fastqCaseFormat="cases/%_R*.fastq.gz"
@@ -370,6 +406,7 @@ run { fastqCaseFormat * [ make_sample_dir +
        annotate_supertranscript +
        make_supertranscript_gmap_reference +
        star_genome_gen +
-       fastqCaseFormat * [ align_contigs_to_supertranscript, star_align] +
-       fastqControlFormat * [ star_align.using(type:"controls") ]
+       hisat_index +
+       fastqCaseFormat * [ align_contigs_to_supertranscript, hisat_align] +
+       fastqControlFormat * [ hisat_align.using(type:"controls") ]
 }
