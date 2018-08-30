@@ -211,7 +211,16 @@ def annotate_contig(read, tx_juncs):
                 cpos2 = cpos1 + sc_size
 
             csize = len(var_seq)
-            annot.append([read.query_name, 'novel junction', chrom1, pos1, chrom2, pos2, contig_size, pos2 - pos1, cpos1, cpos2, strand, csize, var_seq])
+            variant_type = 'novel splice junction' if csize == 0 else 'junction with novel seq'
+            if not csize > 0:
+                junc_loc_left = '%s:%d' % (chrom1, pos1) in locs
+                junc_loc_right = '%s:%d' % (chrom2, pos2) in locs
+                if not junc_loc_left and not junc_loc_right:
+                    variant_type = 'non-exonic junction'
+                elif not (junc_loc_left and junc_loc_right):
+                    variant_type = 'exonic-to-non-exonic junction'
+
+            annot.append([read.query_name, variant_type, chrom1, pos1, chrom2, pos2, contig_size, pos2 - pos1, cpos1, cpos2, strand, csize, var_seq])
             print('novel junction at pos %s:%s-%s (cigar string = %s)' % (chrom1, junc[1], junc[2], read.cigarstring))
 
     return(annot)
@@ -260,14 +269,22 @@ if tx_info != '':
     print('Generating lookup for known splice junctions...')
     # aligning against genome
     genref = pd.read_csv(tx_info, sep='\t')
-    juncs = genref.apply(lambda tx: get_juncs(tx), axis=1)
+    junc_info = genref.apply(lambda tx: get_juncs(tx), axis=1)
 
     #juncs = [(str(c), int(s), int(e)) for jv in juncs.values for c, s, e in jv] # flatten juncs list
-    juncs = ['%s:%s-%s' % (c, s, e) for jv in juncs.values for c, s, e in jv] # flatten juncs list
+    juncs = ['%s:%s-%s' % (c, s, e) for jv in junc_info.values for c, s, e in jv] # flatten juncs list
     junc_dic = {}
     for junc in juncs:
         junc_dic[junc] = True
     juncs = junc_dic
+
+    # create a list of junction start/ends for more detailed annotation
+    locs = [['%s:%s' % (c, s), '%s:%s' % (c, e)] for jv in junc_info.values for c, s, e in jv]
+    locs = [l for loc in locs for l in loc] #unlist
+    loc_dic = {}
+    for loc in locs:
+        loc_dic[loc] = True
+    locs = loc_dic
     print('Finished generating lookup')
 else:
     # this means we are analysing against transcriptome (not genome)
