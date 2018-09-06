@@ -156,7 +156,7 @@ for gene in genes:
         novel_seq_info = (chrom, gpos1, gpos2, gene_strand)
 
         blocks_affected = pd.DataFrame()
-        if nc_row.variant == 'fusion':
+        if nc_row.variant == 'fusion' and len(novel_seq) > 0:
             chrom1 = 'MT' if nc_row.chrom1 == 'chrM' else nc_row.chrom1.split('chr')[1]
             chrom2 = 'MT' if nc_row.chrom2 == 'chrM' else nc_row.chrom2.split('chr')[1]
 
@@ -196,6 +196,19 @@ for gene in genes:
                     block = blocks_affected.loc[blocks_affected.index.values[0]]
                     gene_out, block_seqs = split_block(nc_row, gene_out, seq, block, gpos, gpos)
                 else:
+                    # must consider contig alignment to place novel seq at start or end of gene
+                    strands_match = nc_row.contig_align_strand == gene_strand
+                    cont_start = nc_row.contig_pos1 == 0
+
+                    if (strands_match and cont_start) or (not strands_match and not cont_start):
+                        # place novel seq at start of this gene
+                        gpos = np.max(gene_df.end) + 1 if antisense else np.min(gene_df.start) - 1
+                    elif (strands_match and not cont_start) or (not strands_match and cont_start):
+                        # place novel seq at end of this gene
+                        gpos = np.min(gene_df.start) - 1 if antisense else np.max(gene_df.end) + 1
+
+                    novel_seq_info = (chrom, gpos, gpos, gene_df.strand.values[0])
+                    block_seqs['%s:%d-%d(%s)' % novel_seq_info] = novel_seq
                     novel_block = pd.DataFrame([[chrom, gpos, gpos, '%s_%s' % (gene, nc_row.variant),
                                                 '.', gene_strand, gene, nc_row.variant]], columns=gene_out.columns)
                     gene_out = gene_out.append(novel_block)

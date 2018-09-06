@@ -84,8 +84,8 @@ get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
     return(uac)
 }
 
-#TODO: write method for extracting counts matrix
 run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2, qval=0.05) {
+    #TODO: can remove int_genes, this filtering doesn't impact the results
     tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
     info <- distinct(full_info[full_info$gene%in%int_genes, !colnames(full_info)%in%'transcript'])
 
