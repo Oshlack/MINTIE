@@ -15,6 +15,7 @@ import pysam
 import os
 import re
 from Bio import SeqIO
+from intervaltree import Interval, IntervalTree
 
 parser = argparse.ArgumentParser()
 parser.add_argument(dest='samfile',
@@ -38,6 +39,8 @@ parser.add_argument('--annotate', dest='annotate', default='',
 parser.add_argument('--tx_align', dest='tx_align', default='',
                     help='''Alignment of novel contigs to transcriptome. Used for more detailed
                     annotation.''')
+parser.add_argument('--tx_ref', dest='tx_ref', default='',
+                    help='''Whole txome reference..''')
 
 args        = parser.parse_args()
 samfile     = args.samfile
@@ -46,6 +49,7 @@ tx_info     = args.tx_info
 txome_fasta = args.groupings
 annotate    = args.annotate
 tx_align    = args.tx_align
+tx_ref_file = args.tx_ref
 
 # cutoff parameters
 gap_min = 7
@@ -68,6 +72,31 @@ if tx_align != '':
     tx_idx = pysam.IndexedReads(tx_bam)
     tx_idx.build()
 
+tx_ref = None
+ref_trees = None
+if tx_ref_file != '':
+    print('Generating lookup for genes...')
+    tx_ref = pd.read_csv(tx_ref_file, comment='#', sep='\t', header=None)
+    gn_ref = tx_ref[tx_ref[2] == 'gene']
+    gn_ref.loc[:, 'gene'] = gn_ref[8].apply(lambda x: re.search('gene_name "([\w\-\.\/]+)"', x).group(1))
+    gn_ref = gn_ref[[0, 3, 4, 'gene']]
+    gn_ref.columns = ['chrom', 'start', 'end', 'gene']
+    gn_ref = gn_ref.drop_duplicates()
+
+    ref_trees = {}
+    chroms = np.unique(gn_ref.chrom.values)
+    for chrom in chroms:
+        chr_ref = gn_ref[gn_ref.chrom == chrom]
+        ref_tree = IntervalTree()
+        for idx, row in chr_ref.iterrows():
+            ref_tree[row.start:row.end] = row.gene
+        ref_trees[chrom] = ref_tree
+
+    ex_ref = tx_ref[tx_ref[2] == 'exon']
+    ex_ref = ex_ref[[0, 3, 4]].drop_duplicates()
+    ex_ref.columns = ['chrom', 'start', 'end']
+    ex_ref.start = ex_ref.start - 1
+
 ds_output = None
 if annotate != '':
     ds_output = pd.read_csv(annotate, sep='\t')
@@ -83,6 +112,23 @@ def get_juncs(tx):
     chroms = [tx['chrom']] * len(starts)
     return(list(zip(chroms, ends, starts)))
 
+def get_overlapping_gene(read):
+    try:
+        ref_tree = ref_trees[read.reference_name]
+    except KeyError:
+       print('WARNING: reference chromosome %s (from read %s) not found in supplied reference' % (read.reference_name, read.query_name))
+       return ''
+
+    blocks = read.get_blocks()
+    genes = []
+    for block in blocks:
+        bstart, bend = block
+        gns = ref_tree.search(bstart, bend)
+        genes.extend([gn[2] for gn in gns])
+    genes = np.unique(np.array(genes))
+
+    return('|'.join(genes))
+
 def annotate_contig(read, tx_juncs):
     '''
     return the putative cryptic variant
@@ -97,6 +143,8 @@ def annotate_contig(read, tx_juncs):
     blocks = [b for b in zip(match_idxs, read.get_blocks())]
     chrom1, chrom2 = read.reference_name, read.reference_name
     strand = '-' if read.is_reverse else '+'
+
+    olapping_genes = get_overlapping_gene(read)
     if len(gap_idxs) > 0:
         for gap_idx in gap_idxs:
             cigar = read.cigar[gap_idx]
@@ -120,7 +168,7 @@ def annotate_contig(read, tx_juncs):
                 seq_pos2 = seq_pos1 + csize
                 var_seq = read.query_sequence[seq_pos1:seq_pos2]
 
-            annot.append([read.query_name, gtype, chrom1, pos1, chrom2, pos2, contig_size, size, cpos1, cpos2, strand, csize, var_seq])
+            annot.append([read.query_name, gtype, chrom1, pos1, chrom2, pos2, contig_size, size, cpos1, cpos2, strand, csize, var_seq, olapping_genes])
             print('%d %s at pos %s:%d-%d (cigar string = %s)' % (size, gtype, chrom1, pos1, pos2, read.cigarstring))
 
     if len(clip_idxs) > 0:
@@ -130,8 +178,10 @@ def annotate_contig(read, tx_juncs):
 
             block_idx = 0 if clip_idx == 0 else np.max(np.where(np.array([b[0] for b in blocks])<clip_idx)[0])
             block = read.get_blocks()[block_idx]
+            block_size = block[1] - block[0]
             size = read.cigar[clip_idx][1]
-            pos1 = block[1] if clip_idx > 0 else block[0] # pick coord based on which side clip is on
+            clip_left = clip_idx == 0
+            pos1 = block[0] if clip_left else block[1]
 
             # position of variant on contig
             cpos1 = sum([v for c,v in read.cigar[:clip_idx]])
@@ -145,29 +195,76 @@ def annotate_contig(read, tx_juncs):
                 seq_pos2 = seq_pos1 + csize
                 var_seq = read.query_sequence[seq_pos1:seq_pos2]
 
-            if gtype == 'fusion' and tx_bam:
-                tx_reads = [tx_read for tx_read in tx_idx.find(read.query_name)]
-                if len(tx_reads) == 1:
-                    tx_read = tx_reads[0]
-                    is_softclip = [o == 4 for o,v in tx_read.cigar]
+            if gtype == 'fusion':
+                tmp = ex_ref[ex_ref.chrom == read.reference_name]
+                olapping = tmp[np.logical_and(block[0] < tmp.start, block[1] > tmp.end)]
+                match    = tmp[np.logical_and(block[0] >= tmp.start, block[1] <= tmp.end)]
+                left     = tmp[np.logical_and(block[1] > tmp.start, block[1] <= tmp.end)]
+                right    = tmp[np.logical_and(block[0] >= tmp.start, block[0] < tmp.end)]
 
-                    if any(is_softclip):
-                        sc_start = is_softclip[0]
-                        if is_softclip[0] and is_softclip[-1]:
-                            sc_start = tx_read.cigar[0][1] > tx_read.cigar[-1][1]
-                            print('WARNING: contig %s is soft-clipped at both ends. Picking the longest soft-clip for annotation.' % read.query_name)
+                seq_pos1 = sum([e - s for s, e in read.get_blocks()[:block_idx]])
+                seq_pos2 = seq_pos1 + block_size
+                block_seq = read.query_sequence[seq_pos1:seq_pos2]
 
-                        var_seq = str(tx_read.query_sequence)
-                        #sc_size = tx_read.cigar[0][1] if sc_start else tx_read.cigar[-1][1]
-                        sc_size = read.cigar[clip_idx][1]
-                        # ^ actually the hard clip len from genome alignment, pick this as the sc_size
-                        # (even though it may differ from the txome alignment), otherwise we don't know
-                        # the genomic pos where novel seq is inserted (need this to build supertranscript)
-                        var_seq = var_seq[:sc_size] if sc_start else var_seq[-sc_size:]
-                        cpos1 = 0 if sc_start else len(tx_read.query_sequence) - sc_size
-                        cpos2 = cpos1 + sc_size
+                if len(match) > 0:
+                    # block matches an exon, no need to add variant sequence
+                    pass
+                elif len(olapping) == 0 and len(right) == 0 and len(left) == 0:
+                    # block is entirely intronic or intergenic
+                    var_seq = block_seq
+                elif len(left) > 0 and len(right) > 0:
+                    # intron retention; split into two
+                    #TODO: handle this case
+                    import ipdb; ipdb.set_trace()
+                elif len(left) > 0 or len(right) > 0:
+                    # get variant sequence not matching reference
+                    olap_size = block[1] - min(left.start.values) if len(left)>0 else max(right.end.values) - block[0]
+                    var_seq = block_seq[:-olap_size] if len(left)>0 else block_seq[olap_size:]
+                elif len(olapping) > 0:
+                    # if block overlaps an exon, must split into two
+                    olap_left = min(olapping.start.values) - block[0]
+                    var_seq = block_seq[:olap_left]
+                    vpos1 = size if clip_left else 0
+                    if read.is_reverse:
+                        vpos1 = contig_size - len(var_seq)
+                        vpos1 = vpos1 if not clip_left else vpos1 - size
+                    vpos2 = vpos1 + len(var_seq)
+                    annot.append([read.query_name, 'retained seq', chrom1, read.reference_start, chrom1, min(olapping.start.values),
+                                  contig_size, size, vpos1, vpos2, strand, len(var_seq), var_seq, olapping_genes])
 
-            annot.append([read.query_name, gtype, chrom1, pos1, chrom1, pos1, contig_size, size, cpos1, cpos2, strand, csize, var_seq])
+                    olap_right = block[1] - max(olapping.end.values)
+                    var_seq = block_seq[-olap_right:]
+                    vpos1 = 0 if clip_left else size
+                    if not read.is_reverse:
+                        vpos1 = contig_size - len(var_seq)
+                        vpos1 = vpos1 if clip_left else vpos1 - size
+                    vpos2 = vpos1 + len(var_seq)
+                    annot.append([read.query_name, 'retained seq', chrom1, max(olapping.end.values), chrom1, read.reference_end,
+                                  contig_size, size, vpos1, vpos2, strand, len(var_seq), var_seq, olapping_genes])
+                    var_seq = ''
+                #TODO: handle soft-clips
+#                tx_reads = [tx_read for tx_read in tx_idx.find(read.query_name)]
+#                if len(tx_reads) == 1:
+#                    tx_read = tx_reads[0]
+#                    is_softclip = [o == 4 for o,v in tx_read.cigar]
+#
+#                    if any(is_softclip):
+#                        sc_start = is_softclip[0]
+#                        if is_softclip[0] and is_softclip[-1]:
+#                            sc_start = tx_read.cigar[0][1] > tx_read.cigar[-1][1]
+#                            print('WARNING: contig %s is soft-clipped at both ends. Picking the longest soft-clip for annotation.' % read.query_name)
+#
+#                        var_seq = str(tx_read.query_sequence)
+#                        #sc_size = tx_read.cigar[0][1] if sc_start else tx_read.cigar[-1][1]
+#                        sc_size = read.cigar[clip_idx][1]
+#                        # ^ actually the hard clip len from genome alignment, pick this as the sc_size
+#                        # (even though it may differ from the txome alignment), otherwise we don't know
+#                        # the genomic pos where novel seq is inserted (need this to build supertranscript)
+#                        var_seq = var_seq[:sc_size] if sc_start else var_seq[-sc_size:]
+#                        cpos1 = 0 if sc_start else len(tx_read.query_sequence) - sc_size
+#                        cpos2 = cpos1 + sc_size
+
+            annot.append([read.query_name, gtype, chrom1, pos1, chrom1, pos1, contig_size, size, cpos1, cpos2, strand, csize, var_seq, olapping_genes])
             print('%d bp %s at pos %s:%d (cigar string = %s)' % (size, gtype, chrom1, pos1, read.cigarstring))
 
     if len(tx_juncs) > 0:
@@ -220,7 +317,7 @@ def annotate_contig(read, tx_juncs):
                 elif not (junc_loc_left and junc_loc_right):
                     variant_type = 'exonic-to-non-exonic junction'
 
-            annot.append([read.query_name, variant_type, chrom1, pos1, chrom2, pos2, contig_size, pos2 - pos1, cpos1, cpos2, strand, csize, var_seq])
+            annot.append([read.query_name, variant_type, chrom1, pos1, chrom2, pos2, contig_size, pos2 - pos1, cpos1, cpos2, strand, csize, var_seq, olapping_genes])
             print('novel junction at pos %s:%s-%s (cigar string = %s)' % (chrom1, junc[1], junc[2], read.cigarstring))
 
     return(annot)
@@ -380,26 +477,27 @@ else:
     annot = ''
     if annotate != '':
         cols = ['contig', 'variant', 'chrom1', 'genome_pos1', 'chrom2', \
-                'genome_pos2', 'contig_size', 'genome_varsize', 'contig_pos1', 'contig_pos2', \
-                'contig_align_strand', 'contig_varsize', 'variant_seq']
+                'genome_pos2', 'contig_size', 'genome_varsize', 'contig_pos1', \
+                'contig_pos2', 'contig_align_strand', 'contig_varsize', \
+                'variant_seq', 'gene']
         novel_contigs = pd.DataFrame(novel_contigs, columns=cols)
         novel_contigs = pair_fusions(novel_contigs)
-        novel_contigs = novel_contigs.merge(ds_output, left_on='contig', right_on='transcript', how='inner')
+        #novel_contigs = novel_contigs.merge(ds_output, left_on='contig', right_on='transcript', how='inner')
         sample = os.path.dirname(annotate).split('/')[-1].split('_')[0]
         novel_contigs['sample'] = sample
-        output_cols = ['gene', 'contig', 'variant', 'chrom1', 'genome_pos1',
-                       'chrom2', 'genome_pos2', 'contig_size', 'genome_varsize',
-                       'contig_pos1', 'contig_pos2', 'contig_align_strand',
-                       'contig_varsize', 'variant_seq', 'ec_names',
-                       'contigs', 'FDR', 'UniqueCount',
-                       'AmbigCount', 'ambig_ratio', 'sample']
-        novel_contigs = novel_contigs[output_cols].drop_duplicates()
-        novel_contigs = novel_contigs.sort_values(by=['FDR'])
+#        output_cols = ['gene', 'contig', 'variant', 'chrom1', 'genome_pos1',
+#                       'chrom2', 'genome_pos2', 'contig_size', 'genome_varsize',
+#                       'contig_pos1', 'contig_pos2', 'contig_align_strand',
+#                       'contig_varsize', 'variant_seq', 'ec_names',
+#                       'contigs', 'FDR', 'UniqueCount', 'AmbigCount', 'ambig_ratio', 'sample']
+#        novel_contigs = novel_contigs[output_cols].drop_duplicates()
+#        novel_contigs = novel_contigs.sort_values(by=['FDR'])
         write_header = True
         annot = '_annotated'
     else:
         novel_contigs = np.unique(np.array([c[0] for c in novel_contigs]))
         novel_contigs = pd.DataFrame(list(novel_contigs))
+    import ipdb; ipdb.set_trace()
     novel_contigs.to_csv('%s/novel_contigs%s.txt' % (outdir, annot), sep='\t', header=write_header, index=False)
 
 pysam.sort('-o', outbam_file, outbam_file_unsort)
