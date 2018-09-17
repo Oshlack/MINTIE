@@ -1,0 +1,30 @@
+##fileformat=VCFv4.2
+###ALT=<ID=INV,Description="Inversion">
+###ALT=<ID=DEL,Description="Deletion">
+###ALT=<ID=DUP,Description="Duplication">
+###ALT=<ID=DUP:TANDEM,Description="Tandem duplication">
+###ALT=<ID=INS,Description="Insertion">
+###ALT=<ID=FUS,Description="Fusion">
+###ALT=<ID=AS,Description="Alternative splice site (both ends annotated)">
+###ALT=<ID=NJ,Description="Novel junction (both ends unannotated)">
+###ALT=<ID=PNJ,Description="Partial novel junction (one end annotated)">
+###ALT=<ID=UT,Description="Variant of unknown type">
+###FILTER=<ID=REF_MATCH,Description="Variant matches reference genome">
+###FILTER=<ID=NON_DE,Description="Variant is not differentially expressed">
+###FILTER=<ID=NON_UNIQ,Description="Variant equivalence class is not unique">
+###INFO=<ID=CID,Number=1,Type=String,Description="Contig ID">
+###INFO=<ID=ECN,Number=1,Type=String,Description="Equivalence class name">
+###INFO=<ID=CLEN,Number=1,Type=Integer,Description="Contig length">
+###INFO=<ID=CPOS,Number=2,Type=Integer,Description="Position (start and end) of variant on contig">
+###INFO=<ID=CSTRAND,Number=1,Type=Character,Description="Contig alignment strand">
+###INFO=<ID=CCIGAR,Number=1,Type=String,Description="Contig cigar string">
+###INFO=<ID=VSIZE,Number=1,Type=Integer,Description="Variant size on genome">
+###INFO=<ID=CSIZE,Number=1,Type=Integer,Description="Variant size on contig">
+###INFO=<ID=CVTYPE,Number=1,Type=String,Description="Type of cryptic variant">
+###INFO=<ID=GENES,Number=1,Type=String,Description="Gene(s) contig aligns to (separated by '|')">
+###INFO=<ID=PARID,Number=1,Type=String,Description="ID of partner event">
+###INFO=<ID=ECC,Number=1,Type=Integer,Description="Equivalence class read count">
+###INFO=<ID=AI,Number=3,Type=Float,Description="Ambiguity information: unique reads, ambiguous reads, uniq / total">
+###INFO=<ID=PVAL,Number=2,Type=Float,Description="P-value and adjusted p-value for differential expression test">
+###INFO=<ID=CVQ,Number=1,Type=Float,Description="Weighted quality score of the cryptic variant">
+##CHROM  POS ID  REF ALT QUAL    FILTER  INFO    SAMPLE
