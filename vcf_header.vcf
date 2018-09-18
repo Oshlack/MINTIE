@@ -19,12 +19,13 @@
 ###INFO=<ID=CSTRAND,Number=1,Type=Character,Description="Contig alignment strand">
 ###INFO=<ID=CCIGAR,Number=1,Type=String,Description="Contig cigar string">
 ###INFO=<ID=VSIZE,Number=1,Type=Integer,Description="Variant size on genome">
-###INFO=<ID=CSIZE,Number=1,Type=Integer,Description="Variant size on contig">
+###INFO=<ID=CVSIZE,Number=1,Type=Integer,Description="Variant size on contig">
 ###INFO=<ID=CVTYPE,Number=1,Type=String,Description="Type of cryptic variant">
 ###INFO=<ID=GENES,Number=1,Type=String,Description="Gene(s) contig aligns to (separated by '|')">
 ###INFO=<ID=PARID,Number=1,Type=String,Description="ID of partner event">
-###INFO=<ID=ECC,Number=1,Type=Integer,Description="Equivalence class read count">
 ###INFO=<ID=AI,Number=3,Type=Float,Description="Ambiguity information: unique reads, ambiguous reads, uniq / total">
 ###INFO=<ID=PVAL,Number=2,Type=Float,Description="P-value and adjusted p-value for differential expression test">
 ###INFO=<ID=CVQ,Number=1,Type=Float,Description="Weighted quality score of the cryptic variant">
+###FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+###FORMAT=<ID=ECC,Number=1,Type=Integer,Description="Equivalence class read count">
 ##CHROM  POS ID  REF ALT QUAL    FILTER  INFO    SAMPLE

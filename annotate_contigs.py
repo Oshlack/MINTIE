@@ -15,11 +15,14 @@ import pandas as pd
 import numpy as np
 import pysam
 import os
+import pickle
 import re
 import logging
 import sys
+import string
 from argparse import ArgumentParser
 from intervaltree import Interval, IntervalTree
+from cv_vcf import CrypticVariant
 import ipdb
 
 EXIT_FILE_IO_ERROR = 1
@@ -31,7 +34,10 @@ GAP_MIN = 7
 CLIP_MIN = 30
 MATCH_MIN = 30
 MATCH_PERC_MIN = 0.3
-INFO_STRING = "CID:ECN:CLEN:CSTRAND:CCIGAR:VSIZE:CSIZE:CVTYPE:GENES:PARID:ECC:AI:PVAL:CVQ"
+
+# VCF parameters
+INFO = ["CID", "ECN", "CLEN", "CPOS", "CSTRAND", "CCIGAR", "VSIZE", "CVSIZE", "CVTYPE", "GENES", "PARID", "PVAL", "CVQ"]
+FORMAT = ["GT", "ECC", "AI"]
 
 # CIGAR specification codes
 CIGAR = {'match': 0,
@@ -41,14 +47,37 @@ CIGAR = {'match': 0,
          'soft-clip': 4,
          'hard-clip': 5,
          'silent_deletion': 6}
-GAPS = {1: 'insertion',
-        2: 'deletion',
-        6: 'silent_deletion'}
-CLIPS = {4: 'soft',
-         5: 'hard'}
-GAPS_REF_ONLY = {2: 'deletion',
-                 3: 'skipped',
-                 5: 'hard-clip'} # criteria that signify gaps in the reference
+GAPS = [CIGAR['insertion'], CIGAR['deletion'], CIGAR['silent_deletion']]
+# any cigar criteria that is >0 bp on an aligned contig
+AFFECT_CONTIG = [CIGAR['insertion'], CIGAR['match'], CIGAR['soft-clip'], CIGAR['hard-clip']]
+
+def cached(cachefile):
+    '''
+    source: https://datascience.blog.wzb.eu/2016/08/12/a-tip-for-the-impatient-simple-caching-with-python-pickle-and-decorators/
+    A function that creates a decorator which will use "cachefile"
+    for caching the results of the decorated function "fn".
+    '''
+    def decorator(fn):  # define a decorator for a function "fn"
+        def wrapped(*args, **kwargs):   # define a wrapper that will finally call "fn" with all arguments
+          # if cache exists -> load it and return its content
+          if os.path.exists(cachefile):
+              with open(cachefile, 'rb') as cachehandle:
+                print("using cached result from '%s'" % cachefile)
+                return pickle.load(cachehandle)
+
+          # execute the function with all arguments passed
+          res = fn(*args, **kwargs)
+
+          # write to cache file
+          with open(cachefile, 'wb') as cachehandle:
+            print("saving result to cache '%s'" % cachefile)
+            pickle.dump(res, cachehandle)
+
+          return res
+
+        return wrapped
+
+    return decorator   # return this "customized" decorator that uses "cachefile"
 
 def exit_with_error(message, exit_status):
     '''
@@ -119,6 +148,7 @@ def init_logging(log_filename):
         logging.info('program started')
     logging.info('command line: %s', ' '.join(sys.argv))
 
+@cached('gene_lookup_cache.pickle')
 def get_gene_lookup(tx_ref_file):
     #TODO: Cache this step
     '''
@@ -163,6 +193,7 @@ def get_juncs(tx):
     chroms = [tx['chrom']] * len(starts)
     return(list(zip(chroms, ends, starts)))
 
+@cached('juncs_lookup_cache.pickle')
 def get_junc_lookup(junc_file):
     '''
     Take junction reference file, generate and
@@ -194,11 +225,12 @@ def get_junc_lookup(junc_file):
 
     return juncs, locs
 
-def get_overlapping_gene(read):
+def get_overlapping_genes(read, ref_trees):
     try:
         ref_tree = ref_trees[read.reference_name]
     except KeyError:
-       logging.info('WARNING: reference chromosome %s (from read %s) not found in supplied reference' % (read.reference_name, read.query_name))
+       logging.info('WARNING: reference chromosome %s (from read %s) not found in supplied reference' %
+                    (read.reference_name, read.query_name))
        return ''
 
     blocks = read.get_blocks()
@@ -211,127 +243,76 @@ def get_overlapping_gene(read):
 
     return('|'.join(genes))
 
-class CrypticContig(object):
+def annotate_gaps(cc, read, record):
     '''
-    Cryptic contig object
+    Annotate deletions and insertions
     '''
-    def __init__(self, **kwargs):
-        "Build an empty CrypticContig object"
-        defaults = {
-            "chrom": 'NA',
-            "pos": -1,
-            "strand": '.',
-            "cid": '',
-            "ref": '',
-            "alt": '',
-            "qual": -1,
-            "cfilter": '.',
-            "ecn": '',
-            "clen": 0,
-            "cpos": [-1,-1],
-            "ccigar": '',
-            "vsize": 0,
-            "cvtype": '',
-            "genes": '',
-            "parid": '',
-            "ecc": '',
-            "ai": [-1, -1, -1],
-            "pval": [-1, -1],
-            "cvq": -1,
-            "gap_idxs": [],
-            "clip_idxs": [],
-            "novel_juncs": [],
-            "blocks": [],
-            "cigar": [],
-            "qseq": ''
-        }
-        for (prop, default) in defaults.items():
-            setattr(self, prop, kwargs.get(prop, default))
+    gap_idxs = [idx for idx, gap in enumerate(read.cigar) if gap[0] in GAPS and gap[1] >= GAP_MIN]
+    for gap_idx in gap_idxs:
+        cigar = read.cigar[gap_idx]
+        gtype, cc.vsize = GAPS[cigar[0]], int(cigar[1])
 
-    def from_read(self, read, novel_juncs):
-        match_idxs = [idx for idx,cig in enumerate(read.cigar) if cig[0] == 0]
-        self.chrom = read.reference_name
-        self.strand = '-' if read.is_reverse else '+'
-        self.blocks = [b for b in zip(match_idxs, read.get_blocks())]
-        self.cigar = read.cigar
-        self.cid = read.query_name
-        self.ccigar = read.cigarstring
-        self.novel_juncs = novel_juncs
-        self.gap_idxs = [idx for idx, gap in enumerate(read.cigar) if gap[0] in GAPS and gap[1] >= GAP_MIN]
-        self.clip_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] in CLIPS and clip[1] >= GAP_MIN]
-        self.clen =  sum([v for c,v in read.cigar if c in [0, 1, 4, 5]]) # count if match, insertion or clip TODO: parametrise
-        self.qseq = read.query_sequence
-        return self
+        block_idx = 0 if gap_idx == 0 else np.max(np.where(np.array([b[0] for b in cc.blocks]) < gap_idx)[0])
+        block = cc.blocks[block_idx][1]
+        cc.pos = int(block[1])
 
-    def get_info(self):
-        cid = str(self.cid)
-        ecn = str(self.ecn)
-        clen = str(self.clen)
-        cpos = str(self.cpos)
-        cstrand = str(self.cstrand)
-        ccigar = str(self.ccigar)
-        vsize = str(self.vsize)
-        cvtype = str(self.cvtype)
-        genes = str(self.genes)
-        parid = str(self.parid)
-        ecc = str(self.ecc)
-        ai = ','.join([str(a) for a in ai])
-        pval = ','.join([str(pv) for pv in pval])
-        cvq = str(self.cvq)
-        return ':'.join([cid, ecn, clen, cpos, cstrand, ccigar, vsize, cvtype, genes, parid, ecc, ai, pval, cvq])
+        # position of variant on contig
+        cc.cpos[0] = sum([v for c,v in read.cigar[:gap_idx]])
+        cc.cvsize = cc.vsize if read.cigar[gap_idx][0] == CIGAR['insertion'] else 0 # only insertions affect contig pos
+        cc.cpos[1] = cc.cpos[0] + cc.cvsize
 
-    def vcf_output(self):
-        chrom = str(self.chrom)
-        pos = str(self.pos)
-        cid = str(self.cid)
-        ref = str(self.ref)
-        alt = str(self.alt)
-        qual = str(self.qual)
-        cfilter = str(self.cfilter)
-        info_string = INFO_STRING
-        info = self.get_info()
-        return "\t".join([chrom, pos, cid, ref, alt, qual, cfilter, info_string, info])
+        var_seq = ''
+        if cc.cvsize > 0:
+            seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_CONTIG])
+            seq_pos2 = seq_pos1 + cc.cvsize
+            seq = read.query_sequence[(seq_pos1-1):seq_pos2]
+            cc.ref, cc.alt = seq[:1], seq
+        else:
+            start, end = cc.cpos[0]-1, (cc.cpos[0] + cc.vsize)
+            seq = read.get_reference_sequence()[start:end]
+            cc.ref, cc.alt  = seq, seq[:1]
 
-    def annotate_gaps(self):
-        '''
-        Annotate gaps
-        '''
+        cc.cvtype = 'DEL' if gtype in ['deletion', 'silent_deletion'] else 'INS'
+        record = cc.set_variant_ids(record)
+        print(cc.vcf_output())
+    return record
+
+def annotate_softclips(cc, read, record):
+    sc_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] == CIGAR['soft-clip'] and clip[1] >= CLIP_MIN]
+    for sc_idx in sc_idxs:
+        cigar = read.cigar[sc_idx]
+        cc.cvtype, cc.vsize, cc.cvsize = 'UT', int(cigar[1]), int(cigar[1])
+        sc_left = sc_idx == 0
+
+        block_idx = 0 if sc_idx == 0 else np.max(np.where(np.array([b[0] for b in cc.blocks]) < sc_idx)[0])
+        block = cc.blocks[block_idx][1]
+        cc.pos = int(block[0]) if sc_left else int(block[1])
+
+        rcigar = read.cigar[::-1] if cc.strand == '-' else read.cigar
+        cc.cpos[0] = sum([v for c,v in rcigar[:sc_idx] if c in AFFECT_CONTIG])
+        cc.cpos[1] = cc.cpos[0] + cc.cvsize
+
+        varseq = read.query_sequence[cc.cpos[0]:cc.cpos[1]]
+        refseq = read.get_reference_sequence()
+        cc.ref = refseq[0] if sc_left else refseq[-1]
+        cc.alt = '%s]%s:%d]%s' % (varseq, cc.chrom, cc.pos-1, cc.ref) if sc_left else \
+                 '%s[%s:%d[%s' % (cc.chrom, cc.pos+1, cc.ref, varseq)
+
+        record = cc.set_variant_ids(record)
+        print(cc.vcf_output())
+    return record
+
+def annotate_hardclips(cc, read, record):
+    hc_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] == CIGAR['hard-clip'] and clip[1] >= GAP_MIN]
+    for hc_idx in hc_idxs:
+        cigar = read.cigar[hc_idx]
+        cc.cvtype = 'FUS'
         ipdb.set_trace()
-        for gap_idx in self.gap_idxs:
-            cigar = self.cigar[gap_idx]
-            gtype, size = GAPS[cigar[0]], int(cigar[1])
+    return record
 
-            block_idx = 0 if gap_idx == 0 else np.max(np.where(np.array([b[0] for b in self.blocks]) < gap_idx)[0])
-            block = self.blocks[block_idx][1]
-            self.pos = int(block[1])
-
-            # position of variant on contig
-            cpos1 = sum([v for c,v in self.cigar[:gap_idx]])
-            csize = size if self.cigar[gap_idx][0] == CIGAR['insertion'] else 0 # only insertions affect contig pos
-            cpos2 = cpos1 + csize
-
-            var_seq = ''
-            if csize > 0:
-                seq_pos1 = sum([v for c,v in self.cigar[:gap_idx] if c not in GAPS_REF_ONLY])
-                seq_pos2 = seq_pos1 + csize
-                var_seq = self.qseq[seq_pos1:seq_pos2]
-            print(self.vcf_output())
-
-    def annotate_clips(self):
-        #TODO
-        pass
-
-    def annotate_juncs(self):
-        #TODO
-        pass
-
-    def annotate_all(self, juncs, locs, ref_trees, ex_ref):
-        if len(self.gap_idxs) > 0:
-            self.annotate_gaps()
-        if len(self.clip_idxs) > 0:
-            self.annotate_clips()
-        if len(self.novel_juncs) > 0:
-            self.annotate_juncs()
+def annotate_juncs(cc, read, novel_juncs, record):
+    #TODO
+    return record
 
 def get_tx_juncs(read):
     tx_juncs = []
@@ -356,6 +337,7 @@ def annotate_contigs(args):
 
     logging.info('Checking contigs for non-reference content...')
     novel_contigs = []
+    record = {}
     for read in sam.fetch():
         if read.reference_id < 0:
             logging.info('Skipping unmapped contig %s' % read.query_name)
@@ -371,17 +353,29 @@ def annotate_contigs(args):
 
         # check for contig gaps or clips
         has_gaps = any([op in GAPS and val >= GAP_MIN for op, val in read.cigar])
-        has_clips = any([op in CLIPS and val >= CLIP_MIN for op, val in read.cigar])
+        has_scs = any([op == CIGAR['soft-clip'] and val >= CLIP_MIN for op, val in read.cigar])
+        has_hcs = any([op == CIGAR['hard-clip'] and val >= CLIP_MIN for op, val in read.cigar])
 
         # check junctions
         tx_juncs = get_tx_juncs(read)
         unknown_juncs = ['%s:%s-%s' % (c, s, e) not in juncs for c, s, e in tx_juncs]
         has_novel_juncs = any(unknown_juncs)
 
-        if has_gaps or has_clips or has_novel_juncs:
+        if has_gaps or has_scs or has_hcs or has_novel_juncs:
             novel_juncs = [list(x) for x in np.array(tx_juncs)[unknown_juncs]]
-            cc = CrypticContig().from_read(read, novel_juncs)
-            cc.annotate_all(juncs, locs, ref_trees, ex_ref)
+            cc = CrypticVariant().from_read(read)
+            cc.genes = get_overlapping_genes(read, ref_trees)
+            if cc.genes == '' and not has_hcs:
+                logging.info('Skipping contig %s; no gene overlap' % read.query_name)
+                continue
+            if has_gaps:
+                record = annotate_gaps(cc, read, record)
+            if has_scs:
+                record = annotate_softclips(cc, read, record)
+            if has_hcs:
+                record = annotate_hardclips(cc, read, record)
+            if has_novel_juncs:
+                record = annotate_juncs(cc, read, novel_juncs, record)
             outbam.write(read)
 
     sam.close()
