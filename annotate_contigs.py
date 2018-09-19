@@ -104,8 +104,8 @@ def parse_args():
                         metavar='LOG_FILE',
                         type=str,
                         help='record program progress in LOG_FILE')
-    parser.add_argument(dest='sam_file',
-                        metavar='SAM_FILE',
+    parser.add_argument(dest='bam_file',
+                        metavar='BAM_FILE',
                         type=str,
                         help='''SAM or BAM format file containing contig alignments''')
     parser.add_argument(dest='output_bam',
@@ -150,7 +150,6 @@ def init_logging(log_filename):
 
 @cached('gene_lookup_cache.pickle')
 def get_gene_lookup(tx_ref_file):
-    #TODO: Cache this step
     '''
     Generate start/end coordinate reference
     for genes and output as an interval tree
@@ -243,75 +242,209 @@ def get_overlapping_genes(read, ref_trees):
 
     return('|'.join(genes))
 
-def annotate_gaps(cc, read, record):
+def get_next_letter(last_letter):
+    '''
+    Convenience function to get next letter in alphabet
+    '''
+    try:
+        next_letter_pos = np.where(np.array(list(string.ascii_letters)) == last_letter)[0][0]+1
+        next_letter = list(string.ascii_letters)[next_letter_pos]
+        return next_letter
+    except IndexError:
+        logging.info('Cannot increment letter, non-ascii letter (%s) provided or next letter out of bounds' % last_letter)
+        return ''
+
+def get_next_id(qname, record):
+    if qname not in record:
+        vid = qname + 'a'
+        record[qname] = [vid]
+        return vid, record
+    else:
+        vid = qname + get_next_letter(record[qname][-1][-1])
+        record[qname].append(vid)
+        return vid, record
+
+def annotate_gaps(cv, read, record):
     '''
     Annotate deletions and insertions
     '''
     gap_idxs = [idx for idx, gap in enumerate(read.cigar) if gap[0] in GAPS and gap[1] >= GAP_MIN]
     for gap_idx in gap_idxs:
         cigar = read.cigar[gap_idx]
-        gtype, cc.vsize = GAPS[cigar[0]], int(cigar[1])
+        gtype, cv.vsize = GAPS[cigar[0]], int(cigar[1])
 
-        block_idx = 0 if gap_idx == 0 else np.max(np.where(np.array([b[0] for b in cc.blocks]) < gap_idx)[0])
-        block = cc.blocks[block_idx][1]
-        cc.pos = int(block[1])
+        block_idx = 0 if gap_idx == 0 else np.max(np.where(np.array([b[0] for b in cv.blocks]) < gap_idx)[0])
+        block = cv.blocks[block_idx][1]
+        cv.pos = int(block[1])
 
         # position of variant on contig
-        cc.cpos[0] = sum([v for c,v in read.cigar[:gap_idx]])
-        cc.cvsize = cc.vsize if read.cigar[gap_idx][0] == CIGAR['insertion'] else 0 # only insertions affect contig pos
-        cc.cpos[1] = cc.cpos[0] + cc.cvsize
+        cv.cpos[0] = sum([v for c,v in read.cigar[:gap_idx]])
+        cv.cvsize = cv.vsize if read.cigar[gap_idx][0] == CIGAR['insertion'] else 0 # only insertions affect contig pos
+        cv.cpos[1] = cv.cpos[0] + cv.cvsize
 
         var_seq = ''
-        if cc.cvsize > 0:
+        if cv.cvsize > 0:
             seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_CONTIG])
-            seq_pos2 = seq_pos1 + cc.cvsize
+            seq_pos2 = seq_pos1 + cv.cvsize
             seq = read.query_sequence[(seq_pos1-1):seq_pos2]
-            cc.ref, cc.alt = seq[:1], seq
+            cv.ref, cv.alt = seq[:1], seq
         else:
-            start, end = cc.cpos[0]-1, (cc.cpos[0] + cc.vsize)
+            start, end = cv.cpos[0]-1, (cv.cpos[0] + cv.vsize)
             seq = read.get_reference_sequence()[start:end]
-            cc.ref, cc.alt  = seq, seq[:1]
+            cv.ref, cv.alt  = seq, seq[:1]
 
-        cc.cvtype = 'DEL' if gtype in ['deletion', 'silent_deletion'] else 'INS'
-        record = cc.set_variant_ids(record)
-        print(cc.vcf_output())
+        cv.cvtype = 'DEL' if gtype in ['deletion', 'silent_deletion'] else 'INS'
+        cv.vid, record = get_next_id(read.query_name, record)
+        print(cv.vcf_output())
     return record
 
-def annotate_softclips(cc, read, record):
+def annotate_softclips(cv, read, record):
     sc_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] == CIGAR['soft-clip'] and clip[1] >= CLIP_MIN]
     for sc_idx in sc_idxs:
         cigar = read.cigar[sc_idx]
-        cc.cvtype, cc.vsize, cc.cvsize = 'UT', int(cigar[1]), int(cigar[1])
+        cv.cvtype, cv.vsize, cv.cvsize = 'UT', int(cigar[1]), int(cigar[1])
         sc_left = sc_idx == 0
 
-        block_idx = 0 if sc_idx == 0 else np.max(np.where(np.array([b[0] for b in cc.blocks]) < sc_idx)[0])
-        block = cc.blocks[block_idx][1]
-        cc.pos = int(block[0]) if sc_left else int(block[1])
+        block_idx = 0 if sc_idx == 0 else np.max(np.where(np.array([b[0] for b in cv.blocks]) < sc_idx)[0])
+        block = cv.blocks[block_idx][1]
+        cv.pos = int(block[0]) if sc_left else int(block[1])
 
-        rcigar = read.cigar[::-1] if cc.strand == '-' else read.cigar
-        cc.cpos[0] = sum([v for c,v in rcigar[:sc_idx] if c in AFFECT_CONTIG])
-        cc.cpos[1] = cc.cpos[0] + cc.cvsize
+        rcigar = read.cigar[::-1] if cv.strand == '-' else read.cigar
+        cv.cpos[0] = sum([v for c,v in rcigar[:sc_idx] if c in AFFECT_CONTIG])
+        cv.cpos[1] = cv.cpos[0] + cv.cvsize
 
-        varseq = read.query_sequence[cc.cpos[0]:cc.cpos[1]]
+        varseq = read.query_sequence[cv.cpos[0]:cv.cpos[1]]
         refseq = read.get_reference_sequence()
-        cc.ref = refseq[0] if sc_left else refseq[-1]
-        cc.alt = '%s]%s:%d]%s' % (varseq, cc.chrom, cc.pos-1, cc.ref) if sc_left else \
-                 '%s[%s:%d[%s' % (cc.chrom, cc.pos+1, cc.ref, varseq)
+        cv.ref = refseq[0] if sc_left else refseq[-1]
+        cv.alt = '%s]%s:%d]%s' % (varseq, cv.chrom, cv.pos-1, cv.ref) if sc_left else \
+                 '%s[%s:%d[%s' % (cv.ref, cv.chrom, cv.pos+1, varseq)
 
-        record = cc.set_variant_ids(record)
-        print(cc.vcf_output())
+        cv.vid, record = get_next_id(read.query_name, record)
+        print(cv.vcf_output())
     return record
 
-def annotate_hardclips(cc, read, record):
-    hc_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] == CIGAR['hard-clip'] and clip[1] >= GAP_MIN]
-    for hc_idx in hc_idxs:
-        cigar = read.cigar[hc_idx]
-        cc.cvtype = 'FUS'
+def annotate_block(cv, read, block, block_idx, ex_chr):
+    '''
+    For fusions with non-gene sequence at break
+    '''
+    block_size = block[1] - block[0]
+    olapping = ex_chr[np.logical_and(block[0] < ex_chr.start, block[1] > ex_chr.end)]
+    left = ex_chr[np.logical_and(block[1] > ex_chr.start, block[1] <= ex_chr.end)]
+    right = ex_chr[np.logical_and(block[0] >= ex_chr.start, block[0] < ex_chr.end)]
+
+    seq_pos1 = sum([e - s for s, e in read.get_blocks()[:block_idx]])
+    seq_pos2 = seq_pos1 + block_size
+    block_seq = read.query_sequence[seq_pos1:seq_pos2]
+    varseq = ''
+
+    if len(olapping) == 0 and len(right) == 0 and len(left) == 0:
+        # block is entirely intronic or intergenic
+        varseq = block_seq
+    elif len(left) > 0 and len(right) > 0:
+        # intron retention; split into two
+        pass
+    elif len(left) > 0 or len(right) > 0:
+        # get variant sequence not matching reference
+        olap_size = block[1] - min(left.start.values) if len(left)>0 else max(right.end.values) - block[0]
+        varseq = block_seq[:-olap_size] if len(left)>0 else block_seq[olap_size:]
+    elif len(olapping) > 0:
+        # if block overlaps an exon, must split into two
+        olap_left = min(olapping.start.values) - block[0]
+        varseq = block_seq[:olap_left]
+        vpos1 = size if clip_left else 0
+        if read.is_reverse:
+            vpos1 = contig_size - len(varseq)
+            vpos1 = vpos1 if not clip_left else vpos1 - size
+        vpos2 = vpos1 + len(varseq)
+    return varseq
+
+def annotate_fusion(read, juncs, locs, bam_idx, ex_ref, ref_trees, outbam, record):
+    try:
+        r1, r2 = bam_idx.find(read.query_name)
+    except ValueError:
+        logging.info('WARNING: found >2 reads matching hard-clipped read %s; cannot process' % read.query_name)
+        return record
+
+    cv1 = CrypticVariant().from_read(r1)
+    cv2 = CrypticVariant().from_read(r2)
+    cv1.cvtype, cv2.cvtype = 'FUS', 'FUS'
+
+    cv1.genes = get_overlapping_genes(r1, ref_trees)
+    cv2.genes = get_overlapping_genes(r2, ref_trees)
+    if cv1.genes == '' and cv2.genes == '':
+        # no intersecting gene, this is not an interesting fusion
+        logging.info('No gene(s) intersecting candidate fusion contig %s; skipping' % read.query_name)
+        record[read.query_name] = []
+        return record
+
+    hc_idx1 = [idx for idx, clip in enumerate(r1.cigar) if clip[0] == CIGAR['hard-clip']][0]
+    hc_left1 = hc_idx1 == 0
+
+    block_idx1 = 0 if hc_left1 else np.max(np.where(np.array([b[0] for b in cv1.blocks]) < hc_idx1)[0])
+    block1 = cv1.blocks[block_idx1][1]
+    cv1.pos = int(block1[0]) if hc_left1 else int(block1[1])
+
+    hc_idx2 = [idx for idx, clip in enumerate(r2.cigar) if clip[0] == CIGAR['hard-clip']][0]
+    hc_left2 = hc_idx2 == 0
+
+    block_idx2 = 0 if hc_left2 else np.max(np.where(np.array([b[0] for b in cv2.blocks]) < hc_idx2)[0])
+    block2 = cv2.blocks[block_idx2][1]
+    cv2.pos = int(block2[0]) if hc_left2 else int(block2[1])
+
+    #TODO: handle inserted sequence btw fusion
+    varseq1, varseq2 = '', ''
+    refseq1 = r1.get_reference_sequence()
+    refseq2 = r2.get_reference_sequence()
+    cv1.ref = refseq1[0] if hc_left1 else refseq1[-1]
+    cv1.alt = '%s]%s:%d]%s' % (varseq1, cv2.chrom, cv2.pos-1, cv1.ref) if hc_left1 else \
+              '%s[%s:%d[%s' % (cv1.ref, cv2.chrom, cv2.pos+1, varseq1)
+    cv2.ref = refseq2[0] if hc_left2 else refseq1[-1]
+    cv2.alt = '%s]%s:%d]%s' % (varseq2, cv1.chrom, cv1.pos-1, cv2.ref) if hc_left2 else \
+              '%s[%s:%d[%s' % (cv2.ref, cv1.chrom, cv1.pos+1, varseq2)
+
+    cv1.vid, record = get_next_id(r1.query_name, record)
+    cv2.vid, record = get_next_id(r2.query_name, record)
+    cv1.parid, cv2.parid = cv2.vid, cv1.vid
+
+    print(cv1.vcf_record())
+    print(cv2.vcf_record())
+    outbam.write(r1)
+    outbam.write(r2)
+
+    record = annotate_single_read(r1, juncs, locs, ex_ref, record)
+    record = annotate_single_read(r2, juncs, locs, ex_ref, record)
+
+    return record
+
+def annotate_juncs(cv, read, locs, novel_juncs, record):
+    for junc in novel_juncs:
+        pos1, pos2 = int(junc[1]), int(junc[2])
+        junc_idx = [idx for idx, block in cv.blocks if block[1] == pos1][0]
+        junc_type = read.cigar[junc_idx+1][0]
+        if junc_type in GAPS or junc_type == CIGAR['soft-clip']:
+            continue
+
+        cp = CrypticVariant().from_read(read) # partner variant
+        cp.genes = cv.genes
+        varseq, refseq = '', read.get_reference_sequence()
+        cpos = sum([v for c,v in read.cigar[:(junc_idx+1)]])
+        cv.cpos[0], cv.cpos[1] = cpos, cpos
+        cp.cpos[0], cp.cpos[1] = cv.cpos[0], cv.cpos[1]
+        cv.pos, cp.pos = pos1-1, pos2+1
+
+        cv.ref, cp.ref = refseq[cpos-1], refseq[cpos+1]
+        cv.alt = '%s[%s:%d[%s' % (cv.ref, cv.chrom, cv.pos, varseq)
+        cp.alt = '%s]%s:%d]%s' % (varseq, cp.chrom, cp.pos, cp.ref)
+
+        cv.vid, record = get_next_id(read.query_name, record)
+        cp.vid, record = get_next_id(read.query_name, record)
+        cv.parid, cp.parid = cp.vid, cv.vid
+
+        # TODO: annotate variant type
+        # TODO: test
         ipdb.set_trace()
-    return record
-
-def annotate_juncs(cc, read, novel_juncs, record):
-    #TODO
+        print(cv.vcf_output())
+        print(cp.vcf_output())
     return record
 
 def get_tx_juncs(read):
@@ -323,24 +456,69 @@ def get_tx_juncs(read):
     tx_juncs = [junc for junc in tx_juncs if (junc[2] - junc[1]) > GAP_MIN]
     return tx_juncs
 
+def annotate_single_read(read, juncs, locs, ex_ref, record, outbam=None, ref_trees=None):
+    '''
+    Annotate insertions, deletions and soft-clips on a single read
+    '''
+    #TODO: add support for single block read retained intron
+    genes = ''
+    if ref_trees:
+        genes = get_overlapping_genes(read, ref_trees)
+        if genes == '':
+            logging.info('No gene(s) intersecting read %s; skipping' % read.query_name)
+            return record
+
+    # check for contig gaps or soft-clips
+    has_gaps = any([op in GAPS and val >= GAP_MIN for op, val in read.cigar])
+    has_scs = any([op == CIGAR['soft-clip'] and val >= CLIP_MIN for op, val in read.cigar])
+
+    # check junctions
+    tx_juncs = get_tx_juncs(read)
+    unknown_juncs = ['%s:%s-%s' % (c, s, e) not in juncs for c, s, e in tx_juncs]
+    has_novel_juncs = any(unknown_juncs)
+
+    if has_gaps or has_scs or has_novel_juncs:
+        cv = CrypticVariant().from_read(read)
+        cv.genes = genes
+        if has_gaps:
+            record = annotate_gaps(cv, read, record)
+        if has_scs:
+            record = annotate_softclips(cv, read, record)
+        if has_novel_juncs:
+            novel_juncs = [list(x) for x in np.array(tx_juncs)[unknown_juncs]]
+            record = annotate_juncs(cv, read, locs, novel_juncs, record)
+        #TODO: intron retention
+        if outbam:
+            outbam.write(read)
+    else:
+        logging.info('Nothing to annotate for read %s (read matches reference)' % read.query_name)
+
+    return record
+
 def annotate_contigs(args):
     '''
-    Extract aligned contigs from supplied sam file and output
+    Extract aligned contigs from supplied bam file and output
     annotated contig if it contains any novel bits
     '''
     ref_trees, ex_ref = get_gene_lookup(args.tx_ref_file)
     juncs, locs = get_junc_lookup(args.junc_file)
 
-    sam = pysam.AlignmentFile(args.sam_file, 'rc')
-    outbam = pysam.AlignmentFile(args.output_bam, 'wb', template=sam)
+    bam = pysam.AlignmentFile(args.bam_file, 'rc')
+    bam_idx = pysam.IndexedReads(bam)
+    bam_idx.build()
+    outbam = pysam.AlignmentFile(args.output_bam, 'wb', template=bam)
     outbam_file_unsort = '%s_unsorted.bam' % os.path.splitext(args.output_bam)[0]
 
     logging.info('Checking contigs for non-reference content...')
     novel_contigs = []
     record = {}
-    for read in sam.fetch():
+    for read in bam.fetch():
         if read.reference_id < 0:
             logging.info('Skipping unmapped contig %s' % read.query_name)
+            continue
+
+        if read.query_name in record:
+            # we have processed this read already (likely a read's partner)
             continue
 
         # only consider the contig if at least match_min bases align
@@ -351,32 +529,11 @@ def annotate_contigs(args):
             logging.info('Skipping contig %s: not enough bases match reference' % read.query_name)
             continue
 
-        # check for contig gaps or clips
-        has_gaps = any([op in GAPS and val >= GAP_MIN for op, val in read.cigar])
-        has_scs = any([op == CIGAR['soft-clip'] and val >= CLIP_MIN for op, val in read.cigar])
-        has_hcs = any([op == CIGAR['hard-clip'] and val >= CLIP_MIN for op, val in read.cigar])
-
-        # check junctions
-        tx_juncs = get_tx_juncs(read)
-        unknown_juncs = ['%s:%s-%s' % (c, s, e) not in juncs for c, s, e in tx_juncs]
-        has_novel_juncs = any(unknown_juncs)
-
-        if has_gaps or has_scs or has_hcs or has_novel_juncs:
-            novel_juncs = [list(x) for x in np.array(tx_juncs)[unknown_juncs]]
-            cc = CrypticVariant().from_read(read)
-            cc.genes = get_overlapping_genes(read, ref_trees)
-            if cc.genes == '' and not has_hcs:
-                logging.info('Skipping contig %s; no gene overlap' % read.query_name)
-                continue
-            if has_gaps:
-                record = annotate_gaps(cc, read, record)
-            if has_scs:
-                record = annotate_softclips(cc, read, record)
-            if has_hcs:
-                record = annotate_hardclips(cc, read, record)
-            if has_novel_juncs:
-                record = annotate_juncs(cc, read, novel_juncs, record)
-            outbam.write(read)
+        is_hardclipped = any([op == CIGAR['hard-clip'] and val >= CLIP_MIN for op, val in read.cigar])
+        if is_hardclipped:
+            record = annotate_fusion(read, juncs, locs, bam_idx, ex_ref, ref_trees, outbam, record)
+        else:
+            record = annotate_single_read(read, juncs, locs, ex_ref, record, outbam, ref_trees)
 
     sam.close()
     outbam.close()
