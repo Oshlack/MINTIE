@@ -115,38 +115,3 @@ class CrypticVariant(object):
         info = self.get_info()
         form = self.get_format()
         return "\t".join([chrom, pos, vid, ref, alt, qual, cfilter, info, ':'.join(FORMAT), form])
-
-    def set_variant_ids(self, record):
-        '''
-        take dict of previously written records
-        and either create matching pair for fusions
-        or incremenet variant ID based on previously
-        written records
-        '''
-        if len(record) == 0:
-            record[self.vid] = ''
-            return record
-
-        prev_annotated = [re.match('%s[a-z]' % self.cid, rec) for rec in record]
-        prev_annotated = [pa.string for pa in prev_annotated if pa].sort()
-        if self.cvtype == 'FUS':
-            partner = ''
-            for vid in prev_annotated:
-                if record[vid] != '':
-                    partner = vid
-                    break
-            if partner != '':
-                # fusion previously annotated, set partner attributes
-                self.vid = record[vid]
-                self.parid = vid
-            else:
-                # first entry of fusion, create ID of 'future' record
-                letter = get_next_letter(prev_annnotated[-1][-1]) if len(prev_annotated) > 0 else 'a'
-                vid = self.cid + letter
-                pid = self.cif + get_next_letter(letter)
-                record[vid] = pid
-                record[pid] = vid
-        elif prev_annotated and len(prev_annotated) > 0:
-            last_letter = prev_annnotated[-1][-1]
-            self.vid = self.cid + get_next_letter(last_letter)
-        return record

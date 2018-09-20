@@ -48,6 +48,7 @@ CIGAR = {'match': 0,
          'hard-clip': 5,
          'silent_deletion': 6}
 GAPS = [CIGAR['insertion'], CIGAR['deletion'], CIGAR['silent_deletion']]
+CLIPS = [CIGAR['soft-clip'], CIGAR['hard-clip']]
 # any cigar criteria that is >0 bp on an aligned contig
 AFFECT_CONTIG = [CIGAR['insertion'], CIGAR['match'], CIGAR['soft-clip'], CIGAR['hard-clip']]
 
@@ -62,7 +63,7 @@ def cached(cachefile):
           # if cache exists -> load it and return its content
           if os.path.exists(cachefile):
               with open(cachefile, 'rb') as cachehandle:
-                print("using cached result from '%s'" % cachefile)
+                logging.info("using cached result from '%s'" % cachefile)
                 return pickle.load(cachehandle)
 
           # execute the function with all arguments passed
@@ -70,7 +71,7 @@ def cached(cachefile):
 
           # write to cache file
           with open(cachefile, 'wb') as cachehandle:
-            print("saving result to cache '%s'" % cachefile)
+            logging.info("saving result to cache '%s'" % cachefile)
             pickle.dump(res, cachehandle)
 
           return res
@@ -228,7 +229,7 @@ def get_overlapping_genes(read, ref_trees):
     try:
         ref_tree = ref_trees[read.reference_name]
     except KeyError:
-       logging.info('WARNING: reference chromosome %s (from read %s) not found in supplied reference' %
+       logging.info('WARNING: reference chromosome %s (from read %s) was not found in supplied reference' %
                     (read.reference_name, read.query_name))
        return ''
 
@@ -323,40 +324,118 @@ def annotate_softclips(cv, read, record):
         print(cv.vcf_output())
     return record
 
-def annotate_block(cv, read, block, block_idx, ex_chr):
+def get_chr_ref(read, ex_ref):
     '''
-    For fusions with non-gene sequence at break
+    get exon coordinates for a given read's alignment chromosome
     '''
-    block_size = block[1] - block[0]
-    olapping = ex_chr[np.logical_and(block[0] < ex_chr.start, block[1] > ex_chr.end)]
-    left = ex_chr[np.logical_and(block[1] > ex_chr.start, block[1] <= ex_chr.end)]
-    right = ex_chr[np.logical_and(block[0] >= ex_chr.start, block[0] < ex_chr.end)]
+    chr_ref = ex_ref[ex_ref.chrom == read.reference_name]
+    if len(chr_ref) == 0:
+       logging.info('WARNING: reference chromosome %s (from read %s) was not found in supplied reference' %
+                    (read.reference_name, read.query_name))
+    return chr_ref
 
-    seq_pos1 = sum([e - s for s, e in read.get_blocks()[:block_idx]])
-    seq_pos2 = seq_pos1 + block_size
-    block_seq = read.query_sequence[seq_pos1:seq_pos2]
-    varseq = ''
+def is_novel_block(block, chr_ref):
+    '''
+    checks a read's sequence blocks and returns
+    false if the block matches (or is contained)
+    within a referenced exon, and true otherwise
+    '''
+    match = chr_ref[np.logical_and(block[0] >= chr_ref.start, block[1] <= chr_ref.end)]
+    return len(match) == 0
 
-    if len(olapping) == 0 and len(right) == 0 and len(left) == 0:
-        # block is entirely intronic or intergenic
-        varseq = block_seq
-    elif len(left) > 0 and len(right) > 0:
-        # intron retention; split into two
-        pass
-    elif len(left) > 0 or len(right) > 0:
-        # get variant sequence not matching reference
-        olap_size = block[1] - min(left.start.values) if len(left)>0 else max(right.end.values) - block[0]
-        varseq = block_seq[:-olap_size] if len(left)>0 else block_seq[olap_size:]
-    elif len(olapping) > 0:
-        # if block overlaps an exon, must split into two
-        olap_left = min(olapping.start.values) - block[0]
-        varseq = block_seq[:olap_left]
-        vpos1 = size if clip_left else 0
-        if read.is_reverse:
-            vpos1 = contig_size - len(varseq)
-            vpos1 = vpos1 if not clip_left else vpos1 - size
-        vpos2 = vpos1 + len(varseq)
-    return varseq
+def get_block_sequence(read, block_idx):
+    '''
+    return query and reference sequence of
+    specified block
+    '''
+    qseq = read.query_sequence
+    rseq = read.get_reference_sequence()
+
+    cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_CONTIG])
+    cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_CONTIG])
+
+    return qseq[cpos1:cpos2], rseq[cpos1:cpos2]
+
+def annotate_block_right(cv, read, cpos, olapping, block, block_idx):
+    qseq, rseq = get_block_sequence(read, block_idx)
+    seq_left_pos = min(olapping.start) - block[0]
+    cv.pos, cv.ref, cv.alt = block[0], rseq[:seq_left_pos], qseq[:seq_left_pos]
+    cv.cpos = [cpos, cpos + seq_left_pos]
+    cv.vsize, cv.cvsize = len(cv.alt), len(cv.alt)
+    return cv
+
+def annotate_block_left(cv, read, cpos, olapping, block, block_idx):
+    qseq, rseq = get_block_sequence(read, block_idx)
+    seq_right_pos = block[1] - max(olapping.start)
+    cv.pos, cv.ref, cv.alt = max(olapping.start) - block[1], rseq[seq_right_pos:], qseq[seq_right_pos:]
+    cv.cpos, cv.vsize = [cpos - seq_right_pos, cpos], len(cv.alt)
+    cv.vsize, cv.cvsize = len(cv.alt), len(cv.alt)
+    return cv
+
+def annotate_blocks(cv, read, chr_ref, record):
+    '''
+    Annotate any sequence that is outside of exonic regions
+    '''
+    novel_blocks = [(idx, block) for idx, block in cv.blocks if is_novel_block(block, chr_ref)]
+    for block_idx, block in novel_blocks:
+        cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_CONTIG])
+        cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_CONTIG])
+
+        olapping = chr_ref[np.logical_and(block[0] < chr_ref.start, block[1] > chr_ref.end)]
+        # sequence block is on left or right side of contig block, respectively
+        right = chr_ref[np.logical_and(block[1] > chr_ref.start, block[1] <= chr_ref.end)]
+        left = chr_ref[np.logical_and(block[0] >= chr_ref.start, block[0] < chr_ref.end)]
+
+        if len(left) > 0 and len(right) > 0:
+            # retained intron
+            cv.cvtype = 'RI'
+            qseq, rseq = get_block_sequence(read, block_idx)
+            seq_left_pos = min(left.end) - block[0]
+            seq_right_pos = block[1] - max(right.start)
+
+            cv.pos = block[0] + seq_left_pos
+            cv.ref = rseq[seq_left_pos:(-seq_right_pos)]
+            cv.alt = qseq[seq_left_pos:(-seq_right_pos)]
+            cv.cpos = [cpos1 + seq_left_pos, cpos2 - seq_right_pos]
+            cv.vid, record = get_next_id(read.query_name, record)
+
+            print(cv.vcf_output())
+        elif len(olapping) > 0:
+            cv.cvtype = 'EE'
+            # annotate left side
+            cv = annotate_block_left(cv, read, cpos2, olapping, block, block_idx)
+            cv.vid, record = get_next_id(read.query_name, record)
+
+            print(cv.vcf_output())
+
+            # annotate right side
+            cv = annotate_block_right(cv, read, cpos1, olapping, block, block_idx)
+            cv.vid, record = get_next_id(read.query_name, record)
+
+            print(cv.vcf_output())
+        elif len(left) > 0:
+            # annotate left side
+            cv = annotate_block_left(cv, read, cpos2, left, block, block_idx)
+            cv.vid, record = get_next_id(read.query_name, record)
+
+            print(cv.vcf_output())
+        elif len(right) > 0:
+            # annotate right side
+            cv = annotate_block_right(cv, read, cpos1, right, block, block_idx)
+            cv.vid, record = get_next_id(read.query_name, record)
+
+            print(cv.vcf_output())
+        else:
+            # block does not cross any annotation
+            qseq, rseq = get_block_sequence(read, block_idx)
+            cv.ref, cv.alt = rseq, qseq
+            cv.pos, cv.cvtype = block[0], 'NV'
+            cv.cpos = [cpos1, cpos2]
+            cv.vid, record = get_next_id(read.query_name, record)
+
+            print(cv.vcf_output())
+
+    return record
 
 def annotate_fusion(read, juncs, locs, bam_idx, ex_ref, ref_trees, outbam, record):
     try:
@@ -395,19 +474,28 @@ def annotate_fusion(read, juncs, locs, bam_idx, ex_ref, ref_trees, outbam, recor
     varseq1, varseq2 = '', ''
     refseq1 = r1.get_reference_sequence()
     refseq2 = r2.get_reference_sequence()
+    bracket_dir1 = '[' if r1.is_reverse == r2.is_reverse else ']'
+    bracket_dir2 = ']' if r1.is_reverse == r2.is_reverse else ']'
     cv1.ref = refseq1[0] if hc_left1 else refseq1[-1]
-    cv1.alt = '%s]%s:%d]%s' % (varseq1, cv2.chrom, cv2.pos-1, cv1.ref) if hc_left1 else \
-              '%s[%s:%d[%s' % (cv1.ref, cv2.chrom, cv2.pos+1, varseq1)
     cv2.ref = refseq2[0] if hc_left2 else refseq1[-1]
-    cv2.alt = '%s]%s:%d]%s' % (varseq2, cv1.chrom, cv1.pos-1, cv2.ref) if hc_left2 else \
-              '%s[%s:%d[%s' % (cv2.ref, cv1.chrom, cv1.pos+1, varseq2)
+    if r1.is_reverse == r2.is_reverse:
+        cv1.alt = '%s]%s:%d]%s' % (varseq1, cv2.chrom, cv2.pos-1, cv1.ref) if hc_left1 else \
+                  '%s[%s:%d[%s' % (cv1.ref, cv2.chrom, cv2.pos+1, varseq1)
+        cv2.alt = '%s]%s:%d]%s' % (varseq2, cv1.chrom, cv1.pos-1, cv2.ref) if hc_left2 else \
+                  '%s[%s:%d[%s' % (cv2.ref, cv1.chrom, cv1.pos+1, varseq2)
+    else:
+        # contigs align on opposite strands
+        cv1.alt = '%s[%s:%d[%s' % (varseq1, cv2.chrom, cv2.pos-1, cv1.ref) if hc_left1 else \
+                  '%s]%s:%d]%s' % (cv1.ref, cv2.chrom, cv2.pos+1, varseq1)
+        cv2.alt = '%s[%s:%d[%s' % (varseq2, cv1.chrom, cv1.pos-1, cv2.ref) if hc_left2 else \
+                  '%s]%s:%d]%s' % (cv2.ref, cv1.chrom, cv1.pos+1, varseq2)
 
     cv1.vid, record = get_next_id(r1.query_name, record)
     cv2.vid, record = get_next_id(r2.query_name, record)
     cv1.parid, cv2.parid = cv2.vid, cv1.vid
 
-    print(cv1.vcf_record())
-    print(cv2.vcf_record())
+    print(cv1.vcf_output())
+    print(cv2.vcf_output())
     outbam.write(r1)
     outbam.write(r2)
 
@@ -427,12 +515,13 @@ def annotate_juncs(cv, read, locs, novel_juncs, record):
         cp = CrypticVariant().from_read(read) # partner variant
         cp.genes = cv.genes
         varseq, refseq = '', read.get_reference_sequence()
-        cpos = sum([v for c,v in read.cigar[:(junc_idx+1)]])
+        cpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in AFFECT_CONTIG])
+        rpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in AFFECT_CONTIG and c not in CLIPS])
         cv.cpos[0], cv.cpos[1] = cpos, cpos
         cp.cpos[0], cp.cpos[1] = cv.cpos[0], cv.cpos[1]
         cv.pos, cp.pos = pos1-1, pos2+1
 
-        cv.ref, cp.ref = refseq[cpos-1], refseq[cpos+1]
+        cv.ref, cp.ref = refseq[rpos-1], refseq[rpos+1]
         cv.alt = '%s[%s:%d[%s' % (cv.ref, cv.chrom, cv.pos, varseq)
         cp.alt = '%s]%s:%d]%s' % (varseq, cp.chrom, cp.pos, cp.ref)
 
@@ -440,9 +529,18 @@ def annotate_juncs(cv, read, locs, novel_juncs, record):
         cp.vid, record = get_next_id(read.query_name, record)
         cv.parid, cp.parid = cp.vid, cv.vid
 
-        # TODO: annotate variant type
-        # TODO: test
-        ipdb.set_trace()
+        loc_left = '%s:%d' % (cv.chrom, pos1)
+        loc_right = '%s:%d' % (cv.chrom, pos2)
+        if not (loc_left in locs) and not (loc_right in locs):
+            # neither end annotated, novel exon junction
+            cv.cvtype, cp.cvtype = 'NEJ', 'NEJ'
+        elif not (loc_left in locs and loc_right in locs):
+            # one end unannotated, partial novel junction
+            cv.cvtype, cp.cvtype = 'PNJ', 'PNJ'
+        else:
+            # both ends annotated, alternative splice site
+            cv.cvtype, cp.cvtype = 'AS', 'AS'
+
         print(cv.vcf_output())
         print(cp.vcf_output())
     return record
@@ -477,7 +575,11 @@ def annotate_single_read(read, juncs, locs, ex_ref, record, outbam=None, ref_tre
     unknown_juncs = ['%s:%s-%s' % (c, s, e) not in juncs for c, s, e in tx_juncs]
     has_novel_juncs = any(unknown_juncs)
 
-    if has_gaps or has_scs or has_novel_juncs:
+    # check for novel blocks
+    chr_ref = get_chr_ref(read, ex_ref)
+    has_novel_blocks = any([is_novel_block(block, chr_ref) for block in read.get_blocks()])
+
+    if has_gaps or has_scs or has_novel_juncs or has_novel_blocks:
         cv = CrypticVariant().from_read(read)
         cv.genes = genes
         if has_gaps:
@@ -487,7 +589,8 @@ def annotate_single_read(read, juncs, locs, ex_ref, record, outbam=None, ref_tre
         if has_novel_juncs:
             novel_juncs = [list(x) for x in np.array(tx_juncs)[unknown_juncs]]
             record = annotate_juncs(cv, read, locs, novel_juncs, record)
-        #TODO: intron retention
+        if has_novel_blocks:
+            record = annotate_blocks(cv, read, chr_ref, record)
         if outbam:
             outbam.write(read)
     else:
@@ -535,19 +638,19 @@ def annotate_contigs(args):
         else:
             record = annotate_single_read(read, juncs, locs, ex_ref, record, outbam, ref_trees)
 
-    sam.close()
+    bam.close()
     outbam.close()
 
     # convert output sam file to bam, sort and index
-    pysam.sort('-o', outbam, outbam_file_unsort)
-    pysam.index(args.outbam_file)
+    pysam.sort('-o', args.output_bam, outbam_file_unsort)
+    pysam.index(args.output_bam)
     os.remove(outbam_file_unsort)
 
 def main():
     args = parse_args()
     init_logging(args.log)
-    with open(args.vcf_header_file, 'rb') as headerf:
-        headerf.readlines()
+    with open(args.vcf_header_file, 'r') as headerf:
+        for line in headerf.readlines(): print(line.strip())
     annotate_contigs(args)
 
 if __name__ == '__main__':
