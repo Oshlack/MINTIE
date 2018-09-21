@@ -22,8 +22,10 @@ import sys
 import string
 from argparse import ArgumentParser
 from intervaltree import Interval, IntervalTree
-from cv_vcf import CrypticVariant
+from cv_vcf import CrypticVariant, VCF
 import ipdb
+
+pd.set_option("mode.chained_assignment", None)
 
 EXIT_FILE_IO_ERROR = 1
 EXIT_COMMAND_LINE_ERROR = 2
@@ -47,17 +49,19 @@ CIGAR = {'match': 0,
          'soft-clip': 4,
          'hard-clip': 5,
          'silent_deletion': 6}
-GAPS = [CIGAR['insertion'], CIGAR['deletion'], CIGAR['silent_deletion']]
-CLIPS = [CIGAR['soft-clip'], CIGAR['hard-clip']]
+GAPS = [CIGAR[c] for c in ['insertion', 'deletion', 'silent_deletion']]
+CLIPS = [CIGAR[c] for c in ['soft-clip', 'hard-clip']]
 # any cigar criteria that is >0 bp on an aligned contig
-AFFECT_CONTIG = [CIGAR['insertion'], CIGAR['match'], CIGAR['soft-clip'], CIGAR['hard-clip']]
+AFFECT_CONTIG = [CIGAR[c] for c in ['match', 'insertion', 'soft-clip', 'hard-clip']]
+# any cigar criteria that is >0 bp on the reference genome
+AFFECT_REF = [CIGAR[c] for c in ['match', 'deletion']]
 
 def cached(cachefile):
     '''
     source: https://datascience.blog.wzb.eu/2016/08/12/a-tip-for-the-impatient-simple-caching-with-python-pickle-and-decorators/
     A function that creates a decorator which will use "cachefile"
     for caching the results of the decorated function "fn".
-    '''
+   '''
     def decorator(fn):  # define a decorator for a function "fn"
         def wrapped(*args, **kwargs):   # define a wrapper that will finally call "fn" with all arguments
           # if cache exists -> load it and return its content
@@ -105,6 +109,10 @@ def parse_args():
                         metavar='LOG_FILE',
                         type=str,
                         help='record program progress in LOG_FILE')
+    parser.add_argument(dest='sample',
+                        metavar='SAMPLE',
+                        type=str,
+                        help='''Sample name''')
     parser.add_argument(dest='bam_file',
                         metavar='BAM_FILE',
                         type=str,
@@ -122,10 +130,6 @@ def parse_args():
                         type=str,
                         metavar='TX_REF_FILE',
                         help='''Transcriptiome GTF reference file.''')
-    parser.add_argument(dest='vcf_header_file',
-                        type=str,
-                        metavar='VCF_HEADER_FILE',
-                        help='''VCF header file for cryptic variant annotation.''')
     return parser.parse_args()
 
 def init_logging(log_filename):
@@ -157,7 +161,7 @@ def get_gene_lookup(tx_ref_file):
     dictionary. Also output dataframe containing
     chromosome, start and ends for all exons.
     '''
-    ref_trees = None
+    ref_trees, ex_ref_out = None, None
     if tx_ref_file != '':
         logging.info('Generating lookup for genes...')
         tx_ref = pd.read_csv(tx_ref_file, comment='#', sep='\t', header=None)
@@ -167,20 +171,29 @@ def get_gene_lookup(tx_ref_file):
         gn_ref.columns = ['chrom', 'start', 'end', 'gene']
         gn_ref = gn_ref.drop_duplicates()
 
+        # start/end coordinates for gene matching
         ref_trees = {}
         chroms = np.unique(gn_ref.chrom.values)
         for chrom in chroms:
-            chr_ref = gn_ref[gn_ref.chrom == chrom]
+            chr_ref = gn_ref[gn_ref.chrom == chrom].drop_duplicates()
             ref_tree = IntervalTree()
-            for idx, row in chr_ref.iterrows():
-                ref_tree[row.start:row.end] = row.gene
+            for s,e,g in zip(chr_ref['start'].values, chr_ref['end'].values, chr_ref['gene'].values):
+                ref_tree.addi(s-1, e, g)
             ref_trees[chrom] = ref_tree
 
+        # merged exon boundaries for block annotation
         ex_ref = tx_ref[tx_ref[2] == 'exon']
-        ex_ref = ex_ref[[0, 3, 4]].drop_duplicates()
-        ex_ref.columns = ['chrom', 'start', 'end']
-        ex_ref.start = ex_ref.start - 1
-    return ref_trees, ex_ref
+        ex_ref_out = pd.DataFrame()
+        for chrom in chroms:
+            chr_ref = ex_ref[ex_ref[0] == chrom].drop_duplicates()
+            ex_tree = IntervalTree()
+            for s,e in zip(chr_ref[3].values, chr_ref[4].values):
+                ex_tree.addi(s-1, e, '')
+            ex_tree.merge_overlaps()
+            tmp = pd.DataFrame([(chrom, tree[0], tree[1]) for tree in ex_tree],
+                               columns=['chrom', 'start', 'end'])
+            ex_ref_out = pd.concat([ex_ref_out, tmp], ignore_index=True)
+    return ref_trees, ex_ref_out
 
 def get_juncs(tx):
     '''
@@ -279,22 +292,23 @@ def annotate_gaps(cv, read, record):
         cv.pos = int(block[1])
 
         # position of variant on contig
-        cv.cpos[0] = sum([v for c,v in read.cigar[:gap_idx]])
+        cv.cpos[0] = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_CONTIG])
         cv.cvsize = cv.vsize if read.cigar[gap_idx][0] == CIGAR['insertion'] else 0 # only insertions affect contig pos
         cv.cpos[1] = cv.cpos[0] + cv.cvsize
 
-        var_seq = ''
-        if cv.cvsize > 0:
-            seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_CONTIG])
+        if gtype == 'INS':
+            cv.cvtype = 'INS'
+            seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_CONTIG and c != CIGAR['hard-clip']])
             seq_pos2 = seq_pos1 + cv.cvsize
             seq = read.query_sequence[(seq_pos1-1):seq_pos2]
             cv.ref, cv.alt = seq[:1], seq
         else:
-            start, end = cv.cpos[0]-1, (cv.cpos[0] + cv.vsize)
-            seq = read.get_reference_sequence()[start:end]
+            cv.cvtype = 'DEL'
+            seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_REF])
+            seq_pos2 = seq_pos1 + cv.vsize
+            seq = read.get_reference_sequence()[(seq_pos1-1):seq_pos2]
             cv.ref, cv.alt  = seq, seq[:1]
 
-        cv.cvtype = 'DEL' if gtype in ['deletion', 'silent_deletion'] else 'INS'
         cv.vid, record = get_next_id(read.query_name, record)
         print(cv.vcf_output())
     return record
@@ -341,7 +355,8 @@ def is_novel_block(block, chr_ref):
     within a referenced exon, and true otherwise
     '''
     match = chr_ref[np.logical_and(block[0] >= chr_ref.start, block[1] <= chr_ref.end)]
-    return len(match) == 0
+    block_size = block[1] - block[0]
+    return len(match) == 0 and block_size > CLIP_MIN
 
 def get_block_sequence(read, block_idx):
     '''
@@ -351,25 +366,28 @@ def get_block_sequence(read, block_idx):
     qseq = read.query_sequence
     rseq = read.get_reference_sequence()
 
-    cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_CONTIG])
-    cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_CONTIG])
+    cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_CONTIG and c != CIGAR['hard-clip']])
+    cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_CONTIG and c != CIGAR['hard-clip']])
 
-    return qseq[cpos1:cpos2], rseq[cpos1:cpos2]
+    rpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_REF])
+    rpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_REF])
 
-def annotate_block_right(cv, read, cpos, olapping, block, block_idx):
-    qseq, rseq = get_block_sequence(read, block_idx)
-    seq_left_pos = min(olapping.start) - block[0]
-    cv.pos, cv.ref, cv.alt = block[0], rseq[:seq_left_pos], qseq[:seq_left_pos]
-    cv.cpos = [cpos, cpos + seq_left_pos]
-    cv.vsize, cv.cvsize = len(cv.alt), len(cv.alt)
-    return cv
+    return qseq[cpos1:cpos2], rseq[rpos1:rpos2]
 
 def annotate_block_left(cv, read, cpos, olapping, block, block_idx):
     qseq, rseq = get_block_sequence(read, block_idx)
-    seq_right_pos = block[1] - max(olapping.start)
-    cv.pos, cv.ref, cv.alt = max(olapping.start) - block[1], rseq[seq_right_pos:], qseq[seq_right_pos:]
-    cv.cpos, cv.vsize = [cpos - seq_right_pos, cpos], len(cv.alt)
-    cv.vsize, cv.cvsize = len(cv.alt), len(cv.alt)
+    seq_left_pos = block[1] - max(olapping.end)
+    cv.pos, cv.ref, cv.alt = max(olapping.end) + 1, rseq[(-seq_left_pos):], ']' + qseq[(-seq_left_pos):]
+    cv.cpos = [cpos - seq_left_pos, cpos]
+    cv.vsize, cv.cvsize = abs(len(cv.alt)-1 - len(cv.ref)), len(cv.alt)-1
+    return cv
+
+def annotate_block_right(cv, read, cpos, olapping, block, block_idx):
+    qseq, rseq = get_block_sequence(read, block_idx)
+    seq_right_pos = min(olapping.start) - block[0]
+    cv.pos, cv.ref, cv.alt = min(olapping.start), rseq[:seq_right_pos], qseq[:seq_right_pos] + '['
+    cv.cpos, cv.vsize = [cpos, cpos + seq_right_pos], len(cv.alt)
+    cv.vsize, cv.cvsize = abs(len(cv.alt)-1 - len(cv.ref)), len(cv.alt)-1
     return cv
 
 def annotate_blocks(cv, read, chr_ref, record):
@@ -393,10 +411,11 @@ def annotate_blocks(cv, read, chr_ref, record):
             seq_left_pos = min(left.end) - block[0]
             seq_right_pos = block[1] - max(right.start)
 
-            cv.pos = block[0] + seq_left_pos
+            cv.pos = block[0] + seq_left_pos + 1
             cv.ref = rseq[seq_left_pos:(-seq_right_pos)]
-            cv.alt = qseq[seq_left_pos:(-seq_right_pos)]
+            cv.alt = ']' + qseq[seq_left_pos:(-seq_right_pos)] + '['
             cv.cpos = [cpos1 + seq_left_pos, cpos2 - seq_right_pos]
+            cv.vsize, cv.cvsize = abs(len(cv.alt)-2 - len(cv.ref)), len(cv.alt)-2
             cv.vid, record = get_next_id(read.query_name, record)
 
             print(cv.vcf_output())
@@ -428,10 +447,11 @@ def annotate_blocks(cv, read, chr_ref, record):
         else:
             # block does not cross any annotation
             qseq, rseq = get_block_sequence(read, block_idx)
-            cv.ref, cv.alt = rseq, qseq
+            cv.ref, cv.alt = rseq, '[' + qseq + ']'
             cv.pos, cv.cvtype = block[0], 'NV'
             cv.cpos = [cpos1, cpos2]
             cv.vid, record = get_next_id(read.query_name, record)
+            cv.vsize, cv.cvsize = abs(len(cv.alt)-2 - len(cv.ref)), len(cv.alt)-2
 
             print(cv.vcf_output())
 
@@ -516,7 +536,7 @@ def annotate_juncs(cv, read, locs, novel_juncs, record):
         cp.genes = cv.genes
         varseq, refseq = '', read.get_reference_sequence()
         cpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in AFFECT_CONTIG])
-        rpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in AFFECT_CONTIG and c not in CLIPS])
+        rpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in AFFECT_REF])
         cv.cpos[0], cv.cpos[1] = cpos, cpos
         cp.cpos[0], cp.cpos[1] = cv.cpos[0], cv.cpos[1]
         cv.pos, cp.pos = pos1-1, pos2+1
@@ -609,8 +629,8 @@ def annotate_contigs(args):
     bam = pysam.AlignmentFile(args.bam_file, 'rc')
     bam_idx = pysam.IndexedReads(bam)
     bam_idx.build()
-    outbam = pysam.AlignmentFile(args.output_bam, 'wb', template=bam)
     outbam_file_unsort = '%s_unsorted.bam' % os.path.splitext(args.output_bam)[0]
+    outbam = pysam.AlignmentFile(outbam_file_unsort, 'wb', template=bam)
 
     logging.info('Checking contigs for non-reference content...')
     novel_contigs = []
@@ -649,8 +669,7 @@ def annotate_contigs(args):
 def main():
     args = parse_args()
     init_logging(args.log)
-    with open(args.vcf_header_file, 'r') as headerf:
-        for line in headerf.readlines(): print(line.strip())
+    print(VCF.get_header(args.sample))
     annotate_contigs(args)
 
 if __name__ == '__main__':

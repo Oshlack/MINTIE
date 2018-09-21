@@ -1,17 +1,5 @@
 import string
-import re
 
-# CUT-OFF parameters
-GAP_MIN = 7
-CLIP_MIN = 30
-MATCH_MIN = 30
-MATCH_PERC_MIN = 0.3
-
-# VCF parameters
-INFO = ["CID", "ECN", "CLEN", "CPOS", "CSTRAND", "CCIGAR", "VSIZE", "CVSIZE", "CVTYPE", "GENES", "PARID", "PVAL", "CVQ"]
-FORMAT = ["GT", "ECC", "AI"]
-
-# CIGAR specification codes
 CIGAR = {'match': 0,
          'insertion': 1,
          'deletion': 2,
@@ -19,20 +7,58 @@ CIGAR = {'match': 0,
          'soft-clip': 4,
          'hard-clip': 5,
          'silent_deletion': 6}
-GAPS = {1: 'insertion',
-        2: 'deletion',
-        6: 'silent_deletion'}
-CLIPS = {4: 'soft',
-         5: 'hard'}
-GAPS_REF_ONLY = {2: 'deletion',
-                 3: 'skipped',
-                 5: 'hard-clip'} # criteria that signify gaps in the reference
+AFFECT_CONTIG = [CIGAR['insertion'], CIGAR['match'], CIGAR['soft-clip'], CIGAR['hard-clip']]
 
-#TODO: add all metadata and make header generation function
-def get_next_letter(last_letter):
-    next_letter_pos = np.where(np.array(list(string.ascii_letters)) == last_letter)[0][0]+1
-    next_letter = list(string.ascii_letters)[next_letter_pos]
-    return next_letter
+# VCF parameters
+VCF_VERSION = "4.2"
+COLUMNS = ["#CHROM",  "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"]
+
+# number, type and description for header output
+info_fields = {"SVTYPE": (1, "String", "Structural variant type"),
+               "SVLEN": (1, "Integer", "Difference in length between REF and ALT alleles"),
+               "PARID": (1, "String", "ID of partner breakend"),
+               "EVENT": (1, "String", "ID of event associated to breakend")}
+format_fields = {"GT": (1, "String", "Genotype")}
+
+class VCF(object):
+    '''
+    VCF object
+    '''
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def get_header(sample):
+        print('##fileformat=VCFv%s' % VCF_VERSION)
+
+        # INFO lines
+        for info_id in sorted(info_fields):
+            info = info_fields[info_id]
+            line = '##INFO=<ID=%s,Number=%s,Type=%s,Description="%s">' % (info_id, info[0], info[1], info[2])
+            print(line)
+
+        # FORMAT lines
+        for format_id in sorted(format_fields):
+            form = format_fields[format_id]
+            line = '##FORMAT=<ID=%s,Number=%s,Type=%s,Description="%s">' % (format_id, form[0], form[1], form[2])
+            print(line)
+
+        # columns line
+        line = COLUMNS + [sample]
+        return "\t".join(line)
+
+    @staticmethod
+    def format_record(chrom, pos, vid, ref, alt, qual, filterval, info, form):
+        info_out = ['%s=%s' % (key, str(info[key])) for key in sorted(info_fields)]
+        info_out = ';'.join(info_out)
+
+        form_fields = ':'.join(sorted(format_fields))
+        form_out = ':'.join([str(form[key]) for key in sorted(format_fields)])
+
+        outline = [chrom, pos, vid, ref, alt, qual, filterval, info_out, form_fields, form_out]
+        outline = [str(item) for item in outline]
+
+        return "\t".join(outline)
 
 class CrypticVariant(object):
     '''
@@ -78,40 +104,31 @@ class CrypticVariant(object):
         self.blocks = [b for b in zip(match_idxs, read.get_blocks())]
         self.cid = read.query_name
         self.ccigar = read.cigarstring
-        self.clen =  sum([v for c,v in read.cigar if c in [0, 1, 4, 5]]) # count if match, insertion or clip TODO: parametrise
+        self.clen =  sum([v for c,v in read.cigar if c in AFFECT_CONTIG])
         return self
 
     def get_format(self):
-        gt = str(self.gt)
-        ecc = str(self.ecc)
-        ai = ','.join([str(a) for a in self.ai])
-        return ':'.join([gt, ecc, ai])
+        form = {"GT": self.gt}
+        return form
 
     def get_info(self):
-        cid = str(self.cid)
-        ecn = str(self.ecn)
-        clen = str(self.clen)
-        cpos = ','.join([str(cp) for cp in self.cpos])
-        cstrand = str(self.cstrand)
-        ccigar = str(self.ccigar)
-        vsize = str(self.vsize)
-        cvsize = str(self.cvsize)
-        cvtype = str(self.cvtype)
-        genes = str(self.genes)
-        parid = str(self.parid)
-        pval = ','.join([str(pv) for pv in self.pval])
-        cvq = str(self.cvq)
-        output = zip(INFO, [cid, ecn, clen, cpos, cstrand, ccigar, vsize, cvsize, cvtype, genes, parid, pval, cvq])
-        return ';'.join(["%s=%s" % (c, v) for c,v in output])
+        info = {"SVTYPE": self.cvtype,
+                "SVLEN": self.vsize,
+                "PARID": self.parid,
+                "EVENT": self.cid}
+        return info
 
     def vcf_output(self):
-        chrom = str(self.chrom)
-        pos = str(self.pos)
-        vid = str(self.vid)
-        ref = str(self.ref)
-        alt = str(self.alt)
-        qual = str(self.qual)
-        cfilter = str(self.cfilter)
-        info = self.get_info()
-        form = self.get_format()
-        return "\t".join([chrom, pos, vid, ref, alt, qual, cfilter, info, ':'.join(FORMAT), form])
+        '''
+        Take cryptic variant properties and
+        output a VCF formatted record
+        '''
+        info, form = self.get_info(), self.get_format()
+        return VCF.format_record(self.chrom,
+                                 self.pos,
+                                 self.vid,
+                                 self.ref,
+                                 self.alt,
+                                 self.qual,
+                                 self.cfilter,
+                                 info, form)
