@@ -20,6 +20,11 @@ info_fields = {"SVTYPE": (1, "String", "Structural variant type"),
                "EVENT": (1, "String", "ID of event associated to breakend")}
 format_fields = {"GT": (1, "String", "Genotype")}
 
+# contig info parameters
+CI_HEADER = ["contig_id", "variant_id", "partner_id", "pos1", "pos2",
+             "cpos", "contig_varsize", "contig_len", "contig_cigar",
+             "variant_type", "overlapping_genes"]
+
 class VCF(object):
     '''
     VCF object
@@ -77,7 +82,7 @@ class CrypticVariant(object):
             "cfilter": '.',
             "cid": '.',
             "clen": 0,
-            "cpos": [0,0],
+            "cpos": 0,
             "cstrand": '.',
             "ccigar": '.',
             "vsize": 0,
@@ -95,6 +100,29 @@ class CrypticVariant(object):
         }
         for (prop, default) in defaults.items():
             setattr(self, prop, kwargs.get(prop, default))
+
+    @staticmethod
+    def write_contig_header(contig_info_file):
+        '''
+        Write header for contig info output
+        '''
+        with open(contig_info_file, 'w') as fout:
+            fout.write("\t".join(CI_HEADER) + "\n")
+
+    @staticmethod
+    def write_contig_info(contig_info_file, cv1, cv2=None):
+        '''
+        Write contig info for a given variant/variant pair
+        '''
+        pos1 = "%s:%d" % (cv1.chrom, cv1.pos)
+        pos2 = "%s:%d" % (cv2.chrom, cv2.pos) if cv2 else "%s:%d" % (cv1.chrom, (cv1.pos + cv1.vsize))
+        genes = '%s:%s' % (cv1.genes, cv2.genes) if cv2 else cv1.genes
+        line = [cv1.cid, cv1.vid, cv1.parid, pos1,
+                pos2, cv1.cpos, cv1.cvsize, cv1.clen,
+                cv1.ccigar, cv1.cvtype, genes]
+        line = [str(item) for item in line]
+        with open(contig_info_file, 'a') as fout:
+            fout.write("\t".join(line) + "\n")
 
     def from_read(self, read):
         match_idxs = [idx for idx,cig in enumerate(read.cigar) if cig[0] == 0]
@@ -121,7 +149,7 @@ class CrypticVariant(object):
     def vcf_output(self):
         '''
         Take cryptic variant properties and
-        output a VCF formatted record
+        output a VCF formatted record.
         '''
         info, form = self.get_info(), self.get_format()
         return VCF.format_record(self.chrom,
