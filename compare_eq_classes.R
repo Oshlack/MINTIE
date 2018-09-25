@@ -17,7 +17,7 @@ source(incl.path, chdir=TRUE)
 
 args <- commandArgs(trailingOnly=TRUE)
 
-if(length(args) < 5) {
+if(length(args) < 4) {
     args <- c("--help")
 }
 
