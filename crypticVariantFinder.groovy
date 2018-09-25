@@ -149,7 +149,7 @@ create_salmon_index = {
    output.dir=branch.name+"/all_fasta_index"
    produce('sa.bin','hash.bin','rsd.bin'){
       exec """
-         $salmon index -t $input.fasta -i $salmon_index ;
+         $salmon index -t $input2 -i $salmon_index ;
      """
    }
 }
@@ -188,15 +188,14 @@ create_ec_count_matrix = {
    }
 }
 
-run_diffsplice = {
+run_de = {
    output.dir = branch.name
    def case_name = branch.name
-   def salmon_dir = branch.name+"/salmon_out/aux_info"
+   //def salmon_dir = branch.name+"/salmon_out/aux_info"
    produce("eq_class_comp_diffsplice.txt"){
       exec """
-        Rscript $code_base/compare_eq_classes.R $case_name $input $output.dir/all.groupings \
-            $trans_fasta $salmon_dir $output ;
-      """, "run_diffsplice"
+        Rscript $code_base/compare_eq_classes.R $case_name $input $trans_fasta $output ;
+      """, "run_de"
    }
 }
 
@@ -391,14 +390,14 @@ if(!binding.variables.containsKey("fastqControlFormat")){
 run { fastqCaseFormat * [ make_sample_dir +
                           dedupe +
                           SOAPassemble +
-                          align_contigs_against_genome +
-                          filter_contigs_against_genome +
-                          align_contigs_against_transcriptome +
-                          filter_contigs_against_transcriptome +
+//                          align_contigs_against_genome +
+//                          filter_contigs_against_genome +
+//                          align_contigs_against_transcriptome +
+//                          filter_contigs_against_transcriptome +
                           create_salmon_index +
                           [run_salmon, fastqControlFormat * [ run_salmon.using(type:"controls") ]] +
                           create_ec_count_matrix +
-                          run_diffsplice +
+                          run_de +
                           filter_on_significant_ecs +
                           annotate_diffspliced_contigs +
                           create_supertranscript_reference ] +

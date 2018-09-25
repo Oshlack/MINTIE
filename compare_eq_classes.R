@@ -28,7 +28,7 @@ if("--help" %in% args) {
         using equivalence classes as exons.
 
         Usage:
-        Rscript compare_eq_classes.R <case_name> <ec_matrix> <groupings> <annotation_file> <salmon_outdir> <output> --iters=<n_iters> --sample=<N>\n\n
+        Rscript compare_eq_classes.R <case_name> <ec_matrix> <annotation_file> <output> --iters=<n_iters> --sample=<N>\n\n
 
         Default iterations is 1 and default sample number is equivalent to number of controls
         Note: at least two control samples are required.\n\n")
@@ -43,10 +43,8 @@ novel_contig_regex <- '^k[0-9]+_[0-9]+'
 args <- args[c(grep('--', args, invert=T), grep('--', args))]
 case_name <- args[1]
 ec_matrix_file <- args[2]
-groupings_file <- args[3]
-annotation_file <- args[4]
-salmon_outdir <- args[5]
-outfile <- args[6]
+annotation_file <- args[3]
+outfile <- args[4]
 
 n_sample <- grep("--sample=",args, value=TRUE)
 n_iters <- grep("--iters=",args, value=TRUE)
@@ -57,13 +55,12 @@ if (length(n_iters)==0) {
 }
 n_iters <- as.numeric(n_iters)
 
-################## load data ##################
+#############################################################
+# load data
+#############################################################
 print('Reading input data...')
 ec_matrix <- fread(ec_matrix_file, sep='\t')
-#ec_matrix <- read.delim(gzfile(ec_matrix_file), sep='\t')
 annotation <- read.fasta(annotation_file, as.string=TRUE)
-all.groupings <- read.delim(groupings_file, sep='\t', header=F)
-colnames(all.groupings) <- c('transcript', 'gene')
 
 n_controls <- ncol(ec_matrix)-4 # all cols minus gene/tx/ec and case cols
 if (length(n_sample)==0) {
@@ -73,69 +70,51 @@ if (length(n_sample)==0) {
 }
 n_sample <- as.numeric(n_sample)
 
-################## make transcript > gene lookup ##################
+#############################################################
+# annotation + prepare data for DE analysis
+#############################################################
 print('Generating transcript to gene lookup from fasta file...')
 genes <- annotation %>% lapply(function(x){attributes(x)$Annot}) %>% str_match("gene_symbol:([a-zA-Z0-9.-]+)")
-genes_tx <- distinct(data.frame(tx_id=names(annotation), symbol=genes[,2]))
+genes_tx <- distinct(data.frame(tx_id=names(annotation), gene=genes[,2]))
 rm(genes, annotation); gc() #cleanup
 
-##################  ##################
 print('Preparing expression table...')
 # match ECs to genes
-grp_novel <- all.groupings[grep(novel_contig_regex, all.groupings$transcript),]
-info <- match_tx_to_genes(ec_matrix, grp_novel, genes_tx)
+info <- match_tx_to_genes(ec_matrix, genes_tx)
 
-tx_ec_gn <- info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
-int_contigs <- unique(grp_novel$transcript)
+#create reference lookup
+tx_ec_gn <- info[,c('ec_names', 'genes', 'transcript')]
 
 # get genes that are associated with all interesting novel contigs
-int_ecs <- unique(ec_matrix[ec_matrix$transcript%in%int_contigs,]$ec_names)
 tx_ec <- data.table(distinct(tx_ec_gn[,c('ec_names','transcript')]))
 tx_to_ecs <- tx_ec[, paste(transcript, collapse=':'), by=list(ec_names)]
-tx_to_ecs <- tx_to_ecs[grep('ENST',tx_to_ecs$V1, invert = T),] # ECs containing only novel contigs
+tx_to_ecs <- tx_to_ecs[grep('ENST', tx_to_ecs$V1, invert = T),] # ECs containing only novel contigs
 colnames(tx_to_ecs)[2] <- 'contigs'
 uniq_ecs <- tx_to_ecs$ec_names
 
-# get interesting genes (any genes associated with non-reference ECs that only map to denovo contigs)
-int_ecs <- intersect(uniq_ecs, int_ecs)
-int_genes <- unique(info[info$ec_names%in%int_ecs,]$gene)
-
-# ambiguous mapping info, useful for final output
-ec_path <- paste(salmon_outdir, 'eq_classes.txt', sep='/')
-ambig_info_path <- paste(salmon_outdir, 'ambig_info.tsv', sep='/')
-uac <- get_ambig_info(ec_path, ambig_info_path, tx_ec_gn)
+## ambiguous mapping info, useful for final output
+#ec_path <- paste(salmon_outdir, 'eq_classes.txt', sep='/')
+#ambig_info_path <- paste(salmon_outdir, 'ambig_info.tsv', sep='/')
+#uac <- get_ambig_info(ec_path, ambig_info_path, tx_ec_gn)
 
 # cleanup
 rm(ec_matrix); gc()
 
-################## diffsplice testing using ECs ##################
+#############################################################
+# perform DE
+#############################################################
 
-#print('Performing differential splicing analysis...')
-#bs_results <- bootstrap_diffsplice(case_name, info, int_genes, n_sample, n_iters, uniq_ecs, tx_to_ecs, dirname(outfile))
-#bs_results <- run_dexseq(case_name, info, int_genes, uniq_ecs, tx_to_ecs, dirname(outfile))
-bs_results <- run_edgeR(case_name, info, int_genes, uniq_ecs, tx_to_ecs, dirname(outfile), cpm_cutoff=0)
+print('Performing differential expression analysis...')
+bs_results <- run_edgeR(case_name, info, uniq_ecs, tx_to_ecs, dirname(outfile), cpm_cutoff=0)
 
-################## compile and write results ##################
+#############################################################
+# compile and write results
+#############################################################
 
 print('Compiling and writing results...')
-#bs_genes <- NULL
-#for(i in 1:n_iters) {
-#    bs_genes[[i]] <- unique(bs_results[[i]]$spg$gene)
-#}
-
-#names(bs_genes) <- paste('iter', 1:n_iters, sep='')
-#bs_up <- fromList(bs_genes)
-#if (n_iters > 1) {
-#    plotfile <- paste(dirname(outfile), '/upset_plot_', n_iters, '_iters.pdf', sep='')
-#    pdf(plotfile, width=8, height=5)
-#    upset(bs_up, order.by='freq', nsets=n_iters)
-#    dev.off()
-#}
-
-#concat_results <- concatenate_bs_results(bs_results, n_iters)
 concat_results <- bs_results
-concat_results <- left_join(concat_results, uac, by=c('ec_names','gene','transcript'))
-concat_results <- concat_results[order(concat_results$FDR),]
+#concat_results <- left_join(concat_results, uac, by=c('ec_names','genes','transcript'))
+#concat_results <- concat_results[order(concat_results$FDR),]
 
 if (nrow(concat_results) > 0) {
     write.table(concat_results, outfile, row.names=F, quote=F, sep='\t')

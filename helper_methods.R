@@ -2,38 +2,25 @@ library(dplyr)
 library(data.table)
 library(edgeR)
 
-match_tx_to_genes <- function(ec_matrix, grp_novel, genes_tx) {
+match_tx_to_genes <- function(ec_matrix, genes_tx) {
     ec_matrix$tx_id <- ec_matrix$transcript
-    int_ec_matrix <- left_join(ec_matrix, grp_novel, by='transcript')
-    int_ec_matrix <- left_join(int_ec_matrix, genes_tx, by='tx_id')
-    int_ec_matrix[is.na(int_ec_matrix$gene), 'gene'] <- int_ec_matrix[is.na(int_ec_matrix$gene), 'symbol']
+    ec_matrix <- left_join(ec_matrix, genes_tx, by='tx_id')
 
-    tmp <- distinct(int_ec_matrix[,c('transcript', 'gene')])
-    ngs <- length(unique(int_ec_matrix$gene))
+    ec_to_gene <- distinct(ec_matrix[!is.na(ec_matrix$gene), c('ec_names', 'gene')])
+    ec_to_gene <- ec_to_gene %>%
+                    group_by(ec_names) %>%
+                    mutate(genes = paste0(gene, collapse = "|"))
+    ec_to_gene <- distinct(data.frame(ec_to_gene[,c('ec_names', 'genes')]))
+    ec_matrix <- left_join(ec_matrix, ec_to_gene, by='ec_names')
+
+    tmp <- distinct(ec_matrix[,c('transcript', 'genes')])
+    ngs <- length(unique(ec_matrix$gene))
     print(paste(nrow(tmp), 'transcripts across', ngs, 'genes found'))
 
-    # filter out any ECs with no associated gene
-    int_ec_matrix <- int_ec_matrix[!is.na(int_ec_matrix$gene),]
-    int_ec_matrix <- int_ec_matrix[int_ec_matrix$gene!='',]
+    # ec_matrix[is.na(ec_matrix$gene), 'gene'] <- 'Unknown'
+    ec_matrix <- ec_matrix[, !colnames(ec_matrix)%in%c('tx_id','gene')]
 
-    #print('Grouping together all genes involved in fusions...')
-    ## collapse all genes involved in fusion into one 'super' gene
-    #fusion_contigs <- unique(int_ec_matrix[grep('\\|', int_ec_matrix$gene), 'gene'])
-    #fusion_contigs <- sapply(fusion_contigs, strsplit, split='\\|')
-    #rename_gns <- sapply(fusion_contigs, function(x){which(int_ec_matrix$gene%in%x)})
-    #for(i in 1:length(rename_gns)) {
-    #    int_ec_matrix[rename_gns[[i]], 'gene'] <- names(rename_gns)[i]
-    #}
-
-    ntx <- nrow(distinct(int_ec_matrix[,c('transcript', 'gene')]))
-    info <- int_ec_matrix[, !colnames(int_ec_matrix)%in%c('tx_id', 'symbol')]
-
-    if(nrow(tmp)-ntx!=0) {
-        print(paste('could not find genes for ', nrow(tmp)-ntx, ' transcripts (',
-                    round((nrow(tmp)-ntx)/nrow(tmp),4)*100 , '%):', sep=''))
-        print(tmp$transcript[!tmp$transcript%in%info$transcript])
-    }
-    return(info)
+    return(ec_matrix)
 }
 
 get_de_novel_contigs <- function(top, tx_to_ecs, FDR_cutoff=0.05) {
@@ -84,25 +71,24 @@ get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
     return(uac)
 }
 
-run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2, qval=0.05) {
-    #TODO: can remove int_genes, this filtering doesn't impact the results
-    tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
-    info <- distinct(full_info[full_info$gene%in%int_genes, !colnames(full_info)%in%'transcript'])
+run_edgeR <- function(case_name, full_info, uniq_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2, qval=0.05) {
+    info <- distinct(full_info[, !colnames(full_info)%in%'transcript'])
 
     # collapse reference equivalence classes
     print('Collapsing reference equivalence classes')
     info$ec <- 'reference'
-    info$ec[info$ec_names%in%select_ecs] <- info$ec_names[info$ec_names%in%select_ecs]
-    info <- data.table(info[,!colnames(info)%in%'ec_names'])[, lapply(.SD, sum), by=c('gene','ec')]
+    info$ec[info$ec_names%in%uniq_ecs] <- info$ec_names[info$ec_names%in%uniq_ecs]
+    info <- data.table(info[,!colnames(info)%in%'ec_names'])[, lapply(.SD, sum), by=c('genes','ec')]
     colnames(info)[colnames(info)=='ec'] <- 'ec_names'
 
     results <- NULL
     print('Performing differential expression analysis with edgeR...')
     start.time <- Sys.time(); print(start.time)
 
-    counts <- data.frame(info)[,!colnames(info)%in%c('ec_names','gene')]
+    counts <- data.frame(info)[,!colnames(info)%in%c('ec_names','genes')]
     counts <- as.matrix(apply(counts, 2, as.numeric))
-    genes <- data.frame(info)[,c('gene', 'ec_names')]
+    genes <- data.frame(info)[,c('genes', 'ec_names')]
+    genes[is.na(genes$genes), 'genes'] <- ''
 
     keep <- rowSums(cpm(counts) > cpm_cutoff) >= 1
     counts <- counts[keep,]
@@ -129,7 +115,7 @@ run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, ou
     counts_out <- data.frame(cbind(genes, cbind(can_counts, con_counts)))
     write.table(counts_out, file=paste(outdir, 'counts_table.txt', sep='/'), row.names=F, quote=F, sep='\t')
 
-    dge <- DGEList(counts = counts, genes = paste(genes$ec_names, genes$gene), group = group)
+    dge <- DGEList(counts = counts, genes = genes, group = group)
     dge <- calcNormFactors(dge)
 
     des <- model.matrix(~group)
@@ -142,12 +128,7 @@ run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, ou
 
     fit <- glmQLFit(dge, design=des)
     qlf <- glmQLFTest(fit, coef=2)
-
-    top <- data.frame(topTags(qlf, n=Inf))
-    tmp <- data.frame(t(data.frame(strsplit(top$genes, ' '))))
-    colnames(tmp) <- c('ec_names', 'gene')
-    dx_df <- cbind(top, tmp)
-    dx_df <- merge(dx_df, tx_ec_gn, by=c('ec_names', 'gene'), all.x=T)
+    dx_df <- data.frame(topTags(qlf, n=Inf))
 
     txs_in_ec <- data.frame(table(tx_ec_gn$ec_names))
     txs_in_ec$Var1 <- as.character(txs_in_ec$Var1)
@@ -155,16 +136,16 @@ run_edgeR <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, ou
 
     dx_df <- left_join(dx_df, txs_in_ec, by='ec_names')
     dx_df <- left_join(dx_df, tx_to_ecs, by='ec_names')
-    dx_df <- left_join(dx_df, counts_summary, by=c('gene', 'ec_names'))
+    dx_df <- left_join(dx_df, counts_summary, by=c('genes', 'ec_names'))
 
     # write full results
     write.table(dx_df, file=paste(outdir, 'full_edgeR_results.txt', sep='/'), row.names=F, quote=F, sep='\t')
-    dx_df <- dx_df[dx_df$FDR<qval,]
+    dx_df <- dx_df[dx_df$FDR<qval & !dx_df$ec_names%in%'reference',]
 
     return(dx_df)
 }
 
-run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2) {
+run_dexseq <- function(case_name, full_info, int_genes, uniq_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2) {
     tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
     info <- distinct(full_info[full_info$gene%in%int_genes, !colnames(full_info)%in%'transcript'])
     print(head(info))
@@ -172,7 +153,7 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
     # collapse reference equivalence classes
     print('Collapsing reference equivalence classes')
     info$ec <- 'reference'
-    info$ec[info$ec_names%in%select_ecs] <- info$ec_names[info$ec_names%in%select_ecs]
+    info$ec[info$ec_names%in%uniq_ecs] <- info$ec_names[info$ec_names%in%uniq_ecs]
     info <- data.table(info[,!colnames(info)%in%'ec_names'])[, lapply(.SD, sum), by=c('gene','ec')]
     colnames(info)[colnames(info)=='ec'] <- 'ec_names'
 
@@ -231,7 +212,7 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
     dx_df <- left_join(dx_df, nsig, by='gene')
     dx_df <- left_join(dx_df, ntot, by='gene')
     colnames(dx_df)[(ncol(dx_df)-1):ncol(dx_df)] <- c('sig_ecs_in_gene', 'total_ecs_in_gene')
-    dx_df$novel_ec <- dx_df$ec_names%in%select_ecs
+    dx_df$novel_ec <- dx_df$ec_names%in%uniq_ecs
 
     end.time <- Sys.time(); print(end.time)
     time.taken <- end.time - start.time
@@ -249,11 +230,10 @@ run_dexseq <- function(case_name, full_info, int_genes, select_ecs, tx_to_ecs, o
     return(dx_df)
 }
 
-bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_iters, select_ecs, tx_to_ecs, outdir, cpm_cutoff=2) {
+bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_iters, uniq_ecs, tx_to_ecs, outdir, cpm_cutoff=2) {
     # perform differential splicing selecting n_controls
     # bootstrap for n_iters iterations
-    tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
-    info <- distinct(full_info[,!colnames(full_info)%in%'transcript'])
+    info <- distinct(full_info[,!colnames(full_info)%in%c('transcript')])
     info <- info[info$gene%in%int_genes,] #consider only ECs mapping to interesting genes
 
     results <- NULL
@@ -313,7 +293,7 @@ bootstrap_diffsplice <- function(case_name, full_info, int_genes, n_controls, n_
 
         spg$significant_ec <- spg$FDR<0.05
         spg$significant_gene <- spg$gene.FDR<0.05
-        spg$novel_ec <- spg$ec_names%in%select_ecs
+        spg$novel_ec <- spg$ec_names%in%uniq_ecs
 
         nsig <- data.table(spg[,c('gene','significant_ec')])[,sum(significant_ec),by=gene]
         ntot <- data.table(spg[,c('gene','significant_ec')])[,length(significant_ec),by=gene]
