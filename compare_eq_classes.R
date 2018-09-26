@@ -105,7 +105,7 @@ rm(ec_matrix); gc()
 #############################################################
 
 print('Performing differential expression analysis...')
-bs_results <- run_edgeR(case_name, info, uniq_ecs, tx_to_ecs, dirname(outfile), cpm_cutoff=0)
+bs_results <- run_edgeR(case_name, info, uniq_ecs, tx_to_ecs, dirname(outfile))
 
 #############################################################
 # compile and write results
@@ -115,6 +115,11 @@ print('Compiling and writing results...')
 concat_results <- bs_results
 #concat_results <- left_join(concat_results, uac, by=c('ec_names','genes','transcript'))
 #concat_results <- concat_results[order(concat_results$FDR),]
+
+# separate out contigs
+contigs <- sapply(concat_results$contigs, strsplit, split=':')
+concat_results <- concat_results[rep(1:nrow(concat_results), as.numeric(sapply(contigs, length))),]
+concat_results$contig <- as.character(unlist(contigs))
 
 if (nrow(concat_results) > 0) {
     write.table(concat_results, outfile, row.names=F, quote=F, sep='\t')

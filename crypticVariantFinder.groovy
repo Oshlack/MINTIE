@@ -104,15 +104,6 @@ SOAPassemble = {
      }
 }
 
-align_contigs_against_genome = {
-   output.dir=branch.name
-   produce('aligned_contigs_against_genome.sam'){
-      exec """
-        $gmap -D $gmap_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam
-      """, "align_contigs_against_genome"
-   }
-}
-
 filter_contigs_against_genome = {
    output.dir=branch.name
    produce('filtered_contigs_against_genome.bam', 'novel_contigs.txt', 'genome_filtered.fasta'){
@@ -201,26 +192,33 @@ run_de = {
 
 filter_on_significant_ecs = {
    output.dir=branch.name
-   produce("diffspliced_contigs.fasta", "all_filt.fasta", "ds_novel_contigs.txt"){
+   produce("de_contigs.fasta"){
       exec """
-        python $code_base/filter_fasta.py $input.fasta $input.txt --col_id transcript > $output1 ;
-        cat $trans_fasta $output1 > $output2 ;
-        grep -ohE "k[0-9]+_[0-9]+" $input.txt | sort | uniq > $output3 ;
+        python $code_base/filter_fasta.py $input.fasta $input.txt --col_id contig > $output1 ;
       """
    }
 }
 
-annotate_diffspliced_contigs = {
+align_contigs_against_genome = {
    output.dir=branch.name
-   def ds_results = branch.name+"/eq_class_comp_diffsplice.txt"
-   def tx_align = branch.name+"/filtered_contigs_against_txome.bam"
-   produce("novel_contigs_annotated.txt", "novel_contigs.bam"){
+   produce('aligned_contigs_against_genome.bam'){
       exec """
-        samtools view -H $output.dir/filtered_contigs_against_genome.bam > $output.dir/tmp.sam ;
-        samtools view $output.dir/filtered_contigs_against_genome.bam | fgrep -w -f $input3 >> $output.dir/tmp.sam ;
-        python ${code_base}/filter_contigs.py $output.dir/tmp.sam $output.bam --splice_juncs $ann_info \
-            --annotate $ds_results --tx_align $tx_align ;
-        rm $output.dir/tmp.sam
+        $gmap -D $gmap_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.dir/tmp.sam ;
+        samtools sort -o $output $output.dir/tmp.sam ;
+        samtools index $output ;
+        rm $output.dir/tmp.sam ;
+      """, "align_contigs_against_genome"
+   }
+}
+
+annotate_contigs = {
+   output.dir=branch.name
+   def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
+   produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
+      exec """
+        time python ${code_base}/annotate/annotate_contigs.py \
+            $sample_name $input.bam $output.bam $output.tsv $ann_info \
+            $tx_annotation --log $output.dir/annotate.log> $output.vcf
       """
    }
 }
@@ -390,7 +388,6 @@ if(!binding.variables.containsKey("fastqControlFormat")){
 run { fastqCaseFormat * [ make_sample_dir +
                           dedupe +
                           SOAPassemble +
-//                          align_contigs_against_genome +
 //                          filter_contigs_against_genome +
 //                          align_contigs_against_transcriptome +
 //                          filter_contigs_against_transcriptome +
@@ -399,7 +396,8 @@ run { fastqCaseFormat * [ make_sample_dir +
                           create_ec_count_matrix +
                           run_de +
                           filter_on_significant_ecs +
-                          annotate_diffspliced_contigs +
+                          align_contigs_against_genome +
+                          annotate_contigs +
                           create_supertranscript_reference ] +
        make_super_supertranscript +
        annotate_supertranscript +

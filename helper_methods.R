@@ -17,7 +17,7 @@ match_tx_to_genes <- function(ec_matrix, genes_tx) {
     ngs <- length(unique(ec_matrix$gene))
     print(paste(nrow(tmp), 'transcripts across', ngs, 'genes found'))
 
-    # ec_matrix[is.na(ec_matrix$gene), 'gene'] <- 'Unknown'
+    ec_matrix[is.na(ec_matrix$gene), 'gene'] <- 'unannotated'
     ec_matrix <- ec_matrix[, !colnames(ec_matrix)%in%c('tx_id','gene')]
 
     return(ec_matrix)
@@ -71,7 +71,7 @@ get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
     return(uac)
 }
 
-run_edgeR <- function(case_name, full_info, uniq_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2, qval=0.05) {
+run_edgeR <- function(case_name, full_info, uniq_ecs, tx_to_ecs, outdir, cpm_cutoff=1, qval=0.05) {
     info <- distinct(full_info[, !colnames(full_info)%in%'transcript'])
 
     # collapse reference equivalence classes
@@ -88,7 +88,7 @@ run_edgeR <- function(case_name, full_info, uniq_ecs, tx_to_ecs, outdir, threads
     counts <- data.frame(info)[,!colnames(info)%in%c('ec_names','genes')]
     counts <- as.matrix(apply(counts, 2, as.numeric))
     genes <- data.frame(info)[,c('genes', 'ec_names')]
-    genes[is.na(genes$genes), 'genes'] <- ''
+    genes[is.na(genes$genes), 'genes'] <- 'unannotated'
 
     keep <- rowSums(cpm(counts) > cpm_cutoff) >= 1
     counts <- counts[keep,]

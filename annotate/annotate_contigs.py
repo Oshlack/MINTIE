@@ -232,7 +232,7 @@ def annotate_gaps(cv, read, ci_file):
     gap_idxs = [idx for idx, gap in enumerate(read.cigar) if gap[0] in GAPS and gap[1] >= GAP_MIN]
     for gap_idx in gap_idxs:
         cigar = read.cigar[gap_idx]
-        gtype, cv.vsize = GAPS[cigar[0]], int(cigar[1])
+        cv.vsize = int(cigar[1])
 
         block_idx = 0 if gap_idx == 0 else np.max(np.where(np.array([b[0] for b in cv.blocks]) < gap_idx)[0])
         block = cv.blocks[block_idx][1]
@@ -242,7 +242,7 @@ def annotate_gaps(cv, read, ci_file):
         cv.cpos = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_CONTIG])
         cv.cvsize = cv.vsize if read.cigar[gap_idx][0] == CIGAR['insertion'] else 0 # only insertions affect contig pos
 
-        if gtype == 'INS':
+        if cigar[0] == CIGAR['insertion']:
             cv.cvtype = 'INS'
             seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_CONTIG and c != CIGAR['hard-clip']])
             seq_pos2 = seq_pos1 + cv.cvsize
@@ -263,7 +263,7 @@ def annotate_softclips(cv, read, ci_file):
     sc_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] == CIGAR['soft-clip'] and clip[1] >= CLIP_MIN]
     for sc_idx in sc_idxs:
         cigar = read.cigar[sc_idx]
-        cv.cvtype, cv.vsize, cv.cvsize = 'UT', int(cigar[1]), int(cigar[1])
+        cv.cvtype, cv.vsize, cv.cvsize = 'UN', int(cigar[1]), int(cigar[1])
         sc_left = sc_idx == 0
 
         block_idx = 0 if sc_idx == 0 else np.max(np.where(np.array([b[0] for b in cv.blocks]) < sc_idx)[0])
