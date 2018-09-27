@@ -90,10 +90,6 @@ run_edgeR <- function(case_name, full_info, uniq_ecs, tx_to_ecs, outdir, cpm_cut
     genes <- data.frame(info)[,c('genes', 'ec_names')]
     genes[is.na(genes$genes), 'genes'] <- 'unannotated'
 
-    keep <- rowSums(cpm(counts) > cpm_cutoff) >= 1
-    counts <- counts[keep,]
-    genes <- genes[keep,]
-
     group <- rep('control', ncol(counts))
     group[colnames(counts)==case_name] <- 'cancer'
     if(!'cancer'%in%group){
@@ -107,6 +103,10 @@ run_edgeR <- function(case_name, full_info, uniq_ecs, tx_to_ecs, outdir, cpm_cut
     }
     group <- factor(group, levels=c('control', 'cancer'))
     colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub('-', '_',x)}))
+
+    keep <- cpm(counts)[,group=='cancer'] > cpm_cutoff
+    counts <- counts[keep,]
+    genes <- genes[keep,]
 
     # write counts table to file for reference
     can_counts <- counts[, group=='cancer']
@@ -145,7 +145,7 @@ run_edgeR <- function(case_name, full_info, uniq_ecs, tx_to_ecs, outdir, cpm_cut
     return(dx_df)
 }
 
-run_dexseq <- function(case_name, full_info, int_genes, uniq_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=2) {
+run_dexseq <- function(case_name, full_info, int_genes, uniq_ecs, tx_to_ecs, outdir, threads=8, cpm_cutoff=1) {
     tx_ec_gn <- full_info[,c('ec_names', 'gene', 'transcript')] #create reference lookup
     info <- distinct(full_info[full_info$gene%in%int_genes, !colnames(full_info)%in%'transcript'])
     print(head(info))
