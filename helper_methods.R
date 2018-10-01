@@ -71,14 +71,15 @@ get_ambig_info <- function(ec_path, ambig_path, tx_ec_gn) {
     return(uac)
 }
 
-run_edgeR <- function(case_name, full_info, uniq_ecs, tx_to_ecs, outdir, cpm_cutoff=1, qval=0.05) {
+run_edgeR <- function(case_name, full_info, uniq_ecs, tx_to_ecs, outdir, cpm_cutoff=0.5, qval=0.05) {
     info <- distinct(full_info[, !colnames(full_info)%in%'transcript'])
 
-    # collapse reference equivalence classes
-    print('Collapsing reference equivalence classes')
+    # filtering out reference equivalence classes
+    print('Filtering out reference equivalence classes')
     info$ec <- 'reference'
     info$ec[info$ec_names%in%uniq_ecs] <- info$ec_names[info$ec_names%in%uniq_ecs]
-    info <- data.table(info[,!colnames(info)%in%'ec_names'])[, lapply(.SD, sum), by=c('genes','ec')]
+    info <- info[!info$ec%in%'reference',]
+    # info <- data.table(info[,!colnames(info)%in%'ec_names'])[, lapply(.SD, sum), by=c('genes','ec')]
     colnames(info)[colnames(info)=='ec'] <- 'ec_names'
 
     results <- NULL
