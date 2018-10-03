@@ -9,7 +9,8 @@ genome_mem=31000000000
 sort_ram=4 //ram per code for bam sorting
 
 //Assembly options
-Ks="79 49 19" //"31 25 19"
+//Ks="79 49 19" //"31 25 19"
+Ks="79 49" //"31 25 19"
 max_read_length=150;
 
 //software
@@ -104,36 +105,36 @@ SOAPassemble = {
      }
 }
 
-filter_contigs_against_genome = {
-   output.dir=branch.name
-   produce('filtered_contigs_against_genome.bam', 'novel_contigs.txt', 'genome_filtered.fasta'){
-      exec """
-      python ${code_base}/filter_contigs.py $input.sam $output.bam --splice_juncs $ann_info;
-      python ${code_base}/filter_fasta.py $input.fasta $output.txt > $output.fasta ;
-      """
-   }
-}
-      //cat $output.dir/genome_filtered.fasta $trans_fasta > $output.fasta
-
-align_contigs_against_transcriptome = {
-   output.dir=branch.name
-   produce('aligned_contigs_against_txome.sam'){
-      exec """
-        $gmap -D $gmap_tx_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam
-      """, "align_contigs_against_transcriptome"
-   }
-}
-
-filter_contigs_against_transcriptome = {
-   output.dir=branch.name
-   produce('filtered_contigs_against_txome.bam', 'all.groupings', 'all.fasta'){
-      exec """
-      python ${code_base}/filter_contigs.py $input.sam $output.bam --groupings $trans_fasta ;
-      python ${code_base}/filter_fasta.py $input.fasta $output.groupings > $output.dir/filtered_contigs_against_txome.fasta ;
-      cat $output.dir/filtered_contigs_against_txome.fasta $trans_fasta > $output.fasta ;
-      """
-   }
-}
+//filter_contigs_against_genome = {
+//   output.dir=branch.name
+//   produce('filtered_contigs_against_genome.bam', 'novel_contigs.txt', 'genome_filtered.fasta'){
+//      exec """
+//      python ${code_base}/filter_contigs.py $input.sam $output.bam --splice_juncs $ann_info;
+//      python ${code_base}/filter_fasta.py $input.fasta $output.txt > $output.fasta ;
+//      """
+//   }
+//}
+//      //cat $output.dir/genome_filtered.fasta $trans_fasta > $output.fasta
+//
+//align_contigs_against_transcriptome = {
+//   output.dir=branch.name
+//   produce('aligned_contigs_against_txome.sam'){
+//      exec """
+//        $gmap -D $gmap_tx_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam
+//      """, "align_contigs_against_transcriptome"
+//   }
+//}
+//
+//filter_contigs_against_transcriptome = {
+//   output.dir=branch.name
+//   produce('filtered_contigs_against_txome.bam', 'all.groupings', 'all.fasta'){
+//      exec """
+//      python ${code_base}/filter_contigs.py $input.sam $output.bam --groupings $trans_fasta ;
+//      python ${code_base}/filter_fasta.py $input.fasta $output.groupings > $output.dir/filtered_contigs_against_txome.fasta ;
+//      cat $output.dir/filtered_contigs_against_txome.fasta $trans_fasta > $output.fasta ;
+//      """
+//   }
+//}
 
 create_salmon_index = {
    def salmon_index=branch.name+"/all_fasta_index"
@@ -397,13 +398,13 @@ run { fastqCaseFormat * [ make_sample_dir +
                           run_de +
                           filter_on_significant_ecs +
                           align_contigs_against_genome +
-                          annotate_contigs +
-                          create_supertranscript_reference ] +
-       make_super_supertranscript +
-       annotate_supertranscript +
-       make_supertranscript_gmap_reference +
-       star_genome_gen +
-       hisat_index +
-       fastqCaseFormat * [ align_contigs_to_supertranscript, hisat_align] +
-       fastqControlFormat * [ hisat_align.using(type:"controls") ]
+                          annotate_contigs ]
+//                          create_supertranscript_reference ] +
+//       make_super_supertranscript +
+//       annotate_supertranscript +
+//       make_supertranscript_gmap_reference +
+//       star_genome_gen +
+//       hisat_index +
+//       fastqCaseFormat * [ align_contigs_to_supertranscript, hisat_align] +
+//       fastqControlFormat * [ hisat_align.using(type:"controls") ]
 }
