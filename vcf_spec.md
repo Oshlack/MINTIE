@@ -128,7 +128,7 @@ ACCAATTTGTGCCTGCCCCAGATAG   A
 
 These variant types are contigs that are soft-clipped against the reference genome. Further annotation of these is required, but for now, they are represented as:
 
-````
+```
 C   CGCCCCCCCCCCCCCCCCCCCCCACCAACC]chr7:5527294]C
 ```
 
