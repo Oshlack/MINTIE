@@ -22,7 +22,7 @@ format_fields = {"GT": (1, "String", "Genotype")}
 
 # contig info parameters
 CI_HEADER = ["contig_id", "variant_id", "partner_id", "pos1", "pos2",
-             "cpos", "contig_varsize", "contig_len", "contig_cigar",
+             "varsize", "cpos", "contig_varsize", "contig_len", "contig_cigar",
              "variant_type", "overlapping_genes"]
 
 class VCF(object):
@@ -118,8 +118,8 @@ class CrypticVariant(object):
         pos2 = "%s:%d" % (cv2.chrom, cv2.pos) if cv2 else "%s:%d" % (cv1.chrom, (cv1.pos + cv1.vsize))
         genes = '%s:%s' % (cv1.genes, cv2.genes) if cv2 else cv1.genes
         line = [cv1.cid, cv1.vid, cv1.parid, pos1,
-                pos2, cv1.cpos, cv1.cvsize, cv1.clen,
-                cv1.ccigar, cv1.cvtype, genes]
+                pos2, cv1.vsize, cv1.cpos, cv1.cvsize,
+                cv1.clen, cv1.ccigar, cv1.cvtype, genes]
         line = [str(item) for item in line]
         with open(contig_info_file, 'a') as fout:
             fout.write("\t".join(line) + "\n")
