@@ -24,15 +24,15 @@ def load_ecs(ec_file):
     and return dictionary with all transcripts,
     equivalence class transcript IDs and counts
     '''
-    ec_df = pd.DataFrame([line.strip().split('\t') for line in open(ec_file, 'r')], columns=None)
-    n_txs = int(ec_df[0].values[0])
-    ecs = ec_df[(n_txs+2):]
+    ec_df = pd.read_csv(ec_file, header=None)
+    ec_df = ec_df[0].apply(lambda x: x.split('\t'))
+    transcripts = ec_df[ec_df.apply(len)==1][2:]
+    transcripts = [t for tx in transcripts for t in tx]
 
     # extract counts and transcript IDs
-    transcripts = ec_df[2:(n_txs+2)][0].values
-    ec_vals = ecs.apply(lambda x: [int(val) for val in x if val], axis=1)
-    counts = ec_vals.apply(lambda x: x[-1]).values
-    tx_ids = ec_vals.apply(lambda x: x[1:-1]).values
+    ec_df = ec_df[ec_df.apply(len)>1]
+    counts = ec_df.apply(lambda x: int(x[-1])).values
+    tx_ids = ec_df.apply(lambda x: x[1:-1]).values
 
     output = {'transcripts': transcripts,
               'tx_ids': tx_ids,
