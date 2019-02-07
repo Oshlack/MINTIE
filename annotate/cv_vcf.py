@@ -114,8 +114,11 @@ class CrypticVariant(object):
         '''
         Write contig info for a given variant/variant pair
         '''
+        # make varsize block size for block annotations
+        varsize = cv1.cvsize - 1 if cv1.cvtype in ['NE', 'EE', 'RI'] else cv1.vsize
+
         pos1 = "%s:%d" % (cv1.chrom, cv1.pos)
-        pos2 = "%s:%d" % (cv2.chrom, cv2.pos) if cv2 else "%s:%d" % (cv1.chrom, (cv1.pos + cv1.vsize))
+        pos2 = "%s:%d" % (cv2.chrom, cv2.pos) if cv2 else "%s:%d" % (cv1.chrom, (cv1.pos + varsize))
         genes = '%s:%s' % (cv1.genes, cv2.genes) if cv2 else cv1.genes
         line = [cv1.cid, cv1.vid, cv1.parid, pos1,
                 pos2, cv1.vsize, cv1.cpos, cv1.cvsize,

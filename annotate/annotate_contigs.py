@@ -197,7 +197,7 @@ def get_overlapping_genes(read, ref_trees):
     genes = []
     for block in blocks:
         bstart, bend = block
-        gns = ref_tree.search(bstart, bend)
+        gns = ref_tree.overlap(bstart, bend)
         genes.extend([gn[2] for gn in gns])
     genes = np.unique(np.array(genes))
 
@@ -339,13 +339,15 @@ def annotate_blocks(cv, read, chr_ref, ci_file):
     '''
     Annotate any sequence that is outside of exonic regions
     '''
+    cv.parid = '.' # blocks don't have pairs
     novel_blocks = [(idx, block) for idx, block in cv.blocks if is_novel_block(block, chr_ref)]
     for block_idx, block in novel_blocks:
         cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_CONTIG])
         cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_CONTIG])
 
         olapping = chr_ref[np.logical_and(block[0] < chr_ref.start, block[1] > chr_ref.end)]
-        # sequence block is on left or right side of contig block, respectively
+
+        # whether sequence block is on left or right side of contig block, respectively
         right = chr_ref[np.logical_and(block[1] > chr_ref.start, block[1] <= chr_ref.end)]
         left = chr_ref[np.logical_and(block[0] >= chr_ref.start, block[0] < chr_ref.end)]
 
