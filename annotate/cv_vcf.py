@@ -119,11 +119,17 @@ class CrypticVariant(object):
 
         pos1 = "%s:%d" % (cv1.chrom, cv1.pos)
         pos2 = "%s:%d" % (cv2.chrom, cv2.pos) if cv2 else "%s:%d" % (cv1.chrom, (cv1.pos + varsize))
+
         genes = '%s:%s' % (cv1.genes, cv2.genes) if cv2 else cv1.genes
+        # only consider a gene its own variant partner if it's a fusion
+        if cv1.cvtype != 'FUS' and cv2 and cv1.genes == cv2.genes:
+            genes = cv1.genes
+
         line = [cv1.cid, cv1.vid, cv1.parid, pos1,
                 pos2, cv1.vsize, cv1.cpos, cv1.cvsize,
                 cv1.clen, cv1.ccigar, cv1.cvtype, genes]
         line = [str(item) for item in line]
+
         with open(contig_info_file, 'a') as fout:
             fout.write("\t".join(line) + "\n")
 
