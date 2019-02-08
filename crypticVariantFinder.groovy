@@ -24,7 +24,8 @@ gtf2bed="gtf2bed"
 bedops="bedops"
 gmap="/group/bioi1/marekc/apps/GMAP-GSNAP/src/gmap"
 gmap_build="perl /group/bioi1/marekc/apps/GMAP-GSNAP/util/gmap_build.pl -B=/group/bioi1/marekc/apps/GMAP-GSNAP/src"
-salmon="/group/bioi1/marekc/apps/Salmon-latest_linux_x86_64/bin/salmon"
+//salmon="/group/bioi1/marekc/apps/Salmon-latest_linux_x86_64/bin/salmon"
+salmon="salmon"
 hisat="/group/bioi1/marekc/apps/hisat-0.1.6-beta/hisat"
 hisat_build="/group/bioi1/marekc/apps/hisat-0.1.6-beta/hisat-build"
 
@@ -215,11 +216,22 @@ align_contigs_against_genome = {
 annotate_contigs = {
    output.dir=branch.name
    def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
-   produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
+   produce("annotated_contigs.vcf", "annotated_contigs_info.tsv", "annotated_contigs.bam"){
       exec """
         time python ${code_base}/annotate/annotate_contigs.py \
             $sample_name $input.bam $output.bam $output.tsv $ann_info \
             $tx_annotation --log $output.dir/annotate.log> $output.vcf
+      """
+   }
+}
+
+refine_contigs = {
+   output.dir=branch.name
+   produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
+      exec """
+        time python ${code_base}/annotate/refine_annotations.py \
+            $input.tsv $input.vcf $input.bam $output.tsv $output.bam --log $output.dir/refine.log > $output.vcf ;
+        samtools index $output.bam
       """
    }
 }
@@ -398,7 +410,7 @@ run { fastqCaseFormat * [ make_sample_dir +
                           run_de +
                           filter_on_significant_ecs +
                           align_contigs_against_genome +
-                          annotate_contigs ]
+                          annotate_contigs + refine_contigs ]
 //                          create_supertranscript_reference ] +
 //       make_super_supertranscript +
 //       annotate_supertranscript +

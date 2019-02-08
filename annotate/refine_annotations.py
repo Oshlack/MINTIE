@@ -12,6 +12,7 @@ import pandas as pd
 import re
 import sys
 import logging
+import pysam
 from argparse import ArgumentParser
 from utils import init_logging, exit_with_error
 
@@ -42,14 +43,29 @@ def parse_args():
                         metavar='VCF_FILE',
                         type=str,
                         help='''Contig VCF file''')
+    parser.add_argument(dest='bam_file',
+                        metavar='BAM_FILE',
+                        type=str,
+                        help='''Contig BAM file''')
     parser.add_argument(dest='contig_out_file',
                         metavar='CONTIG_OUT_FILE',
                         type=str,
                         help='''Contig tsv output file''')
+    parser.add_argument(dest='bam_out_file',
+                        metavar='BAM_OUT_FILE',
+                        type=str,
+                        help='''Contig BAM output file''')
 
     return parser.parse_args()
 
 def get_contigs_to_keep(args):
+    '''
+    Return contigs matching criteria:
+    - novel block size > MIN_NOVEL_EXON_SIZE
+    - novel blocks are spliced in some way
+    - novel exons have corresponding novel splice sites
+    - fusions, SVs and splice variants are not further filtered
+    '''
     try:
         cinfo_file = args.contig_info_file
         contigs = pd.read_csv(cinfo_file, sep='\t')
@@ -78,7 +94,8 @@ def get_contigs_to_keep(args):
 
     # ensure retained introns are spliced in some way (to distinguish from pre-mRNAs)
     retained_intron = contigs.variant_type.apply(lambda x: x in ['RI'])
-    ris = contigs[np.logical_and(retained_intron, is_spliced)]
+    spliced_ri =  np.logical_and(retained_intron, is_spliced)
+    ris = contigs[np.logical_and(spliced_ri, large_varsize)]
 
     keep_contigs.extend(svs.contig_id)
     keep_contigs.extend(splicevars.contig_id)
@@ -102,15 +119,25 @@ def write_output(args, keep_contigs):
         cvf.close()
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
-    
+
     vcf = vcf[vcf[7].apply(lambda x: x.split(';')[0].split('=')[1] in keep_contigs)]
     vcf.to_csv(sys.stdout, sep='\t', columns=None, index=None)
+
+def write_bam(args, keep_contigs):
+    bam_file = args.bam_file
+    bam = pysam.AlignmentFile(bam_file, 'rb')
+    outbam = pysam.AlignmentFile(args.bam_out_file, 'wb', template=bam)
+
+    for read in bam.fetch():
+        if read.query_name in keep_contigs:
+           outbam.write(read)
 
 def main():
     args = parse_args()
     init_logging(args.log)
     keep_contigs = get_contigs_to_keep(args)
     write_output(args, keep_contigs)
+    write_bam(args, keep_contigs)
 
 if __name__ == '__main__':
     main()
