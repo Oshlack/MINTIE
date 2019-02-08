@@ -1,4 +1,3 @@
-
 '''
 Module      : filter_contigs
 Description : Filter out any contigs matching reference
