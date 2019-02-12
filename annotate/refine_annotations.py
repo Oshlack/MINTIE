@@ -121,7 +121,7 @@ def write_output(args, keep_contigs):
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
     vcf = vcf[vcf[7].apply(lambda x: x.split(';')[0].split('=')[1] in keep_contigs)]
-    vcf.to_csv(sys.stdout, sep='\t', columns=None, index=None)
+    vcf.to_csv(sys.stdout, sep='\t', index=False, header=False)
 
 def write_bam(args, keep_contigs):
     bam_file = args.bam_file
