@@ -319,7 +319,10 @@ def get_block_sequence(read, block_idx):
 
     return qseq[cpos1:cpos2], rseq[rpos1:rpos2]
 
-def annotate_block_left(cv, read, cpos, olapping, block, block_idx):
+def annotate_block_right(cv, read, cpos, olapping, block, block_idx):
+    '''
+    extended exon to the *right* of the reference sequence
+    '''
     qseq, rseq = get_block_sequence(read, block_idx)
     seq_left_pos = block[1] - max(olapping.end)
     cv.pos, cv.ref, cv.alt = max(olapping.end) + 1, rseq[(-seq_left_pos):], ']' + qseq[(-seq_left_pos):]
@@ -327,10 +330,14 @@ def annotate_block_left(cv, read, cpos, olapping, block, block_idx):
     cv.vsize, cv.cvsize = abs(len(cv.alt)-1 - len(cv.ref)), len(cv.alt)-1
     return cv
 
-def annotate_block_right(cv, read, cpos, olapping, block, block_idx):
+def annotate_block_left(cv, read, cpos, olapping, block, block_idx):
+    '''
+    extended exon is to the *left* of the reference sequence
+    '''
     qseq, rseq = get_block_sequence(read, block_idx)
     seq_right_pos = min(olapping.start) - block[0]
-    cv.pos, cv.ref, cv.alt = min(olapping.start), rseq[:seq_right_pos], qseq[:seq_right_pos] + '['
+    cv.ref, cv.alt = rseq[:seq_right_pos], qseq[:seq_right_pos] + '['
+    cv.pos = min(olapping.start) - len(cv.ref) + 1
     cv.cpos, cv.vsize = cpos, len(cv.alt)-1
     cv.vsize, cv.cvsize = abs(len(cv.alt)-1 - len(cv.ref)), len(cv.alt)-1
     return cv
@@ -348,8 +355,8 @@ def annotate_blocks(cv, read, chr_ref, ci_file):
         olapping = chr_ref[np.logical_and(block[0] < chr_ref.start, block[1] > chr_ref.end)]
 
         # whether sequence block is on left or right side of contig block, respectively
-        right = chr_ref[np.logical_and(block[1] > chr_ref.start, block[1] <= chr_ref.end)]
-        left = chr_ref[np.logical_and(block[0] >= chr_ref.start, block[0] < chr_ref.end)]
+        left = chr_ref[np.logical_and(block[1] > chr_ref.start, block[1] <= chr_ref.end)]
+        right = chr_ref[np.logical_and(block[0] >= chr_ref.start, block[0] < chr_ref.end)]
 
         if len(left) > 0 and len(right) > 0:
             # retained intron
