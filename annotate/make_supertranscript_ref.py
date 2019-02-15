@@ -199,10 +199,10 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
     # remove 'chr' from gtf and vcfs
     # TODO: need to check whether chr is actually present...
     gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
-    gtf[gtf['chr'] == 'M'] = 'MT'
+    gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
 
     cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
-    cvcf[cvcf[0] == 'M'] = 'MT'
+    cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
 
     contigs_to_annotate = contigs[contigs.variant_type.apply(lambda x: x in VARS_TO_ANNOTATE)]
     contig_ids = np.unique(contigs_to_annotate.contig_id.values)
@@ -215,6 +215,8 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
         genes = np.unique(np.array([y for x in genes.values for y in x]))
 
         blocks, block_seqs = get_merged_exons(genes, gtf, genome_fasta)
+        if len(blocks) == 0:
+            continue
 
         convars = list(con_info.variant_id.values)
         convars.extend(list(con_info.partner_id.values))
