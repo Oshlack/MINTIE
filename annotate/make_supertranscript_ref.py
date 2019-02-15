@@ -204,7 +204,7 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
     cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
     cvcf[cvcf[0] == 'M'] = 'MT'
 
-    contigs_to_annotate = contigs[contigs.variant_type.apply(lambda x: x in vars_to_annotate)]
+    contigs_to_annotate = contigs[contigs.variant_type.apply(lambda x: x in VARS_TO_ANNOTATE)]
     contig_ids = np.unique(contigs_to_annotate.contig_id.values)
 
     for idx,contig in enumerate(contig_ids):
