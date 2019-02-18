@@ -68,6 +68,10 @@ def parse_args():
                         metavar='FASTA',
                         type=str,
                         help='''Genome reference in fasta format.''')
+    parser.add_argument(dest='outdir',
+                        metavar='OUTDIR',
+                        type=str,
+                        help='''Output directory.''')
     parser.add_argument(dest='sample',
                         metavar='SAMPLE',
                         type=str,
@@ -206,10 +210,11 @@ def write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, sample):
 
 def make_supertranscripts(args, contigs, cvcf, gtf):
     genome_fasta = args.fasta
+
     # output files
-    genome_bed = '%s_genome.bed' % args.sample
-    st_bed = '%s_supertranscript.bed' % args.sample
-    st_file = '%s_supertranscript.fa' % args.sample
+    genome_bed = '%s/%s_genome.bed' % (args.outdir, args.sample)
+    st_bed = '%s/%s_supertranscript.bed' % (args.outdir, args.sample)
+    st_file = '%s/%s_supertranscript.fasta' % (args.outdir, args.sample)
 
     # remove 'chr' from gtf and vcfs
     # TODO: need to check whether chr is actually present...
@@ -269,9 +274,9 @@ def main():
     args = parse_args()
     init_logging(args.log)
 
-    genome_bed = '%s_genome.bed' % args.sample
-    st_bed = '%s_supertranscript.bed' % args.sample
-    st_file = '%s_supertranscript.fa' % args.sample
+    genome_bed = '%s/%s_genome.bed' % (args.outdir, args.sample)
+    st_bed = '%s/%s_supertranscript.bed' % (args.outdir, args.sample)
+    st_file = '%s/%s_supertranscript.fasta' % (args.outdir, args.sample)
     if os.path.exists(genome_bed):
         os.remove(genome_bed)
     if os.path.exists(st_bed):
