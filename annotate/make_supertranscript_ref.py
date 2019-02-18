@@ -35,6 +35,11 @@ GTF_COLS = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'fram
 # only these variant types require modification to reference supertranscripts
 VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN']
 
+# alternating colours for bed track, and variant colour
+COL1 = '189,189,189' #light grey
+COL2 = '99,99,99' # dark grey
+VARCOL = '255,255,153' # bright yellow
+
 def parse_args():
     '''
     Parse command line arguments.
@@ -63,14 +68,10 @@ def parse_args():
                         metavar='FASTA',
                         type=str,
                         help='''Genome reference in fasta format.''')
-    parser.add_argument(dest='bed_out',
-                        metavar='BED_OUT',
+    parser.add_argument(dest='sample',
+                        metavar='SAMPLE',
                         type=str,
-                        help='''Bed file output of supertranscript blocks.''')
-    parser.add_argument(dest='fasta_out',
-                        metavar='FASTA_OUT',
-                        type=str,
-                        help='''Supertranscript output fasta reference.''')
+                        help='''Sample name. Used to name bed and supertranscript output files.''')
 
     return parser.parse_args()
 
@@ -173,7 +174,7 @@ def get_merged_exons(genes, gtf, genome_fasta):
 
     return(blocks, block_seqs)
 
-def write_gene(contig, blocks, block_seqs, st_file):
+def write_gene(contig, blocks, block_seqs, st_file, st_bed):
     seqs = []
     for idx,x in blocks.iterrows():
         seq = str(block_seqs['%s:%d-%d' % (x['chr'], x.start, x.end)])
@@ -191,10 +192,24 @@ def write_gene(contig, blocks, block_seqs, st_file):
     with open(st_file, 'a') as st_fasta:
         st_fasta.writelines([header, sequence])
 
+    # create and output supertranscript bed file
+    colours = np.empty((len(blocks),), dtype='U50')
+    colours[::2] = COL1
+    colours[1::2] = COL2
+    novel_vars = [x in VARS_TO_ANNOTATE for x in names]
+    colours[novel_vars] = VARCOL
+
+    bed = pd.DataFrame({'chr': contig_name, 'start': seg_starts, 'end': seg_ends,
+                        'name': names, 'score': 0, 'strand': '.', 'thickStart': seg_starts,
+                        'thickEnd': seg_ends, 'itemRgb': colours})
+    bed.to_csv(st_bed, mode='a', index=False, header=False, sep='\t')
+
 def make_supertranscripts(args, contigs, cvcf, gtf):
-    bed_file = args.bed_out
-    st_file = args.fasta_out
     genome_fasta = args.fasta
+    # output files
+    genome_bed = '%s_genome.bed' % args.sample
+    st_bed = '%s_supertranscript.bed' % args.sample
+    st_file = '%s_supertranscript.fa' % args.sample
 
     # remove 'chr' from gtf and vcfs
     # TODO: need to check whether chr is actually present...
@@ -246,19 +261,23 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
                 block_seqs['%s:%d-%d' % (chrom, start_pos, end_pos)] = seq
 
         blocks = blocks.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
-        blocks.to_csv(bed_file, mode='a', index=False, header=False, sep='\t')
+        blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
-        write_gene(contig, blocks, block_seqs, st_file)
+        write_gene(contig, blocks, block_seqs, st_file, st_bed)
 
 def main():
     args = parse_args()
     init_logging(args.log)
 
-    if os.path.exists(args.bed_out):
-        os.remove(args.bed_out)
-
-    if os.path.exists(args.fasta_out):
-        os.remove(args.fasta_out)
+    genome_bed = '%s_genome.bed' % args.sample
+    st_bed = '%s_supertranscript.bed' % args.sample
+    st_file = '%s_supertranscript.fa' % args.sample
+    if os.path.exists(genome_bed):
+        os.remove(genome_bed)
+    if os.path.exists(st_bed):
+        os.remove(st_bed)
+    if os.path.exists(st_file):
+        os.remove(st_file)
 
     try:
         cvcf = pd.read_csv(args.contig_vcf, sep='\t', header=None, comment='#')
