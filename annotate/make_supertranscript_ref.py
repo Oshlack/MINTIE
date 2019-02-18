@@ -174,7 +174,7 @@ def get_merged_exons(genes, gtf, genome_fasta):
 
     return(blocks, block_seqs)
 
-def write_gene(contig, blocks, block_seqs, st_file, st_bed):
+def write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, sample):
     seqs = []
     for idx,x in blocks.iterrows():
         seq = str(block_seqs['%s:%d-%d' % (x['chr'], x.start, x.end)])
@@ -185,7 +185,7 @@ def write_gene(contig, blocks, block_seqs, st_file, st_bed):
     segs = ['%s-%s' % (s1+1, s2) for s1,s2 in zip(seg_starts, seg_ends)]
 
     names = blocks['name'].apply(lambda x: x.split('|')[-1]).values
-    contig_name = '%s|%s' % (contig, blocks['name'].values[0].split(' ')[0])
+    contig_name = '%s|%s|%s' % (sample, contig, '|'.join(genes))
     header = '>%s segs:%s names:%s\n' % (contig_name, ','.join(segs), ','.join(names))
 
     sequence = ''.join(seqs) + '\n'
@@ -263,7 +263,7 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
         blocks = blocks.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
         blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
-        write_gene(contig, blocks, block_seqs, st_file, st_bed)
+        write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, args.sample)
 
 def main():
     args = parse_args()
