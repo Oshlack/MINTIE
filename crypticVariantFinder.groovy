@@ -241,7 +241,7 @@ create_supertranscript_reference = {
    def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
    produce(sample_name + "_supertranscript.fasta", sample_name + "_supertranscript.bed", sample_name + "_genome.bed"){
       exec """
-          python ${code_base}/annotate/make_supertranscript_ref.py $input.tsv $input.vcf \
+          python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
                 $tx_annotation $genome_fasta $output.dir $sample_name
       """
    }
@@ -290,11 +290,13 @@ align_contigs_to_supertranscript = {
    output.dir=colpath+"/alignment"
    index_dir=colpath
    //TODO: this needs to play nicely with the given mask for cases
+   //TODO: fix this so sample_dir and sample_name are the same
    def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
+   def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
    produce(sample_name+"_novel_contigs_st_aligned.bam"){
       exec """
          outfile=$output ; basename="\${outfile%.*}" ;
-         $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${sample_name}/de_contigs.fasta > \${basename}.sam ;
+         $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${sample_dir}/de_contigs.fasta > \${basename}.sam ;
          samtools view -hb \${basename}.sam > \${basename}_unsort.bam ;
          samtools sort \${basename}_unsort.bam > $output ;
          samtools index $output ; rm \${basename}_unsort.bam ; rm \${basename}.sam

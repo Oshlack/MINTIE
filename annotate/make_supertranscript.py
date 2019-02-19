@@ -24,6 +24,7 @@ import ipdb
 pd.set_option("mode.chained_assignment", None)
 
 EXIT_FILE_IO_ERROR = 1
+PROGRAM_NAME = 'MAKE_SUPERTRANSCRIPT'
 
 # headers for GTF file
 GTF_COLS = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute']
@@ -118,20 +119,18 @@ def get_block_seqs(exons):
 
     return(block_seqs)
 
-def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, genes, variant):
+def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, name):
     '''
     split a sequence block at the gpos location, separating
     into left and right blocks and sequences (if necessary)
     '''
-    gene = '|'.join(genes)
-
     blocks = blocks[blocks.index!=block['index']]
     ref_seq = block_seqs['%s:%d-%d' % (block['chr'], block.start, block.end)]
     left_seq = ref_seq[:gpos1-block.start]
-    right_seq = ref_seq[gpos2-block.start:]
+    right_seq = ref_seq[gpos2-block.start-1:]
 
     block_seqs['%s:%d-%d' % (block['chr'], gpos1, gpos2)] = str(seq)
-    var_block = [{'chr': block['chr'], 'start': gpos1, 'end': gpos2, 'name': '%s %s' % (gene, variant)}]
+    var_block = [{'chr': block['chr'], 'start': gpos1, 'end': gpos2, 'name': name}]
     blocks = blocks.append(var_block, ignore_index=True)
 
     if gpos1 - block.start != 0:
@@ -266,14 +265,14 @@ def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed)
             start_pos = int(record[1])
             end_pos = int(start_pos) + 1 if blocksize == 0 else int(start_pos) + blocksize
 
+            name = '|'.join(genes) + '|' + vtype
             block_affected = blocks[np.logical_and(blocks.start < start_pos, blocks.end > start_pos)]
             if vtype in ['INS', 'UN'] and len(block_affected) > 0:
                 if len(block_affected) > 1:
                     print('WARNING: multiple blocks affected by variant; exons may not have been merged properly')
                 block = block_affected.reset_index().loc[0]
-                blocks, block_seqs = split_block(blocks, block, block_seqs, start_pos, end_pos, seq, genes, vtype)
+                blocks, block_seqs = split_block(blocks, block, block_seqs, start_pos, end_pos, seq, name)
             else:
-                name = '|'.join(genes) + '|' + vtype
                 blocks = blocks.append([{'chr': chrom, 'start': start_pos, 'end': end_pos, 'name': name}])
                 block_seqs['%s:%d-%d' % (chrom, start_pos, end_pos)] = seq
 
@@ -291,7 +290,8 @@ def write_canonical_genes(args, contigs, gtf, st_file, st_bed):
     genes = [g for gene in genes for g in gene if g != '']
     genes = np.unique(np.array(genes))
 
-    for gene in genes:
+    for idx, gene in enumerate(genes):
+        print('Writing %s of %s canonical genes' % (idx+1, len(genes)))
         blocks, block_seqs = get_merged_exons([gene], gtf, args.fasta)
         if len(blocks) == 0:
             continue
@@ -325,8 +325,8 @@ def main():
     cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
     cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
 
-    write_canonical_genes(args, contigs, gtf, st_file, st_bed)
     make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed)
+    write_canonical_genes(args, contigs, gtf, st_file, st_bed)
 
 if __name__ == '__main__':
     main()
