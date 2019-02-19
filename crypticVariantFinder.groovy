@@ -290,7 +290,7 @@ align_contigs_to_supertranscript = {
    output.dir=colpath+"/alignment"
    index_dir=colpath
    //TODO: this needs to play nicely with the given mask for cases
-   def sample_name=inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
+   def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
    produce(sample_name+"_novel_contigs_st_aligned.bam"){
       exec """
          outfile=$output ; basename="\${outfile%.*}" ;
@@ -360,18 +360,15 @@ hisat_index = {
 }
 
 hisat_align = {
-   //output.dir=colpath+"/clinker/alignment/"
    output.dir=colpath+"/alignment"
    def workingDir=System.getProperty("user.dir");
    def (r1, r2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
    def sample_name=r1.split('/').last().split('\\.').first()
-   def out_prefix=output.dir+'/'+sample_name
    if(type=="controls"){
         //output.dir=colpath+"/clinker/alignment/controls/"
         output.dir=colpath+"/alignment/controls/"
-        out_prefix=output.dir+'/'+sample_name
    }
-   produce(out_prefix+"_hisatAligned.bam"){
+   produce(sample_name + "_hisatAligned.bam"){
         exec """
         outfile=$output.bam ; basename="\${outfile%.*}" ;
         hisat_idx=$input.bt2; idx=\${hisat_idx%.rev.1.bt2} ;

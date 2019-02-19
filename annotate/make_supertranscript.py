@@ -23,9 +23,6 @@ import ipdb
 
 pd.set_option("mode.chained_assignment", None)
 
-# for reverse-complementing
-lookup = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
-
 EXIT_FILE_IO_ERROR = 1
 
 # headers for GTF file
@@ -80,6 +77,8 @@ def parse_args():
     return parser.parse_args()
 
 def reverse_complement(seq):
+    # currently unused method, may require STs to be RC'd in the future
+    lookup = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
     if seq == '':
         return ''
     if type(seq) == float and math.isnan(seq):
@@ -120,6 +119,10 @@ def get_block_seqs(exons):
     return(block_seqs)
 
 def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, genes, variant):
+    '''
+    split a sequence block at the gpos location, separating
+    into left and right blocks and sequences (if necessary)
+    '''
     gene = '|'.join(genes)
 
     blocks = blocks[blocks.index!=block['index']]
@@ -144,6 +147,11 @@ def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, genes, variant):
     return blocks, block_seqs
 
 def get_merged_exons(genes, gtf, genome_fasta):
+    '''
+    get all exons from specified genes, merging any
+    overlapping exonic regions, also return their
+    respective sequences in a dictionary object
+    '''
     gene_gtf = pd.DataFrame()
     for gene in genes:
         gene_name = 'gene_name "%s"' % gene
@@ -179,6 +187,12 @@ def get_merged_exons(genes, gtf, genome_fasta):
     return(blocks, block_seqs)
 
 def write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, sample):
+    '''
+    write the supertranscript fasta and bed files
+    for the given gene. Passing an empty string into
+    the contig argument assumes that the gene to write
+    is canonical (gene is unmodified from reference)
+    '''
     seqs = []
     for idx,x in blocks.iterrows():
         seq = str(block_seqs['%s:%d-%d' % (x['chr'], x.start, x.end)])
@@ -209,6 +223,15 @@ def write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, sample):
     bed.to_csv(st_bed, mode='a', index=False, header=False, sep='\t')
 
 def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed):
+    '''
+    take the contig info and VCF outputs from annotate/refine contig annotations
+    and output three files:
+        1) a bed file containing the genomic coordinates of the blocks that
+           comprise the gene's supertranscript
+        2) a fasta file containing the sequence of each gene's supertranscript
+        3) a bed file containing the block annotations (mapping to the ST)
+           with novel bits indicated
+    '''
     genome_fasta = args.fasta
 
     contigs_to_annotate = contigs[contigs.variant_type.apply(lambda x: x in VARS_TO_ANNOTATE)]
@@ -261,7 +284,7 @@ def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed)
 
 def write_canonical_genes(args, contigs, gtf, st_file, st_bed):
     '''
-    Append unmodified reference genes for competitive mapping
+    append unmodified reference genes for competitive mapping
     '''
     genes = contigs.overlapping_genes.apply(lambda x: x.split('|'))
     genes = [g.split(':') for gene in genes for g in gene]
