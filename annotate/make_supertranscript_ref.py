@@ -189,7 +189,7 @@ def write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, sample):
     segs = ['%s-%s' % (s1+1, s2) for s1,s2 in zip(seg_starts, seg_ends)]
 
     names = blocks['name'].apply(lambda x: x.split('|')[-1]).values
-    contig_name = '%s|%s|%s' % (sample, contig, '|'.join(genes))
+    contig_name = '%s|%s|%s' % (sample, contig, '|'.join(genes)) if contig != '' else genes
     header = '>%s segs:%s names:%s\n' % (contig_name, ','.join(segs), ','.join(names))
 
     sequence = ''.join(seqs) + '\n'
@@ -208,21 +208,8 @@ def write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, sample):
                         'thickEnd': seg_ends, 'itemRgb': colours})
     bed.to_csv(st_bed, mode='a', index=False, header=False, sep='\t')
 
-def make_supertranscripts(args, contigs, cvcf, gtf):
+def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed):
     genome_fasta = args.fasta
-
-    # output files
-    genome_bed = '%s/%s_genome.bed' % (args.outdir, args.sample)
-    st_bed = '%s/%s_supertranscript.bed' % (args.outdir, args.sample)
-    st_file = '%s/%s_supertranscript.fasta' % (args.outdir, args.sample)
-
-    # remove 'chr' from gtf and vcfs
-    # TODO: need to check whether chr is actually present...
-    gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
-    gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
-
-    cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
-    cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
 
     contigs_to_annotate = contigs[contigs.variant_type.apply(lambda x: x in VARS_TO_ANNOTATE)]
     contig_ids = np.unique(contigs_to_annotate.contig_id.values)
@@ -245,10 +232,12 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
         vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)]
         for idx,record in vcf_records.iterrows():
             chrom = record[0]
-            seq = re.search('([ATGCNatgc]+)', record[4]).group(1)[1:]
 
             vtype = re.search('SVTYPE=(\w+)', record[7])
             vtype = vtype.group(1) if vtype else 'UN'
+
+            seq = re.search('([ATGCNatgc]+)', record[4]).group(1)
+            seq = seq[1:] if vtype == 'INS' else seq
 
             blocksize = len(seq) if vtype in ['EE', 'NE', 'RI'] else 0
             start_pos = int(record[1])
@@ -269,6 +258,21 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
         blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
         write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, args.sample)
+
+def write_canonical_genes(args, contigs, gtf, st_file, st_bed):
+    '''
+    Append unmodified reference genes for competitive mapping
+    '''
+    genes = contigs.overlapping_genes.apply(lambda x: x.split('|'))
+    genes = [g.split(':') for gene in genes for g in gene]
+    genes = [g for gene in genes for g in gene if g != '']
+    genes = np.unique(np.array(genes))
+
+    for gene in genes:
+        blocks, block_seqs = get_merged_exons([gene], gtf, args.fasta)
+        if len(blocks) == 0:
+            continue
+        write_gene('', blocks, block_seqs, st_file, st_bed, gene, args.sample)
 
 def main():
     args = parse_args()
@@ -291,7 +295,15 @@ def main():
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
-    make_supertranscripts(args, contigs, cvcf, gtf)
+    # remove 'chr' from gtf and vcfs
+    # TODO: need to check whether chr is actually present...
+    gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
+    gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
+    cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
+    cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
+
+    write_canonical_genes(args, contigs, gtf, st_file, st_bed)
+    make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed)
 
 if __name__ == '__main__':
     main()
