@@ -361,8 +361,8 @@ def annotate_blocks(cv, read, chr_ref, ci_file):
             # retained intron
             cv.cvtype = 'RI'
             qseq, rseq = get_block_sequence(read, block_idx)
-            seq_left_pos = min(left.end) - block[0]
-            seq_right_pos = block[1] - max(right.start)
+            seq_right_pos = block[1] - min(left.start)
+            seq_left_pos = max(right.end) - block[0]
 
             cv.pos = block[0] + seq_left_pos + 1
             cv.ref = rseq[seq_left_pos:(-seq_right_pos)]
