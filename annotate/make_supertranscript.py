@@ -203,7 +203,7 @@ def write_gene(contig, blocks, block_seqs, st_file, st_block_bed, st_gene_bed, g
     segs = ['%s-%s' % (s1+1, s2) for s1,s2 in zip(seg_starts, seg_ends)]
 
     names = blocks['name'].apply(lambda x: x.split('|')[-1]).values
-    contig_name = '%s|%s|%s' % (sample, contig, '|'.join(genes)) if contig != '' else genes
+    contig_name = '%s|%s|%s' % (sample, contig, '|'.join(genes)) if contig != '' else genes[0]
     header = '>%s segs:%s names:%s\n' % (contig_name, ','.join(segs), ','.join(names))
 
     sequence = ''.join(seqs) + '\n'
@@ -277,6 +277,8 @@ def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_block_bed, st_ge
         convars = con_info[con_info.variant_type != 'FUS']
         convars = list(convars.variant_id.values) + list(convars.partner_id.values)
         convars = np.unique([c for c in convars if c != '.'])
+        if len(convars) == 0:
+            continue
 
         vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)]
         for idx,record in vcf_records.iterrows():
@@ -328,7 +330,7 @@ def write_canonical_genes(args, contigs, gtf, st_file, st_block_bed, st_gene_bed
         blocks, block_seqs = get_merged_exons([gene], gtf, args.fasta)
         if len(blocks) == 0:
             continue
-        write_gene('', blocks, block_seqs, st_file, st_block_bed, st_gene_bed, gene, args.sample, gtf)
+        write_gene('', blocks, block_seqs, st_file, st_block_bed, st_gene_bed, [gene], args.sample, gtf)
 
 def main():
     args = parse_args()
