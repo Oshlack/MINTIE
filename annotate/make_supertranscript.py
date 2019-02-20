@@ -14,6 +14,7 @@ import pandas as pd
 import re
 import sys
 import tempfile
+import logging
 import os
 from pybedtools import BedTool
 from Bio import SeqIO
@@ -29,7 +30,6 @@ PROGRAM_NAME = 'MAKE_SUPERTRANSCRIPT'
 # headers for GTF file
 GTF_COLS = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute']
 
-# TODO: add fusions
 # only these variant types require modification to reference supertranscripts
 VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS']
 
@@ -157,6 +157,7 @@ def get_merged_exons(genes, gtf, genome_fasta):
         tmp = gtf[gtf.attribute.str.contains(gene_name)]
         gene_gtf = gene_gtf.append(tmp)
 
+    blocks = pd.DataFrame()
     with tempfile.NamedTemporaryFile(mode='r+') as temp_gtf:
         gene_gtf.to_csv(temp_gtf.name, index=False, header=False, sep='\t')
 
@@ -185,7 +186,7 @@ def get_merged_exons(genes, gtf, genome_fasta):
 
     return(blocks, block_seqs)
 
-def write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, sample):
+def write_gene(contig, blocks, block_seqs, st_file, st_block_bed, st_gene_bed, genes, sample, gtf):
     '''
     write the supertranscript fasta and bed files
     for the given gene. Passing an empty string into
@@ -209,7 +210,8 @@ def write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, sample):
     with open(st_file, 'a') as st_fasta:
         st_fasta.writelines([header, sequence])
 
-    # create and output supertranscript bed file
+    # TODO: make functions for st_block_bed and st_gene_bed outputs
+    # create and output supertranscript block annotation bed file
     colours = np.empty((len(blocks),), dtype='U50')
     colours[::2] = COL1
     colours[1::2] = COL2
@@ -219,9 +221,32 @@ def write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, sample):
     bed = pd.DataFrame({'chr': contig_name, 'start': seg_starts, 'end': seg_ends,
                         'name': names, 'score': 0, 'strand': '.', 'thickStart': seg_starts,
                         'thickEnd': seg_ends, 'itemRgb': colours})
-    bed.to_csv(st_bed, mode='a', index=False, header=False, sep='\t')
+    bed.to_csv(st_block_bed, mode='a', index=False, header=False, sep='\t')
 
-def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed):
+    # supertranscript gene annotation bed file
+    gene_gtf = gtf[gtf.feature == 'gene']
+    gene_starts, gene_ends = [], []
+    for gene in genes:
+        gene_name = 'gene_name "%s"' % gene
+        gn = gene_gtf[gene_gtf.attribute.str.contains(gene_name)]
+
+        start, end = gn.start.values[0] - 1, gn.end.values[0]
+        start_block = blocks[np.logical_and(blocks.start <= start, blocks.end >= start)]
+        end_block = blocks[np.logical_and(blocks.start <= end, blocks.end >= end)]
+        start_offset = start - min(start_block.start)
+        end_offset = max(end_block.end) - end
+
+        gene_start = seg_starts[start_block.index[0]] + start_offset
+        gene_end = seg_ends[end_block.index[0]] - end_offset
+        gene_starts.append(gene_start)
+        gene_ends.append(gene_end)
+
+    #TODO: add random colours for genes
+    bed = pd.DataFrame({'chr': contig_name, 'start': gene_starts, 'end': gene_ends,
+                        'name': genes})
+    bed.to_csv(st_gene_bed, mode='a', index=False, header=False, sep='\t')
+
+def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_block_bed, st_gene_bed, genome_bed):
     '''
     take the contig info and VCF outputs from annotate/refine contig annotations
     and output three files:
@@ -235,7 +260,6 @@ def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed)
 
     contigs_to_annotate = contigs[contigs.variant_type.apply(lambda x: x in VARS_TO_ANNOTATE)]
     contig_ids = np.unique(contigs_to_annotate.contig_id.values)
-    #contig_ids = contigs_to_annotate[contigs_to_annotate.variant_type=='FUS'].contig_id.values
 
     for idx,contig in enumerate(contig_ids):
         logging.info('Writing %s, %d of %d contigs' % (contig, idx+1, len(contig_ids)))
@@ -288,9 +312,9 @@ def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed)
         blocks = blocks.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
         blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
-        write_gene(contig, blocks, block_seqs, st_file, st_bed, genes, args.sample)
+        write_gene(contig, blocks, block_seqs, st_file, st_block_bed, st_gene_bed, genes, args.sample, gtf)
 
-def write_canonical_genes(args, contigs, gtf, st_file, st_bed):
+def write_canonical_genes(args, contigs, gtf, st_file, st_block_bed, st_gene_bed):
     '''
     append unmodified reference genes for competitive mapping
     '''
@@ -304,19 +328,22 @@ def write_canonical_genes(args, contigs, gtf, st_file, st_bed):
         blocks, block_seqs = get_merged_exons([gene], gtf, args.fasta)
         if len(blocks) == 0:
             continue
-        write_gene('', blocks, block_seqs, st_file, st_bed, gene, args.sample)
+        write_gene('', blocks, block_seqs, st_file, st_block_bed, st_gene_bed, gene, args.sample, gtf)
 
 def main():
     args = parse_args()
     init_logging(args.log)
 
     genome_bed = '%s/%s_genome.bed' % (args.outdir, args.sample)
-    st_bed = '%s/%s_supertranscript.bed' % (args.outdir, args.sample)
+    st_block_bed = '%s/%s_blocks_supertranscript.bed' % (args.outdir, args.sample)
+    st_gene_bed = '%s/%s_genes_supertranscript.bed' % (args.outdir, args.sample)
     st_file = '%s/%s_supertranscript.fasta' % (args.outdir, args.sample)
     if os.path.exists(genome_bed):
         os.remove(genome_bed)
-    if os.path.exists(st_bed):
-        os.remove(st_bed)
+    if os.path.exists(st_block_bed):
+        os.remove(st_block_bed)
+    if os.path.exists(st_gene_bed):
+        os.remove(st_gene_bed)
     if os.path.exists(st_file):
         os.remove(st_file)
 
@@ -335,8 +362,8 @@ def main():
     cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
     cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
 
-    make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed)
-    write_canonical_genes(args, contigs, gtf, st_file, st_bed)
+    make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_block_bed, st_gene_bed, genome_bed)
+    write_canonical_genes(args, contigs, gtf, st_file, st_block_bed, st_gene_bed)
 
 if __name__ == '__main__':
     main()

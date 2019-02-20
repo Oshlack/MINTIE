@@ -372,7 +372,7 @@ hisat_align = {
    }
    produce(sample_name + "_hisatAligned.bam"){
         exec """
-        outfile=$output.bam ; basename="\${outfile%.*}" ;
+        outfile=$output ; basename="\${outfile%.*}" ;
         hisat_idx=$input.bt2; idx=\${hisat_idx%.rev.1.bt2} ;
         time $hisat --threads $threads -x \$idx -1 $r1 -2 $r2 > \${basename}.sam ;
         samtools sort -@ $threads -m ${sort_ram}G \${basename}.sam -o $output ;
