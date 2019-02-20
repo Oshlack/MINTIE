@@ -325,8 +325,8 @@ def annotate_block_right(cv, read, cpos, olapping, block, block_idx):
     '''
     qseq, rseq = get_block_sequence(read, block_idx)
     seq_left_pos = block[1] - max(olapping.end)
-    cv.pos, cv.ref, cv.alt = max(olapping.end) + 1, rseq[(-seq_left_pos):], ']' + qseq[(-seq_left_pos):]
-    cv.cpos = cpos - seq_left_pos
+    cv.ref, cv.alt = rseq[(-seq_left_pos):], ']' + qseq[(-seq_left_pos):]
+    cv.cpos, cv.pos = cpos, max(olapping.end) + 1
     cv.vsize, cv.cvsize = abs(len(cv.alt)-1 - len(cv.ref)), len(cv.alt)-1
     return cv
 
@@ -337,8 +337,7 @@ def annotate_block_left(cv, read, cpos, olapping, block, block_idx):
     qseq, rseq = get_block_sequence(read, block_idx)
     seq_right_pos = min(olapping.start) - block[0]
     cv.ref, cv.alt = rseq[:seq_right_pos], qseq[:seq_right_pos] + '['
-    cv.pos = min(olapping.start) - len(cv.ref) + 1
-    cv.cpos, cv.vsize = cpos, len(cv.alt)-1
+    cv.cpos, cv.pos = cpos, min(olapping.start) - len(cv.ref) + 1
     cv.vsize, cv.cvsize = abs(len(cv.alt)-1 - len(cv.ref)), len(cv.alt)-1
     return cv
 
@@ -369,6 +368,7 @@ def annotate_blocks(cv, read, chr_ref, ci_file):
             cv.ref = rseq[seq_left_pos:(-seq_right_pos)]
             cv.alt = ']' + qseq[seq_left_pos:(-seq_right_pos)] + '['
             cv.cpos = cpos1 + seq_left_pos
+
             cv.vsize, cv.cvsize = abs(len(cv.alt)-2 - len(cv.ref)), len(cv.alt)-2
             cv.vid = get_next_id(read.query_name)
         elif len(olapping) > 0:
@@ -527,7 +527,8 @@ def annotate_single_read(args, read, juncs, ex_ref, ref_trees, outbam=None, gene
     '''
     ci_file = args.contig_info_file
     genes = get_overlapping_genes(read, ref_trees) if genes == '' else genes
-    if genes == '':
+    fusion = any([op == CIGAR['hard-clip'] and val >= CLIP_MIN for op, val in read.cigar])
+    if genes == '' and not fusion:
         logging.info('No gene(s) intersecting read %s; skipping' % read.query_name)
         return
 
