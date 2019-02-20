@@ -31,7 +31,7 @@ GTF_COLS = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'fram
 
 # TODO: add fusions
 # only these variant types require modification to reference supertranscripts
-VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN']
+VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS']
 
 # alternating colours for bed track, and variant colour
 COL1 = '189,189,189' #light grey
@@ -235,20 +235,23 @@ def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed)
 
     contigs_to_annotate = contigs[contigs.variant_type.apply(lambda x: x in VARS_TO_ANNOTATE)]
     contig_ids = np.unique(contigs_to_annotate.contig_id.values)
+    #contig_ids = contigs_to_annotate[contigs_to_annotate.variant_type=='FUS'].contig_id.values
 
     for idx,contig in enumerate(contig_ids):
-        print('%d of %d contigs' % (idx+1, len(contig_ids)))
+        logging.info('Writing %s, %d of %d contigs' % (contig, idx+1, len(contig_ids)))
         con_info = contigs_to_annotate[contigs_to_annotate.contig_id == contig]
 
         genes = con_info.overlapping_genes.apply(lambda x: x.split('|'))
-        genes = np.unique(np.array([y for x in genes.values for y in x]))
+        genes = [g.split(':') for gene in genes for g in gene]
+        genes = [g for gene in genes for g in gene if g != '']
+        genes = np.unique(np.array(genes))
 
         blocks, block_seqs = get_merged_exons(genes, gtf, genome_fasta)
         if len(blocks) == 0:
             continue
 
-        convars = list(con_info.variant_id.values)
-        convars.extend(list(con_info.partner_id.values))
+        convars = con_info[con_info.variant_type != 'FUS']
+        convars = list(convars.variant_id.values) + list(convars.partner_id.values)
         convars = np.unique([c for c in convars if c != '.'])
 
         vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)]
@@ -267,9 +270,15 @@ def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_bed, genome_bed)
 
             name = '|'.join(genes) + '|' + vtype
             block_affected = blocks[np.logical_and(blocks.start < start_pos, blocks.end > start_pos)]
+
+            # minor coordinate correction for left-sided soft-clips
+            left_sc = vtype == 'UN' and bool(re.search(']', record[4]))
+            start_pos = (start_pos - 1) if left_sc else start_pos
+            end_pos = (end_pos - 1) if left_sc else end_pos
+
             if vtype in ['INS', 'UN'] and len(block_affected) > 0:
                 if len(block_affected) > 1:
-                    print('WARNING: multiple blocks affected by variant; exons may not have been merged properly')
+                    logging.info('WARNING: multiple blocks affected by variant; exons may not have been merged properly')
                 block = block_affected.reset_index().loc[0]
                 blocks, block_seqs = split_block(blocks, block, block_seqs, start_pos, end_pos, seq, name)
             else:
@@ -291,7 +300,7 @@ def write_canonical_genes(args, contigs, gtf, st_file, st_bed):
     genes = np.unique(np.array(genes))
 
     for idx, gene in enumerate(genes):
-        print('Writing %s of %s canonical genes' % (idx+1, len(genes)))
+        logging.info('Writing %s, %s of %s canonical genes' % (gene, idx+1, len(genes)))
         blocks, block_seqs = get_merged_exons([gene], gtf, args.fasta)
         if len(blocks) == 0:
             continue
@@ -315,6 +324,7 @@ def main():
         cvcf = pd.read_csv(args.contig_vcf, sep='\t', header=None, comment='#')
         gtf = pd.read_csv(args.gtf_file, comment='#', sep='\t', header=None, names=GTF_COLS)
         contigs = pd.read_csv(args.contig_info, sep='\t')
+        contigs = contigs.fillna('')
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
