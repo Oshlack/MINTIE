@@ -338,7 +338,7 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
         con_info = contigs_to_annotate[contigs_to_annotate.contig_id == contig]
         contig_to_supertranscript(con_info, args, cvcf, gtf)
 
-def write_canonical_genes(args, contigs, gtf, st_fasta, st_block_bed, st_gene_bed):
+def write_canonical_genes(args, contigs, gtf):
     '''
     append unmodified reference genes for competitive mapping
     '''

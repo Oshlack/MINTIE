@@ -6,7 +6,7 @@ threads=8
 scores=33
 min_read_length=50;
 genome_mem=31000000000
-sort_ram=4 //ram per code for bam sorting
+sort_ram=4 //ram per core for bam sorting
 
 //Assembly options
 //Ks="79 49 19" //"31 25 19"
@@ -32,7 +32,6 @@ hisat_build="/group/bioi1/marekc/apps/hisat-0.1.6-beta/hisat-build"
 //reference
 genome_fasta="/group/bioi1/shared/genomes/hg38/fasta/Homo_sapiens.GRCh38.dna.primary_assembly.fa"
 trans_fasta="/group/bioi1/shared/transcriptomes/hg38/Homo_sapiens.GRCh38.cdna.all.fa"
-//ann_info=code_base+"/gen24_hg38.info"
 ann_superTranscriptome=code_base+"/gen24_hg38.super_transcriptome.fasta"
 gmap_index="/group/bioi1/shared/genomes/hg38/gmapdb"
 gmap_tx_index="/group/bioi1/shared/transcriptomes/hg38/indexes/gmapdb"
@@ -105,37 +104,6 @@ SOAPassemble = {
      ""","SOAPassemble"
      }
 }
-
-//filter_contigs_against_genome = {
-//   output.dir=branch.name
-//   produce('filtered_contigs_against_genome.bam', 'novel_contigs.txt', 'genome_filtered.fasta'){
-//      exec """
-//      python ${code_base}/filter_contigs.py $input.sam $output.bam --splice_juncs $ann_info;
-//      python ${code_base}/filter_fasta.py $input.fasta $output.txt > $output.fasta ;
-//      """
-//   }
-//}
-//      //cat $output.dir/genome_filtered.fasta $trans_fasta > $output.fasta
-//
-//align_contigs_against_transcriptome = {
-//   output.dir=branch.name
-//   produce('aligned_contigs_against_txome.sam'){
-//      exec """
-//        $gmap -D $gmap_tx_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.sam
-//      """, "align_contigs_against_transcriptome"
-//   }
-//}
-//
-//filter_contigs_against_transcriptome = {
-//   output.dir=branch.name
-//   produce('filtered_contigs_against_txome.bam', 'all.groupings', 'all.fasta'){
-//      exec """
-//      python ${code_base}/filter_contigs.py $input.sam $output.bam --groupings $trans_fasta ;
-//      python ${code_base}/filter_fasta.py $input.fasta $output.groupings > $output.dir/filtered_contigs_against_txome.fasta ;
-//      cat $output.dir/filtered_contigs_against_txome.fasta $trans_fasta > $output.fasta ;
-//      """
-//   }
-//}
 
 create_salmon_index = {
    def salmon_index=branch.name+"/all_fasta_index"
@@ -239,19 +207,20 @@ refine_contigs = {
 create_supertranscript_reference = {
    output.dir=branch.name
    def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
-   produce(sample_name + "_supertranscript.fasta", sample_name + "_supertranscript.bed", sample_name + "_genome.bed"){
+   produce(sample_name + "_supertranscript.fasta"){
       exec """
           python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
-                $tx_annotation $genome_fasta $output.dir $sample_name
+                $tx_annotation $genome_fasta $output.dir $sample_name --log $output.dir/makest.log
       """
    }
 }
 
 make_super_supertranscript = {
+    def workingDir=System.getProperty("user.dir");
     colpath = inputs.fastq.gz.split()
     colpath = colpath[(0..(colpath.length-1)).step(2)]
     colpath = colpath.collect { it.split('/').last().split('_').first() }.join('_')
-    colpath = colpath+'_collated_output'
+    colpath = workingDir + '/' + colpath + '_collated_output'
     output.dir = colpath
     produce('supersupertranscript.fasta'){
         exec """
@@ -260,98 +229,30 @@ make_super_supertranscript = {
     }
 }
 
-//annotate_supertranscript = {
-//   //clinker_out=branch.name+"/clinker_out"
-//   clinker_out=colpath+'/clinker'
-//   output.dir=clinker_out+"/reference"
-//   produce("fst_reference.fasta"){
-//      exec """
-//         python ${code_base}/Clinker/main.py -in $input.txt -out $clinker_out -pos 4,5,6,7,21 \
-//            -del t -header true -competitive true -st $input.fasta ;
-//         faidx $output ;
-//      """
-//   }
-//}
-
 make_supertranscript_gmap_reference = {
-   //clinker_out=branch.name+"/clinker_out"
-   //output.dir=colpath+'/clinker/reference'
-   output.dir=colpath
-   produce("st_gmap_ref"){
-      exec """
-         $gmap_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
-      """
-   }
+    output.dir=colpath
+    produce("st_gmap_ref"){
+       exec """
+          $gmap_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
+       """
+    }
 }
 
 align_contigs_to_supertranscript = {
-   //output.dir=colpath+"/clinker/alignment"
-   //index_dir=colpath+"/clinker/reference"
    output.dir=colpath+"/alignment"
    index_dir=colpath
    //TODO: this needs to play nicely with the given mask for cases
    //TODO: fix this so sample_dir and sample_name are the same
    def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
    def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
-   produce(sample_name+"_novel_contigs_st_aligned.bam"){
+   produce(sample_name+"_novel_contigs_st_aligned.sam"){
       exec """
-         outfile=$output ; basename="\${outfile%.*}" ;
-         $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${sample_dir}/de_contigs.fasta > \${basename}.sam ;
-         samtools view -hb \${basename}.sam > \${basename}_unsort.bam ;
-         samtools sort \${basename}_unsort.bam > $output ;
-         samtools index $output ; rm \${basename}_unsort.bam ; rm \${basename}.sam
+         $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${sample_dir}/de_contigs.fasta > $output.sam ;
       """, "align_contigs_to_supertranscript"
    }
 }
 
-//star_genome_gen = {
-//    doc "Generate STAR genome index"
-//    output.dir=colpath+"/clinker/"
-//    genome_folder = output.dir+"/genome"
-//    produce("$genome_folder/Genome") {
-//        exec """STAR --runMode genomeGenerate
-//                --runThreadN $threads
-//                --genomeDir $genome_folder
-//                --genomeFastaFiles $input.fasta
-//                --limitGenomeGenerateRAM $genome_mem
-//                --genomeSAindexNbases 5""", "star_genome_gen"
-//    }
-//}
-//
-//star_align = {
-//   //output.dir=branch.parent.name+"/clinker_out/alignment/"
-//   output.dir=colpath+"/clinker/alignment/"
-//   def workingDir=System.getProperty("user.dir");
-//   def read_files=inputs.fastq.gz.split().collect { workingDir+"/$it" }.join(' ')
-//   def sample_name=read_files.split()[0].split('/').last().split('\\.').first()
-//   def out_prefix=output.dir+'/'+sample_name
-//   if(type=="controls"){
-//        //output.dir=branch.parent.parent.name+"/clinker_out/alignment/controls/"
-//        output.dir=colpath+"/clinker/alignment/controls/"
-//        out_prefix=output.dir+'/'+sample_name
-//   }
-//   produce(out_prefix+"Aligned.sortedByCoord.out.bam",out_prefix+"SJ.out.tab"){
-//        //mkdir -p $output.dir ;
-//        exec """
-//        rm -rf ${out_prefix}_STARtmp ;
-//        time STAR --genomeDir $genome_folder
-//           --readFilesCommand zcat
-//           --readFilesIn $read_files
-//           --outSAMtype BAM SortedByCoordinate
-//           --outFileNamePrefix $out_prefix
-//           --runThreadN $threads
-//           --limitBAMsortRAM $genome_mem
-//           --genomeSAindexNbases 5
-//           --outWigStrand Unstranded
-//           --outWigType bedGraph
-//           --outWigNorm RPM ;
-//        samtools index ${workingDir}/${output1} ;
-//    """, "star_align"
-//   }
-//}
-
 hisat_index = {
-    //output.dir=colpath+"/clinker/"
     output.dir=colpath+"/genome"
     def idx_prefix = output.dir+"/hisat_index"
     produce("hisat_index.rev.1.bt2") {
@@ -367,20 +268,22 @@ hisat_align = {
    def (r1, r2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
    def sample_name=r1.split('/').last().split('\\.').first()
    if(type=="controls"){
-        //output.dir=colpath+"/clinker/alignment/controls/"
         output.dir=colpath+"/alignment/controls/"
    }
-   produce(sample_name + "_hisatAligned.bam"){
+   produce(sample_name + "_hisatAligned.sam"){
         exec """
-        outfile=$output ; basename="\${outfile%.*}" ;
         hisat_idx=$input.bt2; idx=\${hisat_idx%.rev.1.bt2} ;
-        time $hisat --threads $threads -x \$idx -1 $r1 -2 $r2 > \${basename}.sam ;
-        samtools sort -@ $threads -m ${sort_ram}G \${basename}.sam -o $output ;
-        samtools index $output ;
-        if [[ -f $output ]] ; then
-            rm -f \${basename}.sam ;
-        fi
+        time $hisat --threads $threads -x \$idx -1 $r1 -2 $r2 > $output ;
     """, "hisat_align"
+   }
+}
+
+sort_and_index_bam = {
+   transform('sam') to ('bam') {
+        exec """
+        samtools sort -@ $threads -m ${sort_ram}G $input.sam -o $output ;
+        samtools index $output
+    """, "sort_and_index_bam"
    }
 }
 
@@ -394,9 +297,6 @@ if(!binding.variables.containsKey("fastqControlFormat")){
 run { fastqCaseFormat * [ make_sample_dir +
                           dedupe +
                           SOAPassemble +
-//                          filter_contigs_against_genome +
-//                          align_contigs_against_transcriptome +
-//                          filter_contigs_against_transcriptome +
                           create_salmon_index +
                           [run_salmon, fastqControlFormat * [ run_salmon.using(type:"controls") ]] +
                           create_ec_count_matrix +
@@ -406,9 +306,9 @@ run { fastqCaseFormat * [ make_sample_dir +
                           annotate_contigs + refine_contigs +
                           create_supertranscript_reference ] +
       make_super_supertranscript +
-//       annotate_supertranscript +
-       make_supertranscript_gmap_reference +
-       hisat_index +
-       fastqCaseFormat * [ align_contigs_to_supertranscript, hisat_align] +
-       fastqControlFormat * [ hisat_align.using(type:"controls") ]
+      make_supertranscript_gmap_reference +
+      hisat_index +
+      fastqCaseFormat * [ align_contigs_to_supertranscript + sort_and_index_bam ] +
+      fastqCaseFormat * [ hisat_align + sort_and_index_bam ] +
+      fastqControlFormat * [ hisat_align.using(type:"controls") ]
 }
