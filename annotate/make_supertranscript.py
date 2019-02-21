@@ -104,6 +104,15 @@ def subset_featuretypes(g, featuretype):
     '''
     return g.filter(featuretype_filter, featuretype).saveas().fn
 
+def get_output_files(sample, outdir):
+
+    genome_bed = '%s/%s_genome.bed' % (outdir, sample)
+    st_block_bed = '%s/%s_blocks_supertranscript.bed' % (outdir, sample)
+    st_gene_bed = '%s/%s_genes_supertranscript.bed' % (outdir, sample)
+    st_fasta = '%s/%s_supertranscript.fasta' % (outdir, sample)
+
+    return genome_bed, st_block_bed, st_gene_bed, st_fasta
+
 def get_block_seqs(exons):
     '''
     get sequences from exon blocks and
@@ -186,13 +195,16 @@ def get_merged_exons(genes, gtf, genome_fasta):
 
     return(blocks, block_seqs)
 
-def write_gene(contig, blocks, block_seqs, st_file, st_block_bed, st_gene_bed, genes, sample, gtf):
+def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     '''
     write the supertranscript fasta and bed files
     for the given gene. Passing an empty string into
     the contig argument assumes that the gene to write
     is canonical (gene is unmodified from reference)
     '''
+    sample = args.sample
+    genome_bed, st_block_bed, st_gene_bed, st_fasta = get_output_files(args.sample, args.outdir)
+
     seqs = []
     for idx,x in blocks.iterrows():
         seq = str(block_seqs['%s:%d-%d' % (x['chr'], x.start, x.end)])
@@ -207,7 +219,7 @@ def write_gene(contig, blocks, block_seqs, st_file, st_block_bed, st_gene_bed, g
     header = '>%s segs:%s names:%s\n' % (contig_name, ','.join(segs), ','.join(names))
 
     sequence = ''.join(seqs) + '\n'
-    with open(st_file, 'a') as st_fasta:
+    with open(st_fasta, 'a') as st_fasta:
         st_fasta.writelines([header, sequence])
 
     # TODO: make functions for st_block_bed and st_gene_bed outputs
@@ -246,7 +258,7 @@ def write_gene(contig, blocks, block_seqs, st_file, st_block_bed, st_gene_bed, g
                         'name': genes})
     bed.to_csv(st_gene_bed, mode='a', index=False, header=False, sep='\t')
 
-def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_block_bed, st_gene_bed, genome_bed):
+def contig_to_supertranscript(con_info, args, cvcf, gtf):
     '''
     take the contig info and VCF outputs from annotate/refine contig annotations
     and output three files:
@@ -256,67 +268,77 @@ def make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_block_bed, st_ge
         3) a bed file containing the block annotations (mapping to the ST)
            with novel bits indicated
     '''
-    genome_fasta = args.fasta
+    contig = con_info.contig_id.values[0]
+    logging.info('Writing contig %s' % contig)
 
+    genome_fasta = args.fasta
+    genome_bed, st_block_bed, st_gene_bed, st_fasta = get_output_files(args.sample, args.outdir)
+
+    convars = con_info[con_info.variant_type != 'FUS']
+    convars = list(convars.variant_id.values) + list(convars.partner_id.values)
+    convars = np.unique([c for c in convars if c != '.'])
+
+    genes = con_info.overlapping_genes.apply(lambda x: x.split('|'))
+    genes = [g.split(':') for gene in genes for g in gene]
+    genes = [g for gene in genes for g in gene if g != '']
+    genes = np.unique(np.array(genes))
+
+    if len(convars) == 0 and len(genes) < 2:
+        return
+
+    blocks, block_seqs = get_merged_exons(genes, gtf, genome_fasta)
+    if len(blocks) == 0:
+        return
+
+    vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)] if len(convars) > 0 else pd.DataFrame()
+    for idx,record in vcf_records.iterrows():
+        chrom = record[0]
+
+        vtype = re.search('SVTYPE=(\w+)', record[7])
+        vtype = vtype.group(1) if vtype else 'UN'
+
+        seq = re.search('([ATGCNatgc]+)', record[4]).group(1)
+        seq = seq[1:] if vtype == 'INS' else seq
+
+        blocksize = len(seq) if vtype in ['EE', 'NE', 'RI'] else 0
+        start_pos = int(record[1])
+        end_pos = int(start_pos) + 1 if blocksize == 0 else int(start_pos) + blocksize
+
+        name = '|'.join(genes) + '|' + vtype
+        block_affected = blocks[np.logical_and(blocks.start < start_pos, blocks.end > start_pos)]
+
+        # minor coordinate correction for left-sided soft-clips
+        left_sc = vtype == 'UN' and bool(re.search(']', record[4]))
+        start_pos = (start_pos - 1) if left_sc else start_pos
+        end_pos = (end_pos - 1) if left_sc else end_pos
+
+        if vtype in ['INS', 'UN'] and len(block_affected) > 0:
+            if len(block_affected) > 1:
+                logging.info('WARNING: multiple blocks affected by variant; exons may not have been merged properly')
+            block = block_affected.reset_index().loc[0]
+            blocks, block_seqs = split_block(blocks, block, block_seqs, start_pos, end_pos, seq, name)
+        else:
+            blocks = blocks.append([{'chr': chrom, 'start': start_pos, 'end': end_pos, 'name': name}])
+            block_seqs['%s:%d-%d' % (chrom, start_pos, end_pos)] = seq
+
+    blocks = blocks.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
+    blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
+
+    write_gene(contig, blocks, block_seqs, args, genes, gtf)
+
+def make_supertranscripts(args, contigs, cvcf, gtf):
+    '''
+    wrapper function for making ST annotation from contigs
+    '''
     contigs_to_annotate = contigs[contigs.variant_type.apply(lambda x: x in VARS_TO_ANNOTATE)]
     contig_ids = np.unique(contigs_to_annotate.contig_id.values)
 
-    for idx,contig in enumerate(contig_ids):
-        logging.info('Writing %s, %d of %d contigs' % (contig, idx+1, len(contig_ids)))
+    con_infos = []
+    for contig in contig_ids:
         con_info = contigs_to_annotate[contigs_to_annotate.contig_id == contig]
+        contig_to_supertranscript(con_info, args, cvcf, gtf)
 
-        genes = con_info.overlapping_genes.apply(lambda x: x.split('|'))
-        genes = [g.split(':') for gene in genes for g in gene]
-        genes = [g for gene in genes for g in gene if g != '']
-        genes = np.unique(np.array(genes))
-
-        blocks, block_seqs = get_merged_exons(genes, gtf, genome_fasta)
-        if len(blocks) == 0:
-            continue
-
-        convars = con_info[con_info.variant_type != 'FUS']
-        convars = list(convars.variant_id.values) + list(convars.partner_id.values)
-        convars = np.unique([c for c in convars if c != '.'])
-        if len(convars) == 0:
-            continue
-
-        vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)]
-        for idx,record in vcf_records.iterrows():
-            chrom = record[0]
-
-            vtype = re.search('SVTYPE=(\w+)', record[7])
-            vtype = vtype.group(1) if vtype else 'UN'
-
-            seq = re.search('([ATGCNatgc]+)', record[4]).group(1)
-            seq = seq[1:] if vtype == 'INS' else seq
-
-            blocksize = len(seq) if vtype in ['EE', 'NE', 'RI'] else 0
-            start_pos = int(record[1])
-            end_pos = int(start_pos) + 1 if blocksize == 0 else int(start_pos) + blocksize
-
-            name = '|'.join(genes) + '|' + vtype
-            block_affected = blocks[np.logical_and(blocks.start < start_pos, blocks.end > start_pos)]
-
-            # minor coordinate correction for left-sided soft-clips
-            left_sc = vtype == 'UN' and bool(re.search(']', record[4]))
-            start_pos = (start_pos - 1) if left_sc else start_pos
-            end_pos = (end_pos - 1) if left_sc else end_pos
-
-            if vtype in ['INS', 'UN'] and len(block_affected) > 0:
-                if len(block_affected) > 1:
-                    logging.info('WARNING: multiple blocks affected by variant; exons may not have been merged properly')
-                block = block_affected.reset_index().loc[0]
-                blocks, block_seqs = split_block(blocks, block, block_seqs, start_pos, end_pos, seq, name)
-            else:
-                blocks = blocks.append([{'chr': chrom, 'start': start_pos, 'end': end_pos, 'name': name}])
-                block_seqs['%s:%d-%d' % (chrom, start_pos, end_pos)] = seq
-
-        blocks = blocks.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
-        blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
-
-        write_gene(contig, blocks, block_seqs, st_file, st_block_bed, st_gene_bed, genes, args.sample, gtf)
-
-def write_canonical_genes(args, contigs, gtf, st_file, st_block_bed, st_gene_bed):
+def write_canonical_genes(args, contigs, gtf, st_fasta, st_block_bed, st_gene_bed):
     '''
     append unmodified reference genes for competitive mapping
     '''
@@ -330,24 +352,21 @@ def write_canonical_genes(args, contigs, gtf, st_file, st_block_bed, st_gene_bed
         blocks, block_seqs = get_merged_exons([gene], gtf, args.fasta)
         if len(blocks) == 0:
             continue
-        write_gene('', blocks, block_seqs, st_file, st_block_bed, st_gene_bed, [gene], args.sample, gtf)
+        write_gene('', blocks, block_seqs, args, [gene], gtf)
 
 def main():
     args = parse_args()
     init_logging(args.log)
 
-    genome_bed = '%s/%s_genome.bed' % (args.outdir, args.sample)
-    st_block_bed = '%s/%s_blocks_supertranscript.bed' % (args.outdir, args.sample)
-    st_gene_bed = '%s/%s_genes_supertranscript.bed' % (args.outdir, args.sample)
-    st_file = '%s/%s_supertranscript.fasta' % (args.outdir, args.sample)
+    genome_bed, st_block_bed, st_gene_bed, st_fasta = get_output_files(args.sample, args.outdir)
     if os.path.exists(genome_bed):
         os.remove(genome_bed)
     if os.path.exists(st_block_bed):
         os.remove(st_block_bed)
     if os.path.exists(st_gene_bed):
         os.remove(st_gene_bed)
-    if os.path.exists(st_file):
-        os.remove(st_file)
+    if os.path.exists(st_fasta):
+        os.remove(st_fasta)
 
     try:
         cvcf = pd.read_csv(args.contig_vcf, sep='\t', header=None, comment='#')
@@ -364,8 +383,8 @@ def main():
     cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
     cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
 
-    make_supertranscripts(args, contigs, cvcf, gtf, st_file, st_block_bed, st_gene_bed, genome_bed)
-    write_canonical_genes(args, contigs, gtf, st_file, st_block_bed, st_gene_bed)
+    make_supertranscripts(args, contigs, cvcf, gtf)
+    write_canonical_genes(args, contigs, gtf)
 
 if __name__ == '__main__':
     main()
