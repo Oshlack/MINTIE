@@ -1,6 +1,6 @@
-# CrypticVariantFinder #
+# MINTIE #
 
-A pipeline for detecting differentially expressed cryptic variants in RNA-seq data. CrypticVariantFinder can detect canonical and non-canonical fusions, as well as fusions with novel sequence between the boundary. The software is also able to detect insertions, deletions and small or large rearrangements in RNA. 
+A pipeline for detecting differentially expressed cryptic variants in RNA-seq data. MINTIE can detect canonical and non-canonical fusions, as well as fusions with novel sequence between the boundary. The software is also able to detect insertions, deletions and small or large rearrangements in RNA. 
 
 ## How do I get set up? ##
 
@@ -19,13 +19,13 @@ Install the following dependencies:
 * [star](https://github.com/alexdobin/STAR)
 * [bpipe](https://github.com/ssadedin/bpipe) (>=0.9.9.5)
 
-Then set all the paths correctly for `software' in crypticVariantFinder.groovy.
+Then set all the paths correctly for `software' in MINTIE.groovy.
 
 Now run:
 
 ```
-git clone git@github.com:mcmero/CrypticVariant.git
-cv_code=$PWD/CrypticVariant
+git clone git@github.com:mcmero/MINTIE.git
+cv_code=$PWD/MINTIE
 ```
 
 That's it.
@@ -56,7 +56,7 @@ cases="cases/<sample>_<fastqinfo>_R1.fastq.gz cases/<sample>_<fastqinfo>_R2.fast
 controls="controls/<sample>_<fastqinfo>_R1.fastq.gz controls/<sample>_<fastqinfo>_R2.fastq.gz
           controls/<sample>_<fastqinfo>_R1.fastq.gz controls/<sample>_<fastqinfo>_R2.fastq.gz"
 
-bpipe run -n 120 ${cv_code}/crypticVariantFinder.groovy $cases $controls
+bpipe run -n 120 ${cv_code}/MINTIE.groovy $cases $controls
 ```
 
 Cases are run on a 1 vs. all controls basis. Several cases can be specified and they will be run in parallel. Be careful when running >5 simultaneous cases as bpipe might start throwing errors about too many open files. 
@@ -66,7 +66,7 @@ If you are running the pipeline outside of the `${cv_code}` directory, you'll wa
 Users might like to separate the pipeline into two parts: detection and visualisation. As the visualisation part is more time-consuming and aligns all the controls to the supertranscipt, you may want to analyse the results for significant contigs, then visualise only the samples you care about. Reducing the number of controls that you run the visualisation with is also a really good idea.
 
 ```
-bpipe run -n 120 -u make_super_supertranscript ${cv_code}/crypticVariantFinder.groovy $cases $controls
+bpipe run -n 120 -u make_super_supertranscript ${cv_code}/MINTIE.groovy $cases $controls
 ```
 
 Running the above in place of the run step will run everything for cases up to collating and visualising the results. Once you've done this, you can run without the -u make_super_supertranscript to finish up the pipeline.
