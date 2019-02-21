@@ -305,10 +305,10 @@ run { fastqCaseFormat * [ make_sample_dir +
                           align_contigs_against_genome +
                           annotate_contigs + refine_contigs +
                           create_supertranscript_reference ] +
-      make_super_supertranscript +
-      make_supertranscript_gmap_reference +
-      hisat_index +
-      fastqCaseFormat * [ align_contigs_to_supertranscript + sort_and_index_bam ] +
-      fastqCaseFormat * [ hisat_align + sort_and_index_bam ] +
-      fastqControlFormat * [ hisat_align.using(type:"controls") ]
+        make_super_supertranscript +
+        make_supertranscript_gmap_reference +
+        hisat_index +
+            [ fastqCaseFormat * [ align_contigs_to_supertranscript + sort_and_index_bam,
+                                  hisat_align + sort_and_index_bam],
+              fastqControlFormat * [ hisat_align.using(type:"controls") ] ]
 }
