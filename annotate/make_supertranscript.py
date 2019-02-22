@@ -351,7 +351,7 @@ def write_canonical_genes(args, contigs, gtf):
     for idx, gene in enumerate(genes):
         logging.info('Writing %s, %s of %s canonical genes' % (gene, idx+1, len(genes)))
         blocks, block_seqs = get_merged_exons([gene], gtf, args.fasta)
-        if len(blocks) == 0:
+        if len(blocks) == 0 | len(blocks) != len(block_seqs):
             continue
         write_gene('', blocks, block_seqs, args, [gene], gtf)
 
