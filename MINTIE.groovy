@@ -279,12 +279,13 @@ hisat_align = {
 }
 
 sort_and_index_bam = {
-   transform('sam') to ('bam') {
+    output.dir = new File(input.sam).getParentFile()
+    transform('sam') to ('bam') {
         exec """
         samtools sort -@ $threads -m ${sort_ram}G $input.sam -o $output ;
         samtools index $output
     """, "sort_and_index_bam"
-   }
+    }
 }
 
 if(!binding.variables.containsKey("fastqCaseFormat")){
@@ -310,5 +311,5 @@ run { fastqCaseFormat * [ make_sample_dir +
         hisat_index +
             [ fastqCaseFormat * [ align_contigs_to_supertranscript + sort_and_index_bam,
                                   hisat_align + sort_and_index_bam],
-              fastqControlFormat * [ hisat_align.using(type:"controls") ] ]
+              fastqControlFormat * [ hisat_align.using(type:"controls") + sort_and_index_bam ] ]
 }

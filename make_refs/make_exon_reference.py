@@ -5,10 +5,13 @@
 # lists of exon starts and ends
 ###########################################################
 
+#TODO: clean-up/document this script better
+
 import argparse
 import pandas as pd
 import numpy as np
 import os
+from pybedtools import BedTool
 
 parser = argparse.ArgumentParser()
 parser.add_argument(dest='tx_info')
@@ -19,26 +22,55 @@ tx_info = args.tx_info
 genref = pd.read_csv(tx_info, sep='\t', comment='#', header=None)
 pd.options.mode.chained_assignment = None #to get rid of those pesky annoying pandas warnings
 
-exons = genref[genref[2] == 'exon']
-exons[3] = exons[3]-1 # minus one for each start coordinate to make them 0-based
-exons[9] = [info.split(';')[1].strip().split(' ')[1].replace('"','') for info in genref[genref[2] == 'exon'][8]]
-exons[10] = [info.split(';')[4].strip().split(' ')[1].replace('"','') for info in genref[genref[2] == 'exon'][8]]
+def featuretype_filter(feature, featuretype):
+    '''
+    from http://daler.github.io/pybedtools/3-brief-examples.html
+    Only passes features with the specified *featuretype*
+    '''
+    if feature[2] == featuretype:
+        return True
+    return False
 
-# join starts and ends together
-exons_sense = exons[exons[6] == '+']
-aggregator_sense = {3: lambda x: ','.join(x.map(str)),
-                    4: lambda x: ','.join(x.map(str))}
-exons_sense = exons_sense.groupby([9,0,10], as_index=False, sort=False).agg(aggregator_sense)
+def subset_featuretypes(g, featuretype):
+    '''
+    from http://daler.github.io/pybedtools/3-brief-examples.html
+    Returns the filename containing only `featuretype` features.
+    '''
+    return g.filter(featuretype_filter, featuretype).saveas().fn
 
-# same thing but reverse the exon order
-exons_antisense = exons[exons[6] == '-']
-aggregator_antisense = {3: lambda x: ','.join(x[::-1].map(str)),
-                        4: lambda x: ','.join(x[::-1].map(str))}
-exons_antisense = exons_antisense.groupby([9,0,10], as_index=False, sort=False).agg(aggregator_antisense)
+def get_attribute(g, attribute):
+    genes = []
+    for feature in g:
+        try:
+            genes.append(feature[attribute])
+        except AttributeError:
+            genes.append('')
+    return genes
 
-all_exons = exons_sense.append(exons_antisense, ignore_index=True)
-all_exons = all_exons[[9, 0, 3, 4, 10]]
-all_exons.columns = ['transcript', 'chrom', 'exonStarts', 'exonEnds', 'gene']
+print('loading bedfile and extracting exons...')
+g = BedTool(tx_info)
+exons = BedTool(subset_featuretypes(g, 'exon'))
 
-outfile = '%s/%s.info' % (os.path.dirname(tx_info), '.'.join(os.path.basename(tx_info).split('.')[:-1]))
+print('validating and sorting records...')
+exons = exons.remove_invalid().sort()
+
+print('extracting attributes...')
+exon_pd = pd.DataFrame([(e['chrom'], e['start'], e['end'], e['strand']) for e in exons],
+                        columns=['chrom', 'exonStarts', 'exonEnds', 'strand'])
+exon_pd['exonStarts'] = exon_pd['exonStarts'].map(int)
+exon_pd['exonEnds'] = exon_pd['exonEnds'].map(int)
+exon_pd['transcript'] = get_attribute(exons, 'transcript_id')
+exon_pd['gene'] = get_attribute(exons, 'gene_name')
+exon_pd = exon_pd[exon_pd.gene != '']
+
+print('building exon reference...')
+aggregator_sense = {'exonStarts': lambda x: ','.join(x.map(str)),
+                    'exonEnds': lambda x: ','.join(x.map(str))}
+all_exons = exon_pd.groupby(['transcript', 'chrom', 'gene'], as_index=False, sort=False).agg(aggregator_sense)
+
+print('writing output...')
+outdir = os.path.dirname(tx_info)
+outdir = '.' if outdir == '' else outdir
+outfile = '%s/%s.info' % (outdir, '.'.join(os.path.basename(tx_info).split('.')[:-1]))
+all_exons = all_exons[['transcript', 'chrom', 'exonStarts', 'exonEnds', 'gene']]
 all_exons.to_csv(outfile, sep='\t', index=False)
