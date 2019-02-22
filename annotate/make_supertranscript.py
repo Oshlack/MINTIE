@@ -160,7 +160,8 @@ def get_merged_exons(genes, gtf, genome_fasta):
     overlapping exonic regions, also return their
     respective sequences in a dictionary object
     '''
-    gene_gtf = gtf[gtf.gene.apply(lambda x: x in genes)]
+    gene_gtf = gtf[gtf.gene.isin(genes)]
+    gene_gtf = gene_gtf.drop('gene', axis=1)
     blocks = pd.DataFrame()
     with tempfile.NamedTemporaryFile(mode='r+') as temp_gtf:
         gene_gtf.to_csv(temp_gtf.name, index=False, header=False, sep='\t')
@@ -236,7 +237,7 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     if len(gene_gtf) == 0:
         aggregator = {'start': lambda x: min(x),
                       'end': lambda x: max(x)}
-        gene_gtf = gene_gtf.groupby(['chr', 'gene'], as_index=False, sort=False).agg(aggregator)
+        gene_gtf = gtf.groupby(['chr', 'gene'], as_index=False, sort=False).agg(aggregator)
 
     gene_starts, gene_ends = [], []
     for gene in genes:
@@ -287,7 +288,7 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
         return
 
     blocks, block_seqs = get_merged_exons(genes, gtf, genome_fasta)
-    if len(blocks) == 0:
+    if len(blocks) == 0 | len(blocks) != len(block_seqs):
         return
 
     vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)] if len(convars) > 0 else pd.DataFrame()
