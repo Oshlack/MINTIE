@@ -160,12 +160,7 @@ def get_merged_exons(genes, gtf, genome_fasta):
     overlapping exonic regions, also return their
     respective sequences in a dictionary object
     '''
-    gene_gtf = pd.DataFrame()
-    for gene in genes:
-        gene_name = 'gene_name "%s"' % gene
-        tmp = gtf[gtf.attribute.str.contains(gene_name)]
-        gene_gtf = gene_gtf.append(tmp)
-
+    gene_gtf = gtf[gtf.gene.apply(lambda x: x in genes)]
     blocks = pd.DataFrame()
     with tempfile.NamedTemporaryFile(mode='r+') as temp_gtf:
         gene_gtf.to_csv(temp_gtf.name, index=False, header=False, sep='\t')
@@ -235,12 +230,17 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
                         'thickEnd': seg_ends, 'itemRgb': colours})
     bed.to_csv(st_block_bed, mode='a', index=False, header=False, sep='\t')
 
+    # TODO: function here, fetch gene from gtf
     # supertranscript gene annotation bed file
     gene_gtf = gtf[gtf.feature == 'gene']
+    if len(gene_gtf) == 0:
+        aggregator = {'start': lambda x: min(x),
+                      'end': lambda x: max(x)}
+        gene_gtf = gene_gtf.groupby(['chr', 'gene'], as_index=False, sort=False).agg(aggregator)
+
     gene_starts, gene_ends = [], []
     for gene in genes:
-        gene_name = 'gene_name "%s"' % gene
-        gn = gene_gtf[gene_gtf.attribute.str.contains(gene_name)]
+        gn = gene_gtf[gene_gtf.gene == gene]
 
         start, end = gn.start.values[0] - 1, gn.end.values[0]
         start_block = blocks[np.logical_and(blocks.start <= start, blocks.end >= start)]
@@ -354,6 +354,14 @@ def write_canonical_genes(args, contigs, gtf):
             continue
         write_gene('', blocks, block_seqs, args, [gene], gtf)
 
+def get_gene(attribute):
+    '''
+    extract gene name from a single GTF attribute string
+    '''
+    re_gene = re.search('gene_name "([\w\-\.\/]+)"', attribute)
+    gene = re_gene.group(1) if re_gene else ''
+    return gene
+
 def main():
     args = parse_args()
     init_logging(args.log)
@@ -371,17 +379,23 @@ def main():
     try:
         cvcf = pd.read_csv(args.contig_vcf, sep='\t', header=None, comment='#')
         gtf = pd.read_csv(args.gtf_file, comment='#', sep='\t', header=None, names=GTF_COLS)
-        contigs = pd.read_csv(args.contig_info, sep='\t')
-        contigs = contigs.fillna('')
+        contigs = pd.read_csv(args.contig_info, sep='\t').fillna('')
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
-    # remove 'chr' from gtf and vcfs
-    # TODO: need to check whether chr is actually present...
-    gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
-    gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
-    cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
-    cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
+    # extract gene name from gtf and remove 'chr' prefix if present
+    gtf['gene'] = gtf.attribute.apply(lambda x: get_gene(x))
+    gtf_chrs = gtf['chr'].str.contains('chr')
+    if any(gtf_chrs.values):
+        gtf = gtf[gtf_chrs] #no non-standard chroms will be handled
+        gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
+        gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
+
+    vcf_chrs = cvcf[0].str.contains('chr')
+    if any(vcf_chrs.values):
+        cvcf = cvcf[vcf_chrs]
+        cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
+        cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
 
     make_supertranscripts(args, contigs, cvcf, gtf)
     write_canonical_genes(args, contigs, gtf)

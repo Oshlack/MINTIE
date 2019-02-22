@@ -100,6 +100,11 @@ def parse_args():
                         help='''Transcriptiome GTF reference file.''')
     return parser.parse_args()
 
+def get_gene(attribute):
+    re_gene = re.search('gene_name "([\w\-\.\/]+)"', attribute)
+    gene = re_gene.group(1) if re_gene else ''
+    return gene
+
 @cached('gene_lookup_cache.pickle')
 def get_gene_lookup(tx_ref_file):
     '''
@@ -111,9 +116,13 @@ def get_gene_lookup(tx_ref_file):
     ref_trees, ex_ref_out = None, None
     if tx_ref_file != '':
         logging.info('Generating lookup for genes...')
+
+        #TODO: standardise with make_supertranscript for gtf handling
         tx_ref = pd.read_csv(tx_ref_file, comment='#', sep='\t', header=None)
-        gn_ref = tx_ref[tx_ref[2] == 'gene']
-        gn_ref.loc[:, 'gene'] = gn_ref[8].apply(lambda x: re.search('gene_name "([\w\-\.\/]+)"', x).group(1))
+        tx_ref['gene'] = tx_ref[8].apply(lambda x: get_gene(x))
+        aggregator = {3: lambda x: min(x),
+                      4: lambda x: max(x)}
+        gn_ref = tx_ref.groupby([0, 'gene'], as_index=False, sort=False).agg(aggregator)
         gn_ref = gn_ref[[0, 3, 4, 'gene']]
         gn_ref.columns = ['chrom', 'start', 'end', 'gene']
         gn_ref = gn_ref.drop_duplicates()

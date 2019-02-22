@@ -1,4 +1,4 @@
-code_base="/group/bioi1/marekc/20170918_cryptic_variant/CrypticVariant/"
+code_base="/group/bioi1/marekc/20170918_cryptic_variant/MINTIE/"
 
 //Trim options
 minQScore=20 //trimmomatic quality cut off
@@ -35,8 +35,10 @@ trans_fasta="/group/bioi1/shared/transcriptomes/hg38/Homo_sapiens.GRCh38.cdna.al
 ann_superTranscriptome=code_base+"/gen24_hg38.super_transcriptome.fasta"
 gmap_index="/group/bioi1/shared/genomes/hg38/gmapdb"
 gmap_tx_index="/group/bioi1/shared/transcriptomes/hg38/indexes/gmapdb"
-ann_info="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.info"
-tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.gz"
+//ann_info="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.info"
+//tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.gz"
+ann_info="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf.info"
+tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf.gz"
 
 controls_dir="controls"
 sample_n_controls=29
@@ -209,7 +211,7 @@ create_supertranscript_reference = {
    def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
    produce(sample_name + "_supertranscript.fasta"){
       exec """
-          python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
+          time python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
                 $tx_annotation $genome_fasta $output.dir $sample_name --log $output.dir/makest.log
       """
    }
@@ -247,7 +249,7 @@ align_contigs_to_supertranscript = {
    def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
    produce(sample_name+"_novel_contigs_st_aligned.sam"){
       exec """
-         $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${sample_dir}/de_contigs.fasta > $output.sam ;
+         time $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${sample_dir}/de_contigs.fasta > $output.sam ;
       """, "align_contigs_to_supertranscript"
    }
 }
