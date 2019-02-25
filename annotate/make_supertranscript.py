@@ -17,6 +17,7 @@ import tempfile
 import logging
 import os
 from pybedtools import BedTool
+from pybedtools.featurefuncs import extend_fields
 from Bio import SeqIO
 from argparse import ArgumentParser
 from utils import cached, init_logging, exit_with_error
@@ -32,6 +33,9 @@ GTF_COLS = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'fram
 
 # only these variant types require modification to reference supertranscripts
 VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS']
+
+# regex masks
+STRAND = '\(([+-])\)'
 
 # alternating colours for bed track, and variant colour
 COL1 = '189,189,189' #light grey
@@ -104,6 +108,14 @@ def subset_featuretypes(g, featuretype):
     '''
     return g.filter(featuretype_filter, featuretype).saveas().fn
 
+def add_strand(exon, strand):
+    '''
+    add strand to exon block
+    '''
+    exon = extend_fields(exon, 6)
+    exon.strand = strand
+    return exon
+
 def get_output_files(sample, outdir):
 
     genome_bed = '%s/%s_genome.bed' % (outdir, sample)
@@ -154,7 +166,7 @@ def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, name):
 
     return blocks, block_seqs
 
-def get_merged_exons(genes, gtf, genome_fasta):
+def get_merged_exons(genes, gtf, genome_fasta, strand):
     '''
     get all exons from specified genes, merging any
     overlapping exonic regions, also return their
@@ -162,6 +174,8 @@ def get_merged_exons(genes, gtf, genome_fasta):
     '''
     gene_gtf = gtf[gtf.gene.isin(genes)]
     gene_gtf = gene_gtf.drop('gene', axis=1)
+    strand = gene_gtf.strand.values[0] if strand == '' else strand
+
     blocks = pd.DataFrame()
     with tempfile.NamedTemporaryFile(mode='r+') as temp_gtf:
         gene_gtf.to_csv(temp_gtf.name, index=False, header=False, sep='\t')
@@ -170,8 +184,8 @@ def get_merged_exons(genes, gtf, genome_fasta):
         g = BedTool(temp_gtf.name)
         exons = BedTool(subset_featuretypes(g, 'exon'))
         exons = exons.remove_invalid().sort().merge()
-
-        exons = exons.sequence(fi=genome_fasta)
+        exons = exons.each(add_strand, strand)
+        exons = exons.sequence(fi=genome_fasta, s=True)
         block_seqs = get_block_seqs(exons)
 
         blocks = pd.DataFrame()
@@ -259,6 +273,21 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
                         'name': genes})
     bed.to_csv(st_gene_bed, mode='a', index=False, header=False, sep='\t')
 
+def get_contig_genes(con_info):
+    '''
+    return gene1 and gene2 (in case of fusion),
+    indicating genes overlapping the given contig
+    '''
+    genes = con_info.overlapping_genes.apply(lambda x: x.split(':')).values
+    fus_genes = np.unique([gn for gn in genes if len(gn) > 1])
+    if len(fus_genes) > 0:
+        return fus_genes[0], fus_genes[1]
+    else:
+        genes = np.unique([g for gn in genes for g in gn if g != ''])
+        if len(genes) > 1:
+            ipdb.set_trace()
+        return genes[0], ''
+
 def contig_to_supertranscript(con_info, args, cvcf, gtf):
     '''
     take the contig info and VCF outputs from annotate/refine contig annotations
@@ -279,15 +308,32 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
     convars = list(convars.variant_id.values) + list(convars.partner_id.values)
     convars = np.unique([c for c in convars if c != '.'])
 
-    genes = con_info.overlapping_genes.apply(lambda x: x.split('|'))
-    genes = [g.split(':') for gene in genes for g in gene]
-    genes = [g for gene in genes for g in gene if g != '']
-    genes = np.unique(np.array(genes))
+    #genes = con_info.overlapping_genes.apply(lambda x: x.split('|'))
+    #genes = [g.split(':') for gene in genes for g in gene]
+    #genes = [g for gene in genes for g in gene if g != '']
+    #genes = np.unique(np.array(genes))
 
-    if len(convars) == 0 and len(genes) < 2:
+    is_fusion = 'FUS' in con_info.variant_type.values
+    if len(convars) == 0 and not is_fusion:
+        # single gene with no variants to annotate
         return
 
-    blocks, block_seqs = get_merged_exons(genes, gtf, genome_fasta)
+    strands = [re.search(STRAND, con_info.pos1.values[0]).group(1)]
+    if 'FUS' in con_info.variant_type.values:
+        con_fus = con_info[con_info.variant_type == 'FUS']
+        s1 = re.search(STRAND, con_fus.pos1.values[0]).group(1)
+        s2 = re.search(STRAND, con_fus.pos2.values[0]).group(1)
+        strands = [s1, s2]
+
+    genes = get_contig_genes(con_info)
+    blocks, block_seqs = pd.DataFrame(), {}
+    for gene, strand in zip(genes, strands):
+        if gene != '':
+            gene_blocks, gene_block_seqs = get_merged_exons(gene.split('|'), gtf, genome_fasta, strand)
+            blocks = blocks.append(gene_blocks)
+            for gbs in gene_block_seqs:
+                block_seqs[gbs] = gene_block_seqs[gbs]
+
     if len(blocks) == 0 | len(blocks) != len(block_seqs):
         return
 
@@ -350,7 +396,7 @@ def write_canonical_genes(args, contigs, gtf):
 
     for idx, gene in enumerate(genes):
         logging.info('Writing %s, %s of %s canonical genes' % (gene, idx+1, len(genes)))
-        blocks, block_seqs = get_merged_exons([gene], gtf, args.fasta)
+        blocks, block_seqs = get_merged_exons([gene], gtf, args.fasta, '')
         if len(blocks) == 0 | len(blocks) != len(block_seqs):
             continue
         write_gene('', blocks, block_seqs, args, [gene], gtf)
