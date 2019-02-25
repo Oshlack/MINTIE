@@ -242,6 +242,9 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     gene_starts, gene_ends = [], []
     for gene in genes:
         gn = gene_gtf[gene_gtf.gene == gene]
+        if len(gn) == 0:
+            logging.info('WARNING: gene %s not found in reference GTF' % gene)
+            continue
 
         start, end = gn.start.values[0] - 1, gn.end.values[0]
         start_block = blocks[np.logical_and(blocks.start <= start, blocks.end >= start)]
