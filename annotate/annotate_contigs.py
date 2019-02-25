@@ -207,7 +207,7 @@ def get_overlapping_genes(read, ref_trees):
     for block in blocks:
         bstart, bend = block
         gns = ref_tree.overlap(bstart, bend)
-        genes.extend([gn[2] for gn in gns])
+        genes.extend([gn[2] for gn in gns if gn[2] != ''])
     genes = np.unique(np.array(genes))
 
     return('|'.join(genes))

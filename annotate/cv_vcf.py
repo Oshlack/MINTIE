@@ -117,8 +117,8 @@ class CrypticVariant(object):
         # make varsize block size for block annotations
         varsize = cv1.cvsize - 1 if cv1.cvtype in ['NE', 'EE', 'RI'] else cv1.vsize
 
-        pos1 = "%s:%d" % (cv1.chrom, cv1.pos)
-        pos2 = "%s:%d" % (cv2.chrom, cv2.pos) if cv2 else "%s:%d" % (cv1.chrom, (cv1.pos + varsize))
+        pos1 = "%s:%d(%s)" % (cv1.chrom, cv1.pos, cv1.cstrand)
+        pos2 = "%s:%d(%s)" % (cv2.chrom, cv2.pos, cv2.cstrand) if cv2 else "%s:%d(%s)" % (cv1.chrom, (cv1.pos + varsize), cv1.cstrand)
 
         genes = '%s:%s' % (cv1.genes, cv2.genes) if cv2 else cv1.genes
         # only consider a gene its own variant partner if it's a fusion
