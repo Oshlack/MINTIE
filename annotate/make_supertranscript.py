@@ -140,28 +140,31 @@ def get_block_seqs(exons):
 
     return(block_seqs)
 
-def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, name):
+def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, name, strand):
     '''
     split a sequence block at the gpos location, separating
     into left and right blocks and sequences (if necessary)
     '''
     blocks = blocks[blocks.index!=block['index']]
-    ref_seq = block_seqs['%s:%d-%d' % (block['chr'], block.start, block.end)]
+    ref_seq = block_seqs['%s:%d-%d(%s)' % (block['chr'], block.start, block.end, strand)]
     left_seq = ref_seq[:gpos1-block.start]
     right_seq = ref_seq[gpos2-block.start-1:]
 
-    block_seqs['%s:%d-%d' % (block['chr'], gpos1, gpos2)] = str(seq)
-    var_block = [{'chr': block['chr'], 'start': gpos1, 'end': gpos2, 'name': name}]
+    block_seqs['%s:%d-%d(%s)' % (block['chr'], gpos1, gpos2, strand)] = str(seq)
+    var_block = [{'chr': block['chr'], 'start': gpos1, 'end': gpos2, \
+                  'name': name, 'score': '.', 'strand': strand}]
     blocks = blocks.append(var_block, ignore_index=True)
 
     if gpos1 - block.start != 0:
-        block_seqs['%s:%d-%d' % (block['chr'], block.start, gpos1)] = left_seq
-        left_block = [{'chr': block['chr'], 'start': block.start, 'end': gpos1, 'name': block['name']}]
+        block_seqs['%s:%d-%d(%s)' % (block['chr'], block.start, gpos1)] = left_seq
+        left_block = [{'chr': block['chr'], 'start': block.start, 'end': gpos1, \
+                       'name': block['name'], 'score': '.', 'strand': strand}]
         blocks = blocks.append(left_block, ignore_index=True)
 
     if block.end - gpos2 != 0:
-        block_seqs['%s:%d-%d' % (block['chr'], gpos2, block.end)] = right_seq
-        right_block = [{'chr': block['chr'], 'start': gpos2, 'end': block.end, 'name': block['name']}]
+        block_seqs['%s:%d-%d(%s)' % (block['chr'], gpos2, block.end)] = right_seq
+        right_block = [{'chr': block['chr'], 'start': gpos2, 'end': block.end, \
+                        'name': block['name'], 'score': '.', 'strand': strand}]
         blocks = blocks.append(right_block, ignore_index=True)
 
     return blocks, block_seqs
@@ -176,7 +179,6 @@ def get_merged_exons(genes, gtf, genome_fasta, strand):
     gene_gtf = gene_gtf.drop('gene', axis=1)
     strand = gene_gtf.strand.values[0] if strand == '' else strand
 
-    blocks = pd.DataFrame()
     with tempfile.NamedTemporaryFile(mode='r+') as temp_gtf:
         gene_gtf.to_csv(temp_gtf.name, index=False, header=False, sep='\t')
 
@@ -184,9 +186,10 @@ def get_merged_exons(genes, gtf, genome_fasta, strand):
         g = BedTool(temp_gtf.name)
         exons = BedTool(subset_featuretypes(g, 'exon'))
         exons = exons.remove_invalid().sort().merge()
-        exons = exons.each(add_strand, strand)
-        exons = exons.sequence(fi=genome_fasta, s=True)
-        block_seqs = get_block_seqs(exons)
+
+        exseq = exons.each(add_strand, strand)
+        exseq = exseq.sequence(fi=genome_fasta, s=True)
+        block_seqs = get_block_seqs(exseq)
 
         blocks = pd.DataFrame()
         with tempfile.NamedTemporaryFile(mode='r+') as temp_exons:
@@ -197,6 +200,9 @@ def get_merged_exons(genes, gtf, genome_fasta, strand):
             blocks['name'] = genes
         else:
             blocks['name'] = '|'.join(list(genes))
+
+        blocks['score'] = '.'
+        blocks['strand'] = strand
 
     blocks['chr'] = blocks['chr'].map(str)
     blocks.start = blocks.start.map(int)
@@ -217,7 +223,7 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
 
     seqs = []
     for idx,x in blocks.iterrows():
-        seq = str(block_seqs['%s:%d-%d' % (x['chr'], x.start, x.end)])
+        seq = str(block_seqs['%s:%d-%d(%s)' % (x['chr'], x.start, x.end, x.strand)])
         seqs.append(seq)
 
     seg_ends = np.cumsum([len(s) for s in seqs])
@@ -278,12 +284,13 @@ def get_contig_genes(con_info):
     return gene1 and gene2 (in case of fusion),
     indicating genes overlapping the given contig
     '''
-    genes = con_info.overlapping_genes.apply(lambda x: x.split(':')).values
-    fus_genes = np.unique([gn for gn in genes if len(gn) > 1])
+    fus_genes = con_info[con_info.overlapping_genes.str.contains(':')]
     if len(fus_genes) > 0:
+        fus_genes = np.unique(fus_genes.overlapping_genes)
+        fus_genes = [fg.split(':') for fg in fus_genes][0]
         return fus_genes[0], fus_genes[1]
     else:
-        genes = np.unique([g for gn in genes for g in gn if g != ''])
+        genes = np.unique(con_info.overlapping_genes.values)
         if len(genes) > 1:
             ipdb.set_trace()
         return genes[0], ''
@@ -299,7 +306,6 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
            with novel bits indicated
     '''
     contig = con_info.contig_id.values[0]
-    logging.info('Writing contig %s' % contig)
 
     genome_fasta = args.fasta
     genome_bed, st_block_bed, st_gene_bed, st_fasta = get_output_files(args.sample, args.outdir)
@@ -307,11 +313,6 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
     convars = con_info[con_info.variant_type != 'FUS']
     convars = list(convars.variant_id.values) + list(convars.partner_id.values)
     convars = np.unique([c for c in convars if c != '.'])
-
-    #genes = con_info.overlapping_genes.apply(lambda x: x.split('|'))
-    #genes = [g.split(':') for gene in genes for g in gene]
-    #genes = [g for gene in genes for g in gene if g != '']
-    #genes = np.unique(np.array(genes))
 
     is_fusion = 'FUS' in con_info.variant_type.values
     if len(convars) == 0 and not is_fusion:
@@ -335,6 +336,7 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
                 block_seqs[gbs] = gene_block_seqs[gbs]
 
     if len(blocks) == 0 | len(blocks) != len(block_seqs):
+        ipdb.set_trace()
         return
 
     vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)] if len(convars) > 0 else pd.DataFrame()
@@ -363,15 +365,17 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
             if len(block_affected) > 1:
                 logging.info('WARNING: multiple blocks affected by variant; exons may not have been merged properly')
             block = block_affected.reset_index().loc[0]
-            blocks, block_seqs = split_block(blocks, block, block_seqs, start_pos, end_pos, seq, name)
+            #TODO: handle strand of inserted blocks
+            blocks, block_seqs = split_block(blocks, block, block_seqs, start_pos, end_pos, seq, name, '+')
         else:
-            blocks = blocks.append([{'chr': chrom, 'start': start_pos, 'end': end_pos, 'name': name}])
-            block_seqs['%s:%d-%d' % (chrom, start_pos, end_pos)] = seq
-
+            blocks = blocks.append([{'chr': chrom, 'start': start_pos, 'end': end_pos, 'name': name, 'score': '.', 'strand': strand}])
+            block_seqs['%s:%d-%d(%s)' % (chrom, start_pos, end_pos, strand)] = seq
     blocks = blocks.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
-    blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
-    write_gene(contig, blocks, block_seqs, args, genes, gtf)
+    logging.info('Writing contig %s' % contig)
+    blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
+    genes = genes[0] + '|' + genes[1] if genes[1] != '' else genes[0]
+    write_gene(contig, blocks, block_seqs, args, genes.split('|'), gtf)
 
 def make_supertranscripts(args, contigs, cvcf, gtf):
     '''
@@ -430,13 +434,17 @@ def main():
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
+    # no non-standard chroms will be handled
+    # TODO: is there some way to properly handle alt contigs?
+    alt_chrs = gtf['chr'].str.contains('Un|alt|unknown|random|K')
+    gtf = gtf[np.invert(alt_chrs.values)]
+
     # extract gene name from gtf and remove 'chr' prefix if present
-    gtf['gene'] = gtf.attribute.apply(lambda x: get_gene(x))
     gtf_chrs = gtf['chr'].str.contains('chr')
     if any(gtf_chrs.values):
-        gtf = gtf[gtf_chrs] #no non-standard chroms will be handled
         gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
         gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
+    gtf['gene'] = gtf.attribute.apply(lambda x: get_gene(x))
 
     vcf_chrs = cvcf[0].str.contains('chr')
     if any(vcf_chrs.values):
