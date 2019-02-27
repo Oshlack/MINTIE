@@ -156,13 +156,13 @@ def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, name, strand):
     blocks = blocks.append(var_block, ignore_index=True)
 
     if gpos1 - block.start != 0:
-        block_seqs['%s:%d-%d(%s)' % (block['chr'], block.start, gpos1)] = left_seq
+        block_seqs['%s:%d-%d(%s)' % (block['chr'], block.start, gpos1, strand)] = left_seq
         left_block = [{'chr': block['chr'], 'start': block.start, 'end': gpos1, \
                        'name': block['name'], 'score': '.', 'strand': strand}]
         blocks = blocks.append(left_block, ignore_index=True)
 
     if block.end - gpos2 != 0:
-        block_seqs['%s:%d-%d(%s)' % (block['chr'], gpos2, block.end)] = right_seq
+        block_seqs['%s:%d-%d(%s)' % (block['chr'], gpos2, block.end, strand)] = right_seq
         right_block = [{'chr': block['chr'], 'start': gpos2, 'end': block.end, \
                         'name': block['name'], 'score': '.', 'strand': strand}]
         blocks = blocks.append(right_block, ignore_index=True)
@@ -207,6 +207,7 @@ def get_merged_exons(genes, gtf, genome_fasta, strand):
     blocks['chr'] = blocks['chr'].map(str)
     blocks.start = blocks.start.map(int)
     blocks.end = blocks.end.map(int)
+    #TODO: reverse numbering for antisense genes
     blocks['name'] = blocks['name'] + ['|' + str(i) for i in range(1, len(blocks)+1)]
 
     return(blocks, block_seqs)
@@ -230,6 +231,7 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     seg_starts = np.concatenate([[0], seg_ends[:-1]])
     segs = ['%s-%s' % (s1+1, s2) for s1,s2 in zip(seg_starts, seg_ends)]
 
+    genes = [gn for gn in genes if gn != '']
     names = blocks['name'].apply(lambda x: x.split('|')[-1]).values
     contig_name = '%s|%s|%s' % (sample, contig, '|'.join(genes)) if contig != '' else genes[0]
     header = '>%s segs:%s names:%s\n' % (contig_name, ','.join(segs), ','.join(names))
@@ -247,7 +249,7 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     colours[novel_vars] = VARCOL
 
     bed = pd.DataFrame({'chr': contig_name, 'start': seg_starts, 'end': seg_ends,
-                        'name': names, 'score': 0, 'strand': '.', 'thickStart': seg_starts,
+                        'name': names, 'score': 0, 'strand': '+', 'thickStart': seg_starts,
                         'thickEnd': seg_ends, 'itemRgb': colours})
     bed.to_csv(st_block_bed, mode='a', index=False, header=False, sep='\t')
 
@@ -292,8 +294,39 @@ def get_contig_genes(con_info):
     else:
         genes = np.unique(con_info.overlapping_genes.values)
         if len(genes) > 1:
-            ipdb.set_trace()
+            logging.info('WARNING: multiple overlapping genes found for contig %s' % con_info.contig_id.values[0])
         return genes[0], ''
+
+def get_contig_strand(con_info, variant):
+    '''
+    return contig alignment strand given the variant ID
+    '''
+    strand = '.'
+    if variant in con_info.variant_id.values:
+        var_info = con_info[con_info.variant_id == variant]
+        strand = re.search(STRAND, var_info.pos1.values[0]).group(1)
+    if variant in con_info.partner_id.values:
+        var_info = con_info[con_info.partner_id == variant]
+        strand = re.search(STRAND, var_info.pos2.values[0]).group(1)
+    return strand
+
+def sort_blocks(blocks):
+    '''
+    sort blocks in ascending order if on the sense strand,
+    and descending order if on the antisense strand
+    '''
+    blocks = blocks.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
+    if '-' in blocks.strand.values:
+        antisense_blocks = blocks[blocks.strand=='-'].sort_values(by=['start','end'], ascending=False)
+        sense_blocks = blocks[blocks.strand=='+']
+        if len(sense_blocks) > 0:
+            sense_first = blocks.strand.values[0] == '+'
+            blocks = sense_blocks.append(antisense_blocks) \
+                        if sense_first \
+                        else antisense_blocks.append(sense_blocks)
+        else:
+            blocks = antisense_blocks
+    return blocks
 
 def contig_to_supertranscript(con_info, args, cvcf, gtf):
     '''
@@ -322,8 +355,8 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
     strands = [re.search(STRAND, con_info.pos1.values[0]).group(1)]
     if 'FUS' in con_info.variant_type.values:
         con_fus = con_info[con_info.variant_type == 'FUS']
-        s1 = re.search(STRAND, con_fus.pos1.values[0]).group(1)
-        s2 = re.search(STRAND, con_fus.pos2.values[0]).group(1)
+        s1 = get_contig_strand(con_fus, con_fus.variant_id.values[0])
+        s2 = get_contig_strand(con_fus, con_fus.partner_id.values[0])
         strands = [s1, s2]
 
     genes = get_contig_genes(con_info)
@@ -335,8 +368,7 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
             for gbs in gene_block_seqs:
                 block_seqs[gbs] = gene_block_seqs[gbs]
 
-    if len(blocks) == 0 | len(blocks) != len(block_seqs):
-        ipdb.set_trace()
+    if len(blocks) == 0 | len(blocks.drop_duplicates()) != len(block_seqs):
         return
 
     vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)] if len(convars) > 0 else pd.DataFrame()
@@ -348,6 +380,8 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
 
         seq = re.search('([ATGCNatgc]+)', record[4]).group(1)
         seq = seq[1:] if vtype == 'INS' else seq
+        strand = get_contig_strand(con_info, record[2])
+        seq = reverse_complement(seq) if strand == '-' else seq
 
         blocksize = len(seq) if vtype in ['EE', 'NE', 'RI'] else 0
         start_pos = int(record[1])
@@ -365,14 +399,13 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
             if len(block_affected) > 1:
                 logging.info('WARNING: multiple blocks affected by variant; exons may not have been merged properly')
             block = block_affected.reset_index().loc[0]
-            #TODO: handle strand of inserted blocks
-            blocks, block_seqs = split_block(blocks, block, block_seqs, start_pos, end_pos, seq, name, '+')
+            blocks, block_seqs = split_block(blocks, block, block_seqs, start_pos, end_pos, seq, name, strand)
         else:
             blocks = blocks.append([{'chr': chrom, 'start': start_pos, 'end': end_pos, 'name': name, 'score': '.', 'strand': strand}])
             block_seqs['%s:%d-%d(%s)' % (chrom, start_pos, end_pos, strand)] = seq
-    blocks = blocks.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
 
     logging.info('Writing contig %s' % contig)
+    blocks = sort_blocks(blocks)
     blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
     genes = genes[0] + '|' + genes[1] if genes[1] != '' else genes[0]
     write_gene(contig, blocks, block_seqs, args, genes.split('|'), gtf)
@@ -403,6 +436,7 @@ def write_canonical_genes(args, contigs, gtf):
         blocks, block_seqs = get_merged_exons([gene], gtf, args.fasta, '')
         if len(blocks) == 0 | len(blocks) != len(block_seqs):
             continue
+        blocks = sort_blocks(blocks)
         write_gene('', blocks, block_seqs, args, [gene], gtf)
 
 def get_gene(attribute):
