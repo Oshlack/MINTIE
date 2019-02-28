@@ -207,10 +207,66 @@ def get_merged_exons(genes, gtf, genome_fasta, strand):
     blocks['chr'] = blocks['chr'].map(str)
     blocks.start = blocks.start.map(int)
     blocks.end = blocks.end.map(int)
-    #TODO: reverse numbering for antisense genes
-    blocks['name'] = blocks['name'] + ['|' + str(i) for i in range(1, len(blocks)+1)]
+
+    block_names = []
+    if strand == '-':
+        block_names = ['|' + str(i) for i in reversed(range(1, len(blocks)+1))]
+    else:
+        block_names = ['|' + str(i) for i in range(1, len(blocks)+1)]
+    blocks['name'] = blocks['name'] + block_names
 
     return(blocks, block_seqs)
+
+def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
+    '''
+    write gene annotation to created supertranscript reference
+    '''
+    seg_starts, seg_ends = block_bed.start, block_bed.end
+    contig_name = block_bed['chr'].values[0]
+
+    gene_gtf = gtf[gtf.feature == 'gene']
+    if len(gene_gtf) == 0:
+        aggregator = {'start': lambda x: min(x),
+                      'end': lambda x: max(x)}
+        gene_gtf = gtf.groupby(['chr', 'gene', 'strand'], as_index=False, sort=False).agg(aggregator)
+
+    gene_starts, gene_ends, gene_strands = [], [], []
+    for gene in genes:
+        gn = gene_gtf[gene_gtf.gene == gene]
+        if len(gn) == 0:
+            logging.info('WARNING: gene %s not found in reference GTF' % gene)
+            continue
+
+        start, end = gn.start.values[0] - 1, gn.end.values[0]
+        start_block = blocks[np.logical_and(blocks.start <= start, blocks.end >= start)]
+        end_block = blocks[np.logical_and(blocks.start <= end, blocks.end >= end)]
+        start_offset = start - min(start_block.start)
+        end_offset = max(end_block.end) - end
+
+        gene_start = seg_starts[start_block.index[0]] + start_offset
+        gene_end = seg_ends[end_block.index[0]] - end_offset
+        gene_starts.append(gene_start)
+        gene_ends.append(gene_end)
+
+        # relative to the ST, only assign antisense direction
+        # if the reference strand differs from the block strand
+        block_strand = blocks[blocks.name.str.contains(gene)].strand.values[0]
+        ref_strand = gn.strand.values[0]
+        gene_strand = '+' if block_strand == ref_strand else '-'
+        gene_strands.append(gene_strand)
+
+    #TODO: add random colours for genes
+    bed = pd.DataFrame({'chr': contig_name, 'start': gene_starts, 'end': gene_ends,
+                        'name': genes, 'score': '.', 'strand': gene_strands})
+    bed.to_csv(st_gene_bed, mode='a', index=False, header=False, sep='\t')
+
+def get_block_colours(blocks, names):
+    colours = np.empty((len(blocks),), dtype='U50')
+    colours[::2] = COL1
+    colours[1::2] = COL2
+    novel_vars = [x in VARS_TO_ANNOTATE for x in names]
+    colours[novel_vars] = VARCOL
+    return colours
 
 def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     '''
@@ -236,53 +292,20 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     contig_name = '%s|%s|%s' % (sample, contig, '|'.join(genes)) if contig != '' else genes[0]
     header = '>%s segs:%s names:%s\n' % (contig_name, ','.join(segs), ','.join(names))
 
+    # write supertranscript fasta
     sequence = ''.join(seqs) + '\n'
     with open(st_fasta, 'a') as st_fasta:
         st_fasta.writelines([header, sequence])
 
-    # TODO: make functions for st_block_bed and st_gene_bed outputs
-    # create and output supertranscript block annotation bed file
-    colours = np.empty((len(blocks),), dtype='U50')
-    colours[::2] = COL1
-    colours[1::2] = COL2
-    novel_vars = [x in VARS_TO_ANNOTATE for x in names]
-    colours[novel_vars] = VARCOL
-
+    # write supertranscript block bed annotation
+    colours = get_block_colours(blocks, names)
     bed = pd.DataFrame({'chr': contig_name, 'start': seg_starts, 'end': seg_ends,
-                        'name': names, 'score': 0, 'strand': '+', 'thickStart': seg_starts,
+                        'name': names, 'score': 0, 'strand': '.', 'thickStart': seg_starts,
                         'thickEnd': seg_ends, 'itemRgb': colours})
     bed.to_csv(st_block_bed, mode='a', index=False, header=False, sep='\t')
 
-    # TODO: function here, fetch gene from gtf
-    # supertranscript gene annotation bed file
-    gene_gtf = gtf[gtf.feature == 'gene']
-    if len(gene_gtf) == 0:
-        aggregator = {'start': lambda x: min(x),
-                      'end': lambda x: max(x)}
-        gene_gtf = gtf.groupby(['chr', 'gene'], as_index=False, sort=False).agg(aggregator)
-
-    gene_starts, gene_ends = [], []
-    for gene in genes:
-        gn = gene_gtf[gene_gtf.gene == gene]
-        if len(gn) == 0:
-            logging.info('WARNING: gene %s not found in reference GTF' % gene)
-            continue
-
-        start, end = gn.start.values[0] - 1, gn.end.values[0]
-        start_block = blocks[np.logical_and(blocks.start <= start, blocks.end >= start)]
-        end_block = blocks[np.logical_and(blocks.start <= end, blocks.end >= end)]
-        start_offset = start - min(start_block.start)
-        end_offset = max(end_block.end) - end
-
-        gene_start = seg_starts[start_block.index[0]] + start_offset
-        gene_end = seg_ends[end_block.index[0]] - end_offset
-        gene_starts.append(gene_start)
-        gene_ends.append(gene_end)
-
-    #TODO: add random colours for genes
-    bed = pd.DataFrame({'chr': contig_name, 'start': gene_starts, 'end': gene_ends,
-                        'name': genes})
-    bed.to_csv(st_gene_bed, mode='a', index=False, header=False, sep='\t')
+    # write supertranscript gene bed annotation
+    write_supertranscript_genes(blocks, bed, gtf, genes, st_gene_bed)
 
 def get_contig_genes(con_info):
     '''
