@@ -473,6 +473,40 @@ def get_gene(attribute):
     gene = re_gene.group(1) if re_gene else ''
     return gene
 
+def load_gtf_file(gtf_file):
+    '''
+    load in reference GTF file containing gene/exon info
+    remove 'chr' prefix if present and extract gene names
+    '''
+    gtf = pd.read_csv(gtf_file, comment='#', sep='\t', header=None, names=GTF_COLS)
+
+    # no non-standard chroms will be handled
+    # TODO: is there some way to properly handle alt contigs?
+    alt_chrs = gtf['chr'].str.contains('Un|alt|unknown|random|K')
+    gtf = gtf[np.invert(alt_chrs.values)]
+
+    # extract gene name from gtf and remove 'chr' prefix if present
+    gtf_chrs = gtf['chr'].str.contains('chr')
+    if any(gtf_chrs.values):
+        gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
+        gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
+    gtf['gene'] = gtf.attribute.apply(lambda x: get_gene(x))
+
+    return gtf
+
+def load_vcf_file(contig_vcf):
+    '''
+    load in VCF file containing novel contig variants
+    remove 'chr' prefix from chroms if present
+    '''
+    cvcf = pd.read_csv(contig_vcf, sep='\t', header=None, comment='#')
+    vcf_chrs = cvcf[0].str.contains('chr')
+    if any(vcf_chrs.values):
+        cvcf = cvcf[vcf_chrs]
+        cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
+        cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
+    return cvcf
+
 def main():
     args = parse_args()
     init_logging(args.log)
@@ -488,29 +522,11 @@ def main():
         os.remove(st_fasta)
 
     try:
-        cvcf = pd.read_csv(args.contig_vcf, sep='\t', header=None, comment='#')
-        gtf = pd.read_csv(args.gtf_file, comment='#', sep='\t', header=None, names=GTF_COLS)
+        gtf = load_gtf_file(args.gtf_file)
+        cvcf = load_vcf_file(args.contig_vcf)
         contigs = pd.read_csv(args.contig_info, sep='\t').fillna('')
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
-
-    # no non-standard chroms will be handled
-    # TODO: is there some way to properly handle alt contigs?
-    alt_chrs = gtf['chr'].str.contains('Un|alt|unknown|random|K')
-    gtf = gtf[np.invert(alt_chrs.values)]
-
-    # extract gene name from gtf and remove 'chr' prefix if present
-    gtf_chrs = gtf['chr'].str.contains('chr')
-    if any(gtf_chrs.values):
-        gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
-        gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
-    gtf['gene'] = gtf.attribute.apply(lambda x: get_gene(x))
-
-    vcf_chrs = cvcf[0].str.contains('chr')
-    if any(vcf_chrs.values):
-        cvcf = cvcf[vcf_chrs]
-        cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
-        cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
 
     make_supertranscripts(args, contigs, cvcf, gtf)
     write_canonical_genes(args, contigs, gtf)
