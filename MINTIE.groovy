@@ -139,6 +139,17 @@ run_salmon = {
    }
 }
 
+run_de = {
+   output.dir = branch.name
+   def case_name = branch.name
+   //def salmon_dir = branch.name+"/salmon_out/aux_info"
+   produce("eq_class_comp_diffsplice.txt"){
+      exec """
+        Rscript $code_base/DE/compare_eq_classes.R $case_name $input $trans_fasta $output ;
+      """, "run_de"
+   }
+}
+
 create_ec_count_matrix = {
    output.dir = branch.name
    def sample_names=inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
@@ -146,19 +157,8 @@ create_ec_count_matrix = {
    sample_names = sample_names.join(',')
    produce("ec_count_matrix.txt"){
       exec """
-        python $code_base/create_ec_count_matrix.py $inputs $sample_names $output1 ;
+        python $code_base/DE/create_ec_count_matrix.py $inputs $sample_names $output1 ;
       """, "create_ec_count_matrix"
-   }
-}
-
-run_de = {
-   output.dir = branch.name
-   def case_name = branch.name
-   //def salmon_dir = branch.name+"/salmon_out/aux_info"
-   produce("eq_class_comp_diffsplice.txt"){
-      exec """
-        Rscript $code_base/compare_eq_classes.R $case_name $input $trans_fasta $output ;
-      """, "run_de"
    }
 }
 
@@ -166,7 +166,7 @@ filter_on_significant_ecs = {
    output.dir=branch.name
    produce("de_contigs.fasta"){
       exec """
-        python $code_base/filter_fasta.py $input.fasta $input.txt --col_id contig > $output1 ;
+        python $code_base/util/filter_fasta.py $input.fasta $input.txt --col_id contig > $output1 ;
       """
    }
 }
