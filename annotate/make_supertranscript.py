@@ -230,7 +230,7 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
                       'end': lambda x: max(x)}
         gene_gtf = gtf.groupby(['chr', 'gene', 'strand'], as_index=False, sort=False).agg(aggregator)
 
-    gene_starts, gene_ends, gene_strands = [], [], []
+    gene_names, gene_starts, gene_ends, gene_strands = [], [], [], []
     for gene in genes:
         gn = gene_gtf[gene_gtf.gene == gene]
         if len(gn) == 0:
@@ -255,10 +255,13 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
         gene_strand = '+' if block_strand == ref_strand else '-'
         gene_strands.append(gene_strand)
 
+        gene_names.append(gene)
+
     #TODO: add random colours for genes
-    bed = pd.DataFrame({'chr': contig_name, 'start': gene_starts, 'end': gene_ends,
-                        'name': genes, 'score': '.', 'strand': gene_strands})
-    bed.to_csv(st_gene_bed, mode='a', index=False, header=False, sep='\t')
+    if len(gene_starts) > 0:
+        bed = pd.DataFrame({'chr': contig_name, 'start': gene_starts, 'end': gene_ends,
+                            'name': gene_names, 'score': '.', 'strand': gene_strands})
+        bed.to_csv(st_gene_bed, mode='a', index=False, header=False, sep='\t')
 
 def get_block_colours(blocks, names):
     colours = np.empty((len(blocks),), dtype='U50')
@@ -404,7 +407,10 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
         vtype = re.search('SVTYPE=(\w+)', record[7])
         vtype = vtype.group(1) if vtype else 'UN'
 
-        seq = re.search('([ATGCNatgc]+)', record[4]).group(1)
+        seq = re.search('([ATGCNatgc]+)', record[4])
+        if not seq:
+            continue
+        seq = seq.group(1)
         seq = seq[1:] if vtype == 'INS' else seq
         strand = get_contig_strand(con_info, record[2])
         seq = reverse_complement(seq) if strand == '-' else seq
