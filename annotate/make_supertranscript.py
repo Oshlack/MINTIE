@@ -189,6 +189,7 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
     write gene annotation to created supertranscript reference
     '''
     seg_starts, seg_ends = block_bed.start, block_bed.end
+    seg_starts.index, seg_ends.index = blocks.index, blocks.index
     contig_name = block_bed['chr'].values[0]
 
     gene_gtf = gtf[gtf.feature == 'gene']
@@ -210,17 +211,22 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
         start_offset = start - min(start_block.start)
         end_offset = max(end_block.end) - end
 
-        gene_start = seg_starts[start_block.index[0]] + start_offset
-        gene_end = seg_ends[end_block.index[0]] - end_offset
-        gene_starts.append(gene_start)
-        gene_ends.append(gene_end)
-
         # relative to the ST, only assign antisense direction
         # if the reference strand differs from the block strand
         block_strand = blocks[blocks.name.str.contains(gene)].strand.values[0]
         ref_strand = gn.strand.values[0]
         gene_strand = '+' if block_strand == ref_strand else '-'
         gene_strands.append(gene_strand)
+
+        antisense = block_strand == '-'
+        tmp = start_block.copy()
+        start_block = end_block if antisense else start_block
+        end_block = tmp if antisense else end_block
+
+        gene_start = seg_starts[start_block.index[0]] + start_offset
+        gene_end = seg_ends[end_block.index[0]] - end_offset
+        gene_starts.append(gene_start)
+        gene_ends.append(gene_end)
 
         gene_names.append(gene)
 
@@ -387,7 +393,7 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
 
     vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)] if len(convars) > 0 else pd.DataFrame()
     for idx,record in vcf_records.iterrows():
-        block, block_seqs = add_novel_sequence(blocks, block_seqs, record, con_info, genes)
+        blocks, block_seqs = add_novel_sequence(blocks, block_seqs, record, con_info, genes)
 
     logging.info('Writing contig %s' % contig)
     blocks = bh.sort_blocks(blocks)
