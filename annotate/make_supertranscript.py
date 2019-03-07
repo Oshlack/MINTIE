@@ -8,7 +8,6 @@ Portability : POSIX
 Take VCF, contig_info and reference files, and make a supertranscript
 for each contig including any novel bits inserted into the ref sequence
 '''
-
 import numpy as np
 import pandas as pd
 import re
@@ -157,6 +156,7 @@ def load_gtf_file(gtf_file):
     '''
     gtf = pd.read_csv(gtf_file, comment='#', sep='\t', header=None, names=GTF_COLS)
 
+    logging.info('Processing GTF reference file...')
     # no non-standard chroms will be handled
     # TODO: is there some way to properly handle alt contigs?
     alt_chrs = gtf['chr'].str.contains('Un|alt|unknown|random|K')
@@ -168,6 +168,17 @@ def load_gtf_file(gtf_file):
         gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
         gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
     gtf['gene'] = gtf.attribute.apply(lambda x: get_gene(x))
+
+    # create gene features if none exist
+    if len(gtf[gtf.feature == 'gene']) == 0:
+        aggregator = {'start': lambda x: min(x),
+                      'end': lambda x: max(x)}
+        gene_gtf = gtf.groupby(['chr', 'score', 'strand', 'frame', 'gene'], as_index=False, sort=False).agg(aggregator)
+        gene_gtf['source'] = 'ALL'
+        gene_gtf['attribute'] = ''
+        gene_gtf['feature'] = 'gene'
+        gene_gtf = gene_gtf[GTF_COLS + ['gene']]
+        gtf = gtf.append(gene_gtf)
 
     return gtf
 
@@ -193,11 +204,6 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
     contig_name = block_bed['chr'].values[0]
 
     gene_gtf = gtf[gtf.feature == 'gene']
-    if len(gene_gtf) == 0:
-        aggregator = {'start': lambda x: min(x),
-                      'end': lambda x: max(x)}
-        gene_gtf = gtf.groupby(['chr', 'gene', 'strand'], as_index=False, sort=False).agg(aggregator)
-
     gene_names, gene_starts, gene_ends, gene_strands = [], [], [], []
     for gene in genes:
         gn = gene_gtf[gene_gtf.gene == gene]
