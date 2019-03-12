@@ -15,7 +15,9 @@ import sys
 import logging
 import os
 import bedtool_helper
+import tempfile
 import block_helper as bh
+from pybedtools import BedTool
 from Bio import SeqIO
 from argparse import ArgumentParser
 from utils import cached, init_logging, exit_with_error
@@ -24,7 +26,6 @@ import ipdb
 pd.set_option("mode.chained_assignment", None)
 
 EXIT_FILE_IO_ERROR = 1
-PROGRAM_NAME = 'MAKE_SUPERTRANSCRIPT'
 
 # headers for GTF file
 GTF_COLS = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute']
@@ -154,9 +155,17 @@ def load_gtf_file(gtf_file):
     load in reference GTF file containing gene/exon info
     remove 'chr' prefix if present and extract gene names
     '''
-    gtf = pd.read_csv(gtf_file, comment='#', sep='\t', header=None, names=GTF_COLS)
-
     logging.info('Processing GTF reference file...')
+
+    gtf = BedTool(gtf_file).remove_invalid().saveas()
+    gtf_pd = pd.DataFrame(columns = GTF_COLS + ['gene'])
+    gene_names = []
+    for idx,g in enumerate(gtf):
+        try:
+            gtf_pd.loc[idx] = g[0:9] + [g.attrs['gene_name']]
+        except KeyError:
+            pass
+
     # no non-standard chroms will be handled
     # TODO: is there some way to properly handle alt contigs?
     alt_chrs = gtf['chr'].str.contains('Un|alt|unknown|random|K')
@@ -167,7 +176,6 @@ def load_gtf_file(gtf_file):
     if any(gtf_chrs.values):
         gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
         gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
-    gtf['gene'] = gtf.attribute.apply(lambda x: get_gene(x))
 
     # create gene features if none exist
     if len(gtf[gtf.feature == 'gene']) == 0:
@@ -441,8 +449,8 @@ def main():
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
-    make_supertranscripts(args, contigs, cvcf, gtf)
-    write_canonical_genes(args, contigs, gtf)
+    #make_supertranscripts(args, contigs, cvcf, gtf)
+    #write_canonical_genes(args, contigs, gtf)
 
 if __name__ == '__main__':
     main()
