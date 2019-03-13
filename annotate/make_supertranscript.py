@@ -96,9 +96,12 @@ def get_gene(attribute):
     '''
     extract gene name from a single GTF attribute string
     '''
-    re_gene = re.search('gene_name "([\w\-\.\/]+)"', attribute)
-    gene = re_gene.group(1) if re_gene else ''
-    return gene
+#    re_gene = re.search('gene_name "([\w\-\.\/]+)"', attribute)
+#    gene = re_gene.group(1) if re_gene else ''
+    try:
+        return attribute['gene_name']
+    except KeyError:
+        return ''
 
 def get_contig_genes(con_info):
     '''
@@ -158,37 +161,36 @@ def load_gtf_file(gtf_file):
     logging.info('Processing GTF reference file...')
 
     gtf = BedTool(gtf_file).remove_invalid().saveas()
-    gtf_pd = pd.DataFrame(columns = GTF_COLS + ['gene'])
-    gene_names = []
-    for idx,g in enumerate(gtf):
-        try:
-            gtf_pd.loc[idx] = g[0:9] + [g.attrs['gene_name']]
-        except KeyError:
-            pass
+    gene_names = [get_gene(row.attrs) for row in gtf]
+
+    with tempfile.NamedTemporaryFile(mode='r+') as temp_gtf:
+        gtf.saveas(temp_gtf.name)
+        gtf_pd = pd.read_csv(temp_gtf, header=None, sep='\t', names=GTF_COLS, comment='#')
+        gtf_pd['gene'] = gene_names
 
     # no non-standard chroms will be handled
     # TODO: is there some way to properly handle alt contigs?
-    alt_chrs = gtf['chr'].str.contains('Un|alt|unknown|random|K')
-    gtf = gtf[np.invert(alt_chrs.values)]
+    alt_chrs = gtf_pd['chr'].str.contains('Un|alt|unknown|random|K')
+    gtf_pd = gtf_pd[np.invert(alt_chrs.values)]
 
-    # extract gene name from gtf and remove 'chr' prefix if present
-    gtf_chrs = gtf['chr'].str.contains('chr')
-    if any(gtf_chrs.values):
-        gtf['chr'] = gtf['chr'].apply(lambda a: a.split('chr')[1])
-        gtf.loc[gtf['chr'] == 'M', 'chr'] = 'MT'
+    # extract gene name from gtf_pd and remove 'chr' prefix if present
+    gtf_pd_chrs = gtf_pd['chr'].str.contains('chr')
+    if any(gtf_pd_chrs.values):
+        gtf_pd['chr'] = gtf_pd['chr'].apply(lambda a: a.split('chr')[1])
+        gtf_pd.loc[gtf_pd['chr'] == 'M', 'chr'] = 'MT'
 
     # create gene features if none exist
-    if len(gtf[gtf.feature == 'gene']) == 0:
+    if len(gtf_pd[gtf_pd.feature == 'gene']) == 0:
         aggregator = {'start': lambda x: min(x),
                       'end': lambda x: max(x)}
-        gene_gtf = gtf.groupby(['chr', 'score', 'strand', 'frame', 'gene'], as_index=False, sort=False).agg(aggregator)
-        gene_gtf['source'] = 'ALL'
-        gene_gtf['attribute'] = ''
-        gene_gtf['feature'] = 'gene'
-        gene_gtf = gene_gtf[GTF_COLS + ['gene']]
-        gtf = gtf.append(gene_gtf)
+        gene_gtf_pd = gtf_pd.groupby(['chr', 'score', 'strand', 'frame', 'gene'], as_index=False, sort=False).agg(aggregator)
+        gene_gtf_pd['source'] = 'ALL'
+        gene_gtf_pd['attribute'] = ''
+        gene_gtf_pd['feature'] = 'gene'
+        gene_gtf_pd = gene_gtf_pd[GTF_COLS + ['gene']]
+        gtf_pd = gtf_pd.append(gene_gtf_pd)
 
-    return gtf
+    return gtf_pd
 
 def load_vcf_file(contig_vcf):
     '''
