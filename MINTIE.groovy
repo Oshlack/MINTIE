@@ -226,7 +226,7 @@ make_super_supertranscript = {
     output.dir = colpath
     produce('supersupertranscript.fasta'){
         exec """
-            cat $inputs.fasta > $output ;
+            cat $inputs.fasta | python ${code_base}/util/remove_redundant_records.py - >$output ;
         """
     }
 }
