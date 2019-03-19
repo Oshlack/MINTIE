@@ -277,7 +277,7 @@ def annotate_softclips(cv, read, ci_file):
 
         block_idx = 0 if sc_idx == 0 else np.max(np.where(np.array([b[0] for b in cv.blocks]) < sc_idx)[0])
         block = cv.blocks[block_idx][1]
-        cv.pos = int(block[0]) if sc_left else int(block[1])
+        cv.pos = int(block[0]) + 1 if sc_left else int(block[1])
 
         rcigar = read.cigar[::-1] if cv.strand == '-' else read.cigar
         cv.cpos = sum([v for c,v in rcigar[:sc_idx] if c in AFFECT_CONTIG])
