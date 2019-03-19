@@ -604,6 +604,10 @@ def annotate_contigs(args):
             logging.info('Skipping contig %s: not enough bases match reference' % read.query_name)
             continue
 
+        if all([op == CIGAR['match'] for op, val in read.cigar]):
+            logging.info('Skipping contig %s: perfect match to reference' % read.query_name)
+            continue
+
         is_hardclipped = any([op == CIGAR['hard-clip'] and val >= CLIP_MIN for op, val in read.cigar])
         if is_hardclipped:
             annotate_fusion(args, read, juncs, bam_idx, ex_ref, ref_trees, outbam)
