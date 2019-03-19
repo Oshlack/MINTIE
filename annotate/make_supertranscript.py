@@ -24,7 +24,6 @@ import ipdb
 pd.set_option("mode.chained_assignment", None)
 
 EXIT_FILE_IO_ERROR = 1
-PROGRAM_NAME = 'MAKE_SUPERTRANSCRIPT'
 
 # headers for GTF file
 GTF_COLS = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute']
@@ -214,6 +213,9 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
         start, end = gn.start.values[0] - 1, gn.end.values[0]
         start_block = blocks[np.logical_and(blocks.start <= start, blocks.end >= start)]
         end_block = blocks[np.logical_and(blocks.start <= end, blocks.end >= end)]
+        if len(start_block) == 0 or len(end_block) == 0:
+            logging.info('WARNING: part of gene %s sits outside the reference blocks; skipping')
+            continue
         start_offset = start - min(start_block.start)
         end_offset = max(end_block.end) - end
 
