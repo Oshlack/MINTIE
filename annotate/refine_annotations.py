@@ -20,7 +20,7 @@ EXIT_FILE_IO_ERROR = 1
 
 MIN_NOVEL_EXON_SIZE = 20
 SPLICE_VARS = ['AS', 'PNJ', 'NEJ']
-SV_VARS = ['FUS', 'DEL', 'INS']
+SV_VARS = ['FUS', 'DEL', 'INS', 'UN']
 NOVEL_BLOCKS = ['EE', 'NE']
 
 def parse_args():
