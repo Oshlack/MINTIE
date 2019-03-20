@@ -81,13 +81,13 @@ def parse_args():
 #=====================================================================================================
 
 def reverse_complement(seq):
-    lookup = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
+    lookup = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'N': 'N'}
     if seq == '':
         return ''
     if type(seq) == float and math.isnan(seq):
         return ''
     seq = seq[::-1]
-    seq = ''.join([lookup[base] for base in list(seq)])
+    seq = ''.join([lookup[base.upper()] for base in list(seq)])
     return(seq)
 
 def get_gene(attribute):
