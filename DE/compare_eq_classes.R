@@ -105,7 +105,7 @@ rm(ec_matrix); gc()
 #############################################################
 
 print('Performing differential expression analysis...')
-bs_results <- run_edgeR(case_name, info, uniq_ecs, tx_to_ecs, dirname(outfile))
+bs_results <- run_edgeR(case_name, info, uniq_ecs, tx_to_ecs, dirname(outfile), cpm_cutoff=0.1)
 
 #############################################################
 # compile and write results
