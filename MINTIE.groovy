@@ -213,7 +213,7 @@ create_supertranscript_reference = {
       exec """
           time python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
                 $tx_annotation $genome_fasta $output.dir $sample_name --log $output.dir/makest.log
-      """
+      """, "create_supertranscript_reference"
    }
 }
 
@@ -221,12 +221,12 @@ make_super_supertranscript = {
     def workingDir=System.getProperty("user.dir");
     colpath = inputs.fastq.gz.split()
     colpath = colpath[(0..(colpath.length-1)).step(2)]
-    colpath = colpath.collect { it.split('/').last().split('_').first() }.join('_')
+    colpath = colpath.collect { it.split('/').last().split('\\.').first().split('_').first() }.join('_')
     colpath = workingDir + '/' + colpath + '_collated_output'
     output.dir = colpath
     produce('supersupertranscript.fasta'){
         exec """
-            cat $inputs.fasta > $output ;
+            cat $inputs.fasta | python ${code_base}/util/remove_redundant_records.py - >$output ;
         """
     }
 }

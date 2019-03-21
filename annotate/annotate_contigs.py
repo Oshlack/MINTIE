@@ -277,7 +277,7 @@ def annotate_softclips(cv, read, ci_file):
 
         block_idx = 0 if sc_idx == 0 else np.max(np.where(np.array([b[0] for b in cv.blocks]) < sc_idx)[0])
         block = cv.blocks[block_idx][1]
-        cv.pos = int(block[0]) if sc_left else int(block[1])
+        cv.pos = int(block[0]) + 1 if sc_left else int(block[1])
 
         rcigar = read.cigar[::-1] if cv.strand == '-' else read.cigar
         cv.cpos = sum([v for c,v in rcigar[:sc_idx] if c in AFFECT_CONTIG])
@@ -602,6 +602,10 @@ def annotate_contigs(args):
         qlen = float(read.query_length)
         if (rlen < MATCH_MIN) or (rlen / qlen) < MATCH_PERC_MIN:
             logging.info('Skipping contig %s: not enough bases match reference' % read.query_name)
+            continue
+
+        if all([op == CIGAR['match'] for op, val in read.cigar]):
+            logging.info('Skipping contig %s: perfect match to reference' % read.query_name)
             continue
 
         is_hardclipped = any([op == CIGAR['hard-clip'] and val >= CLIP_MIN for op, val in read.cigar])

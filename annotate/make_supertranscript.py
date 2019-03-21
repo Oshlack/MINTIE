@@ -83,13 +83,13 @@ def parse_args():
 #=====================================================================================================
 
 def reverse_complement(seq):
-    lookup = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
+    lookup = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'N': 'N'}
     if seq == '':
         return ''
     if type(seq) == float and math.isnan(seq):
         return ''
     seq = seq[::-1]
-    seq = ''.join([lookup[base] for base in list(seq)])
+    seq = ''.join([lookup[base.upper()] for base in list(seq)])
     return(seq)
 
 def get_gene(attribute):
@@ -224,6 +224,9 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
         start, end = gn.start.values[0] - 1, gn.end.values[0]
         start_block = blocks[np.logical_and(blocks.start <= start, blocks.end >= start)]
         end_block = blocks[np.logical_and(blocks.start <= end, blocks.end >= end)]
+        if len(start_block) == 0 or len(end_block) == 0:
+            logging.info('WARNING: part of gene %s sits outside the reference blocks; skipping')
+            continue
         start_offset = start - min(start_block.start)
         end_offset = max(end_block.end) - end
 

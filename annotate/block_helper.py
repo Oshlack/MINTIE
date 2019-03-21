@@ -49,9 +49,9 @@ def sort_blocks(blocks):
     sort blocks in ascending order if on the sense strand,
     and descending order if on the antisense strand
     '''
-    blocks = blocks.drop_duplicates().sort_values(by=['start','end']).reset_index(drop=True)
+    blocks = blocks.drop_duplicates().sort_values(by=['chr','start','end']).reset_index(drop=True)
     if '-' in blocks.strand.values:
-        antisense_blocks = blocks[blocks.strand=='-'].sort_values(by=['start','end'], ascending=False)
+        antisense_blocks = blocks[blocks.strand=='-'].sort_values(by=['chr','start','end'], ascending=False)
         sense_blocks = blocks[blocks.strand=='+']
         if len(sense_blocks) > 0:
             sense_first = blocks.strand.values[0] == '+'
