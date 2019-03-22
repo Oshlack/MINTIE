@@ -39,6 +39,8 @@ gmap_tx_index="/group/bioi1/shared/transcriptomes/hg38/indexes/gmapdb"
 //tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.gz"
 ann_info="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf.info"
 tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf.gz"
+gene_filter="/group/bioi1/marekc/20170918_cryptic_variant/ipredict_samples/prism_gene_list.txt"
+var_filter="FUS DEL INS UN"
 
 controls_dir="controls"
 sample_n_controls=29
@@ -290,6 +292,23 @@ sort_and_index_bam = {
     }
 }
 
+post_process = {
+    output.dir = colpath + '/results'
+    def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
+    def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
+
+    produce(sample_name + '_results.tsv'){
+        exec """
+        python ${code_base}/annotate/post_process.py $sample_name \
+            $sample_dir/novel_contigs_info.tsv \
+            $sample_dir/eq_class_comp_diffsplice.txt \
+            $input.bam \
+            --gene_filter $gene_filter \
+            --var_filter $var_filter > $output
+        """
+    }
+}
+
 if(!binding.variables.containsKey("fastqCaseFormat")){
     fastqCaseFormat="cases/%_R*.fastq.gz"
 }
@@ -311,7 +330,7 @@ run { fastqCaseFormat * [ make_sample_dir +
         make_super_supertranscript +
         make_supertranscript_gmap_reference +
         hisat_index +
-            [ fastqCaseFormat * [ align_contigs_to_supertranscript + sort_and_index_bam,
+            [ fastqCaseFormat * [ align_contigs_to_supertranscript + sort_and_index_bam + post_process,
                                   hisat_align + sort_and_index_bam],
               fastqControlFormat * [ hisat_align.using(type:"controls") + sort_and_index_bam ] ]
 }

@@ -18,6 +18,7 @@ import re
 import sys
 import logging
 import os
+import pysam
 from Bio import SeqIO
 from argparse import ArgumentParser
 from utils import cached, init_logging, exit_with_error
@@ -51,15 +52,20 @@ def parse_args():
                         metavar='DE_RESULTS',
                         type=str,
                         help='''Differential expression results.''')
-    #parser.add_argument(dest='st_align_bam',
-    #                    metavar='ST_ALIGN_BAM',
-    #                    type=str,
-    #                    help='''Alignment of novel contigs to supertranscript reference.''')
+    parser.add_argument(dest='st_align_bam',
+                        metavar='ST_ALIGN_BAM',
+                        type=str,
+                        help='''Alignment of novel contigs to supertranscript reference.''')
     parser.add_argument('--gene_filter',
                         metavar='GENE_FILTER',
                         type=str,
                         default='',
-                        help='''List of genes (one per line) to keep (filter out others).''')
+                        help='''File containing list of genes (one per line) to keep (filter out others).''')
+    parser.add_argument('--var_filter',
+                        metavar='VAR_FILTER',
+                        type=str,
+                        nargs='+',
+                        help='''Variants to keep.''')
 
     return parser.parse_args()
 
@@ -80,6 +86,19 @@ def filter_by_gene(contigs, gene_filter):
     return contigs
 
 def add_de_info(contigs, de_results):
+    de_results = de_results.rename(columns={'contig': 'contig_id'})
+    contigs = pd.merge(contigs, de_results, on='contig_id')
+    contigs = contigs.drop(['genes'], axis=1)
+    return contigs
+
+def get_st_alignments(contigs, st_bam):
+    bam = pysam.AlignmentFile(st_bam, 'rc')
+    st_alignment = []
+    for contig in contigs.contig_id.values:
+        aligned_conts = [read.reference_name for read in bam.fetch() if read.query_name == contig]
+        aligned_conts = ','.join(aligned_conts)
+        st_alignment.append(aligned_conts)
+    contigs['ST_alignment'] = st_alignment
     return contigs
 
 def main():
@@ -93,11 +112,16 @@ def main():
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
+    if args.var_filter:
+        contigs = contigs[contigs.variant_type.apply(lambda v: v in args.var_filter).values]
+
     contigs['sample'] = args.sample
     if len(gene_filter) > 0:
         contigs = filter_by_gene(contigs, gene_filter)
 
     contigs = add_de_info(contigs, de_results)
+    contigs = get_st_alignments(contigs, args.st_align_bam)
+    contigs.to_csv(sys.stdout, index=False, sep='\t')
 
 if __name__ == '__main__':
     main()
