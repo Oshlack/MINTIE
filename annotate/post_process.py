@@ -19,6 +19,7 @@ import sys
 import logging
 import os
 import pysam
+import count_junction_reads as cjr
 from Bio import SeqIO
 from argparse import ArgumentParser
 from utils import cached, init_logging, exit_with_error
@@ -27,6 +28,7 @@ import ipdb
 pd.set_option("mode.chained_assignment", None)
 
 EXIT_FILE_IO_ERROR = 1
+BED_COLS = ['contig', 'start', 'end', 'name', 'score', 'strand', 'tStart', 'tEnd', 'itemRgb']
 
 def parse_args():
     '''
@@ -52,10 +54,18 @@ def parse_args():
                         metavar='DE_RESULTS',
                         type=str,
                         help='''Differential expression results.''')
-    parser.add_argument(dest='st_align_bam',
-                        metavar='ST_ALIGN_BAM',
+    parser.add_argument(dest='st_bed',
+                        metavar='ST_BED',
+                        type=str,
+                        help='''Supertranscript variant bed file.''')
+    parser.add_argument(dest='cont_align',
+                        metavar='CONT_ALIGN',
                         type=str,
                         help='''Alignment of novel contigs to supertranscript reference.''')
+    parser.add_argument(dest='read_align',
+                        metavar='READ_ALIGN',
+                        type=str,
+                        help='''Alignment of reads to supertranscript reference.''')
     parser.add_argument('--gene_filter',
                         metavar='GENE_FILTER',
                         type=str,
@@ -109,19 +119,31 @@ def main():
         contigs = pd.read_csv(args.contig_info, sep='\t')
         de_results = pd.read_csv(args.de_results, sep='\t')
         gene_filter = pd.read_csv(args.gene_filter, header=None) if args.gene_filter != '' else pd.DataFrame()
+        st_bed = pd.read_csv(args.st_bed, sep='\t', header=None, names=BED_COLS)
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
     if args.var_filter:
         contigs = contigs[contigs.variant_type.apply(lambda v: v in args.var_filter).values]
+        st_bed = st_bed[st_bed['name'].apply(lambda v: v in args.var_filter).values]
 
     contigs['sample'] = args.sample
     if len(gene_filter) > 0:
         contigs = filter_by_gene(contigs, gene_filter)
 
     contigs = add_de_info(contigs, de_results)
-    contigs = get_st_alignments(contigs, args.st_align_bam)
+    contigs = get_st_alignments(contigs, args.cont_align)
     contigs.to_csv(sys.stdout, index=False, sep='\t')
+    contigs['crossing_reads'] = np.float('nan')
+    contigs['depth'] = np.float('nan')
+
+    for idx,row in contigs.iterrows():
+        st = row['ST_alignment']
+        st_blocks = st_bed[st_bed.contig == st]
+        if len(st_blocks) > 0:
+            rc = cjr.get_read_counts(args.read_align, st_blocks)
+            contigs.loc[idx, 'crossing_reads'] = rc.crossing.values[0]
+            contigs.loc[idx, 'depth'] = rc.depth.values[0]
 
 if __name__ == '__main__':
     main()
