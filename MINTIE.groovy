@@ -38,7 +38,7 @@ gmap_tx_index="/group/bioi1/shared/transcriptomes/hg38/indexes/gmapdb"
 //ann_info="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.info"
 //tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.gz"
 ann_info="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf.info"
-tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf.gz"
+tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf"
 gene_filter="/group/bioi1/marekc/20170918_cryptic_variant/ipredict_samples/prism_gene_list.txt"
 var_filter="FUS DEL INS UN"
 
@@ -175,12 +175,9 @@ filter_on_significant_ecs = {
 
 align_contigs_against_genome = {
    output.dir=branch.name
-   produce('aligned_contigs_against_genome.bam'){
+   produce('aligned_contigs_against_genome.sam'){
       exec """
-        $gmap -D $gmap_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output.dir/tmp.sam ;
-        samtools sort -o $output $output.dir/tmp.sam ;
-        samtools index $output ;
-        rm $output.dir/tmp.sam ;
+        $gmap -D $gmap_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output
       """, "align_contigs_against_genome"
    }
 }
@@ -247,8 +244,11 @@ align_contigs_to_supertranscript = {
    index_dir=colpath
    //TODO: this needs to play nicely with the given mask for cases
    //TODO: fix this so sample_dir and sample_name are the same
-   def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
+   //def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
    def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
+   def workingDir=System.getProperty("user.dir");
+   def (r1, r2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
+   def sample_name=r1.split('/').last().split('\\.').first()
    produce(sample_name+"_novel_contigs_st_aligned.sam"){
       exec """
          time $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${sample_dir}/de_contigs.fasta > $output.sam ;
@@ -294,15 +294,19 @@ sort_and_index_bam = {
 
 post_process = {
     output.dir = colpath + '/results'
+    //TODO: consolidate sample names
+    def long_sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first()
     def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
     def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
 
-    produce(sample_name + '_results.tsv'){
+    produce(long_sample_name + '_results.tsv'){
         exec """
-        python ${code_base}/annotate/post_process.py $sample_name \
+        python ${code_base}/annotate/post_process.py $long_sample_name \
             $sample_dir/novel_contigs_info.tsv \
             $sample_dir/eq_class_comp_diffsplice.txt \
-            $input.bam \
+            $sample_dir/${sample_name}_blocks_supertranscript.bed \
+            $colpath/alignment/${long_sample_name}_novel_contigs_st_aligned.bam \
+            $colpath/alignment/${long_sample_name}_hisatAligned.bam \
             --gene_filter $gene_filter \
             --var_filter $var_filter > $output
         """
@@ -325,12 +329,14 @@ run { fastqCaseFormat * [ make_sample_dir +
                           run_de +
                           filter_on_significant_ecs +
                           align_contigs_against_genome +
+                          sort_and_index_bam +
                           annotate_contigs + refine_contigs +
                           create_supertranscript_reference ] +
         make_super_supertranscript +
         make_supertranscript_gmap_reference +
         hisat_index +
-            [ fastqCaseFormat * [ align_contigs_to_supertranscript + sort_and_index_bam + post_process,
+            [ fastqCaseFormat * [ align_contigs_to_supertranscript + sort_and_index_bam,
                                   hisat_align + sort_and_index_bam],
-              fastqControlFormat * [ hisat_align.using(type:"controls") + sort_and_index_bam ] ]
+              fastqControlFormat * [ hisat_align.using(type:"controls") + sort_and_index_bam ] ] +
+              fastqCaseFormat * [ post_process ]
 }

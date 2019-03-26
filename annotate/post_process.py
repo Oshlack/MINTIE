@@ -29,6 +29,7 @@ pd.set_option("mode.chained_assignment", None)
 
 EXIT_FILE_IO_ERROR = 1
 BED_COLS = ['contig', 'start', 'end', 'name', 'score', 'strand', 'tStart', 'tEnd', 'itemRgb']
+SPLIT_LEN = 10 # split variants longer than this many base-pairs into two separate junctions to count reads for
 
 def parse_args():
     '''
@@ -111,6 +112,30 @@ def get_st_alignments(contigs, st_bam):
     contigs['ST_alignment'] = st_alignment
     return contigs
 
+def make_junctions(st_blocks):
+    for idx,row in st_blocks.iterrows():
+        if row.end - row.start > SPLIT_LEN:
+            start, end = row.start, row.end
+            row['end'] = start
+            st_blocks = st_blocks.append(row)
+            row['start'], row['end'] = end, end
+            st_blocks = st_blocks.append(row)
+    return st_blocks[st_blocks.end - st_blocks.start <= SPLIT_LEN]
+
+def get_crossing_reads(contigs, read_align, st_bed):
+    #TODO: handle fusions and deletions
+    contigs['crossing_reads'] = np.float('nan')
+    contigs['junctions'] = np.float('nan')
+    for idx,row in contigs.iterrows():
+        st = row['ST_alignment']
+        st_blocks = st_bed[np.logical_and(st_bed.contig == st, st_bed['name'] == row.variant_type)]
+        if len(st_blocks) > 0:
+            st_blocks = make_junctions(st_blocks)
+            rc = cjr.get_read_counts(read_align, st_blocks)
+            contigs.loc[idx, 'crossing_reads'] = ','.join(rc.crossing.apply(str).values)
+            contigs.loc[idx, 'junctions'] = ','.join(['%s-%s' % (s,e) for s,e in zip(rc.start.values, rc.end.values)])
+    return contigs
+
 def main():
     args = parse_args()
     init_logging(args.log)
@@ -133,17 +158,9 @@ def main():
 
     contigs = add_de_info(contigs, de_results)
     contigs = get_st_alignments(contigs, args.cont_align)
-    contigs.to_csv(sys.stdout, index=False, sep='\t')
-    contigs['crossing_reads'] = np.float('nan')
-    contigs['depth'] = np.float('nan')
+    contigs = get_crossing_reads(contigs, args.read_align, st_bed)
 
-    for idx,row in contigs.iterrows():
-        st = row['ST_alignment']
-        st_blocks = st_bed[st_bed.contig == st]
-        if len(st_blocks) > 0:
-            rc = cjr.get_read_counts(args.read_align, st_blocks)
-            contigs.loc[idx, 'crossing_reads'] = rc.crossing.values[0]
-            contigs.loc[idx, 'depth'] = rc.depth.values[0]
+    contigs.to_csv(sys.stdout, index=False, sep='\t', na_rep='NA')
 
 if __name__ == '__main__':
     main()

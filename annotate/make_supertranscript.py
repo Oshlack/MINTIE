@@ -454,8 +454,8 @@ def main():
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
-    #make_supertranscripts(args, contigs, cvcf, gtf)
-    #write_canonical_genes(args, contigs, gtf)
+    make_supertranscripts(args, contigs, cvcf, gtf)
+    write_canonical_genes(args, contigs, gtf)
 
 if __name__ == '__main__':
     main()

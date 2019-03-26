@@ -60,7 +60,7 @@ def get_loc_reads(contig, start, end, bamf, max_dp=10000):
         loc_reads = np.sort(loc_reads, axis=0, order=['query_name','ref_start'])
         loc_reads = np.unique(loc_reads) #remove duplicates
         return loc_reads, err_code
-    except ValueError:        
+    except ValueError:
         eprint('Fetching reads failed for loc: %s' % loc)
         err_code = 2
         return loc_reads, err_code
@@ -70,7 +70,7 @@ def read_pair_crosses_junction(read, mate, start, end):
         return (read['ref_start'] < start and read['ref_end'] > end)
     else:
         return (read['ref_start'] < start and mate['ref_end'] > end)
-    
+
 def get_read_counts(bam_path, juncs):
     bamf = pysam.AlignmentFile(bam_path, "rb")
     read_counts = np.empty([0, 5], dtype=rc_dtype)
