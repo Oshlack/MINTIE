@@ -61,7 +61,8 @@ def get_merged_exons(genes, gtf, genome_fasta, strand):
     if len(gene_gtf) == 0:
         return pd.DataFrame(), {}
     gene_gtf = gene_gtf.drop('gene', axis=1)
-    strand = gene_gtf.strand.values[0] if strand == '' else strand
+    gene_strand = gene_gtf.strand.values[0]
+    strand = gene_strand if strand == '' else strand
 
     with tempfile.NamedTemporaryFile(mode='r+') as temp_gtf:
         gene_gtf.to_csv(temp_gtf.name, index=False, header=False, sep='\t')
@@ -93,7 +94,8 @@ def get_merged_exons(genes, gtf, genome_fasta, strand):
     blocks.end = blocks.end.map(int)
 
     block_names = []
-    if strand == '-':
+    # reverse numbering if the contig alignment strand differs from the gene strand
+    if gene_strand != strand:
         block_names = ['|' + str(i) for i in reversed(range(1, len(blocks)+1))]
     else:
         block_names = ['|' + str(i) for i in range(1, len(blocks)+1)]

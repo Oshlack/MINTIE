@@ -403,8 +403,17 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
         return
 
     genes, strands = get_contig_genes(con_info), get_strand_info(con_info)
-    blocks, block_seqs = get_block_info(args, genes, strands, gtf, genome_fasta)
 
+    # flip the order of genes if fusion contig aligns to the left-end
+    confus = con_info[con_info.variant_type == 'FUS']
+    if len(confus) > 0:
+        split_on_clip = confus.contig_cigar.values[0].split('H') #TODO: check the robustness of this
+        hc_left = bool(re.match('^\d+$', split_on_clip[0]))
+        if hc_left:
+            genes = (genes[1], genes[0])
+            strands.reverse
+
+    blocks, block_seqs = get_block_info(args, genes, strands, gtf, genome_fasta)
     if len(blocks) == 0:
         return
     if len(blocks.drop_duplicates()) != len(block_seqs):

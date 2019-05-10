@@ -97,7 +97,7 @@ def filter_by_gene(contigs, gene_filter):
     return contigs
 
 def add_de_info(contigs, de_results):
-    de_results = de_results.rename(columns={'contig': 'contig_id'})
+    de_results = de_results.rename(columns={'contig': 'contig_id', 'contigs': 'contigs_in_EC'})
     contigs = pd.merge(contigs, de_results, on='contig_id')
     contigs = contigs.drop(['genes'], axis=1)
     return contigs
