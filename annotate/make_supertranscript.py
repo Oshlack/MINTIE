@@ -141,6 +141,18 @@ def get_strand_info(con_info):
         strands = [s1, s2]
     return strands
 
+def get_sorted_blocks(blocks, genes):
+    '''
+    sort blocks within each gene, but keep gene order consistent
+    '''
+    gene_blocks = blocks.name.apply([lambda x: x.split('|')[0]][0]).values
+    gene_blocks = blocks.name.apply(lambda x: '|'.join(x.split('|')[:-1])).values
+    sorted_blocks = pd.DataFrame()
+    for gene in genes:
+        gblocks = bh.sort_blocks(blocks[gene_blocks == gene])
+        sorted_blocks = sorted_blocks.append(gblocks, ignore_index=True)
+    return sorted_blocks
+
 #=====================================================================================================
 # Read/write functions
 #=====================================================================================================
@@ -424,11 +436,11 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
         blocks, block_seqs = add_novel_sequence(blocks, block_seqs, record, con_info, genes)
 
     logging.info('Writing contig %s' % contig)
-    blocks = bh.sort_blocks(blocks)
-    blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
+    sorted_blocks = get_sorted_blocks(blocks, genes)
+    sorted_blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
     genes = genes[0] + '|' + genes[1] if genes[1] != '' else genes[0]
-    write_gene(contig, blocks, block_seqs, args, genes.split('|'), gtf)
+    write_gene(contig, sorted_blocks, block_seqs, args, genes.split('|'), gtf)
 
 def make_supertranscripts(args, contigs, cvcf, gtf):
     '''
