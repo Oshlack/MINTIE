@@ -199,7 +199,7 @@ refine_contigs = {
    produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
       exec """
         time python ${code_base}/annotate/refine_annotations.py \
-            $input.tsv $input.vcf $input.bam $output.tsv $output.bam --log $output.dir/refine.log > $output.vcf ;
+            $input.tsv $input.vcf $input.bam $genome_fasta $output.tsv $output.bam --log $output.dir/refine.log > $output.vcf ;
         samtools index $output.bam
       """
    }

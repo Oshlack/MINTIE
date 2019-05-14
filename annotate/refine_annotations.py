@@ -13,6 +13,10 @@ import re
 import sys
 import logging
 import pysam
+import ipdb
+import bedtool_helper as bh
+import make_supertranscript as ms
+from pybedtools import BedTool
 from argparse import ArgumentParser
 from utils import init_logging, exit_with_error
 
@@ -47,6 +51,10 @@ def parse_args():
                         metavar='BAM_FILE',
                         type=str,
                         help='''Contig BAM file''')
+    parser.add_argument(dest='fasta',
+                        metavar='FASTA',
+                        type=str,
+                        help='''Genome fasta file''')
     parser.add_argument(dest='contig_out_file',
                         metavar='CONTIG_OUT_FILE',
                         type=str,
@@ -57,6 +65,60 @@ def parse_args():
                         help='''Contig BAM output file''')
 
     return parser.parse_args()
+
+def is_valid_splice_motif(row, fasta):
+    '''
+    Checks whether the given variant has a canonical splice site motif.
+    Novel exons are checked for valid donor and acceptor sites (in either
+    transcriptional direction), while extended exons on the left and right
+    are checked for either valid donor or acceptor sites (in either trans-
+    criptional direction).
+    '''
+    both = row[4].startswith('[') and row[4].endswith(']')
+    right = row[4].endswith('[') or both
+    left = row[4].startswith(']') or both
+
+    mloc = pd.DataFrame()
+    slen = len(row[3])
+    if left:
+        df = {'chr': row[0], 'pos1': row[1] - 2, 'pos2': row[1]}
+        mloc = mloc.append(df, ignore_index=True)
+    if right:
+        df = {'chr': row[0], 'pos1': row[1] + slen, 'pos2': row[1] + slen + 2}
+        mloc = mloc.append(df, ignore_index=True)
+    mloc['pos1'], mloc['pos2'] = mloc.pos1.map(int), mloc.pos2.map(int)
+
+    g = BedTool.from_dataframe(mloc)
+    g = g.sequence(fi=fasta)
+    bs = bh.get_block_seqs(g)
+    if len(bs) == 0:
+        return False
+
+    left_loc = '%s:%d-%d' % (row[0], row[1] - 2, row[1])
+    right_loc = '%s:%d-%d' % (row[0], row[1] + slen, row[1] + slen + 2)
+
+    if both:
+        valid_sense = bs[left_loc] == 'AG' and bs[right_loc] == 'GT'
+        valid_antisense = bs[left_loc] == 'AC' and bs[right_loc] == 'CT'
+        return valid_sense or valid_antisense
+    elif left:
+        return bs[left_loc] in ['AG', 'AC']
+    elif right:
+        return bs[right_loc] in ['GT', 'CT']
+
+def validate_novel_exons(novel_exons, args):
+    '''
+    Ensure novel exons contain valid canonical splice motifs
+    '''
+    fasta = args.fasta
+    vcf = ms.load_vcf_file(args.vcf_file)
+    vcf = vcf[vcf[2].apply(lambda x: x in novel_exons.variant_id.values)]
+
+    valid_motifs = vcf.apply(is_valid_splice_motif, axis=1, args=(fasta,))
+    valid_vars = vcf[valid_motifs][2].values
+    novel_exons = novel_exons[novel_exons.variant_id.apply(lambda x: x in valid_vars)]
+
+    return novel_exons
 
 def get_contigs_to_keep(args):
     '''
@@ -78,6 +140,7 @@ def get_contigs_to_keep(args):
     spliced_exons = np.logical_and(is_spliced, is_exon)
     large_varsize = contigs.contig_varsize > MIN_NOVEL_EXON_SIZE
     novel_exons = contigs[np.logical_and(spliced_exons, large_varsize)]
+    novel_exons = validate_novel_exons(novel_exons, args)
 
     # ensure exons contain a matching splice junction
     keep_contigs = []
