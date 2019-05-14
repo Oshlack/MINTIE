@@ -94,8 +94,8 @@ def get_merged_exons(genes, gtf, genome_fasta, strand):
     blocks.end = blocks.end.map(int)
 
     block_names = []
-    # reverse numbering if the contig alignment strand differs from the gene strand
-    if gene_strand != strand:
+    # reverse numbering if the gene is on the reverse strand
+    if gene_strand == '-':
         block_names = ['|' + str(i) for i in reversed(range(1, len(blocks)+1))]
     else:
         block_names = ['|' + str(i) for i in range(1, len(blocks)+1)]

@@ -132,26 +132,43 @@ def get_contig_strand(con_info, variant):
         strand = re.search(STRAND, var_info.pos2.values[0]).group(1)
     return strand
 
-def get_strand_info(con_info):
-    strands = [re.search(STRAND, con_info.pos1.values[0]).group(1)]
-    if 'FUS' in con_info.variant_type.values:
-        con_fus = con_info[con_info.variant_type == 'FUS']
-        s1 = get_contig_strand(con_fus, con_fus.variant_id.values[0])
-        s2 = get_contig_strand(con_fus, con_fus.partner_id.values[0])
-        strands = [s1, s2]
+def get_gene_strands(gtf, genes):
+    strands = []
+    for gene in genes:
+        gene = gene.split('|')[0] # take first gene as representative in case of overlaps
+        strand = gtf[gtf.gene == gene].strand.values[0]
+        strand = strand if gene != '' else ''
+        strands.append(strand)
     return strands
 
-def get_sorted_blocks(blocks, genes):
-    '''
-    sort blocks within each gene, but keep gene order consistent
-    '''
-    gene_blocks = blocks.name.apply([lambda x: x.split('|')[0]][0]).values
-    gene_blocks = blocks.name.apply(lambda x: '|'.join(x.split('|')[:-1])).values
-    sorted_blocks = pd.DataFrame()
-    for gene in genes:
-        gblocks = bh.sort_blocks(blocks[gene_blocks == gene])
-        sorted_blocks = sorted_blocks.append(gblocks, ignore_index=True)
-    return sorted_blocks
+def get_strand_info(con_info, gstrands):
+    #strands = [re.search(STRAND, con_info.pos1.values[0]).group(1)]
+    if 'FUS' in con_info.variant_type.values:
+        con_fus = con_info[con_info.variant_type == 'FUS']
+        cs1 = get_contig_strand(con_fus, con_fus.variant_id.values[0])
+        cs2 = get_contig_strand(con_fus, con_fus.partner_id.values[0])
+
+        # if contig strands align counter to gene orientation,
+        # return strands corresponding to contig alignment
+        gs1, gs2 = gstrands
+        if (cs1 != gs1 and cs2 == gs2) or (cs1 == gs1 and cs2 != gs2):
+            return [cs1, cs2]
+        else:
+            return gstrands
+    else:
+        return gstrands
+
+#def get_sorted_blocks(blocks, genes):
+#    '''
+#    sort blocks within each gene, but keep gene order consistent
+#    '''
+#    gene_blocks = blocks.name.apply([lambda x: x.split('|')[0]][0]).values
+#    gene_blocks = blocks.name.apply(lambda x: '|'.join(x.split('|')[:-1])).values
+#    sorted_blocks = pd.DataFrame()
+#    for gene in genes:
+#        gblocks = bh.sort_blocks(blocks[gene_blocks == gene])
+#        sorted_blocks = sorted_blocks.append(gblocks, ignore_index=True)
+#    return sorted_blocks
 
 #=====================================================================================================
 # Read/write functions
@@ -350,9 +367,9 @@ def get_block_info(args, genes, strands, gtf, genome_fasta):
                 logging.info('Writing canonical gene %s' % gene)
                 canonical_genes_written.append(gene)
                 write_gene('', bh.sort_blocks(blocks), block_seqs, args, [gene], gtf)
-    return blocks, block_seqs
+    return blocks.drop_duplicates(), block_seqs
 
-def add_novel_sequence(blocks, block_seqs, record, con_info, genes):
+def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
     '''
     add any novel sequence from the given record to the reference blocks
     '''
@@ -365,7 +382,6 @@ def add_novel_sequence(blocks, block_seqs, record, con_info, genes):
         return blocks, block_seqs
     seq = seq.group(1)
     seq = seq[1:] if vtype == 'INS' else seq
-    strand = get_contig_strand(con_info, record[2])
     seq = reverse_complement(seq) if strand == '-' else seq
 
     blocksize = len(seq) if vtype in ['EE', 'NE', 'RI'] else 0
@@ -400,8 +416,6 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
         3) a bed file containing the block annotations (mapping to the ST)
            with novel bits indicated
     '''
-    contig = con_info.contig_id.values[0]
-
     genome_fasta = args.fasta
     genome_bed, st_block_bed, st_gene_bed, st_fasta = get_output_files(args.sample, args.outdir)
 
@@ -414,33 +428,27 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
         # single gene with no variants to annotate
         return
 
-    genes, strands = get_contig_genes(con_info), get_strand_info(con_info)
-
-    # flip the order of genes if fusion contig aligns to the left-end
-    confus = con_info[con_info.variant_type == 'FUS']
-    if len(confus) > 0:
-        split_on_clip = confus.contig_cigar.values[0].split('H') #TODO: check the robustness of this
-        hc_left = bool(re.match('^\d+$', split_on_clip[0]))
-        if hc_left:
-            genes = (genes[1], genes[0])
-            strands.reverse
+    genes = get_contig_genes(con_info)
+    gene_strands = get_gene_strands(gtf, genes)
+    strands = get_strand_info(con_info, gene_strands)
 
     blocks, block_seqs = get_block_info(args, genes, strands, gtf, genome_fasta)
-    if len(blocks) == 0:
-        return
-    if len(blocks.drop_duplicates()) != len(block_seqs):
+    if len(blocks) == 0 or len(blocks) != len(block_seqs):
         return
 
     vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)] if len(convars) > 0 else pd.DataFrame()
     for idx,record in vcf_records.iterrows():
-        blocks, block_seqs = add_novel_sequence(blocks, block_seqs, record, con_info, genes)
+        gene = con_info[con_info.variant_id == record[2]].overlapping_genes.values[0]
+        strand = [s for g,s in zip(genes, strands) if g == gene][0]
+        blocks, block_seqs = add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand)
 
+    contig = con_info.contig_id.values[0]
     logging.info('Writing contig %s' % contig)
-    sorted_blocks = get_sorted_blocks(blocks, genes)
-    sorted_blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
+    blocks = bh.sort_blocks(blocks)
+    blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
     genes = genes[0] + '|' + genes[1] if genes[1] != '' else genes[0]
-    write_gene(contig, sorted_blocks, block_seqs, args, genes.split('|'), gtf)
+    write_gene(contig, blocks, block_seqs, args, genes.split('|'), gtf)
 
 def make_supertranscripts(args, contigs, cvcf, gtf):
     '''
