@@ -16,6 +16,7 @@ import pysam
 import ipdb
 import bedtool_helper as bh
 import make_supertranscript as ms
+import annotate_contigs as ac
 from pybedtools import BedTool
 from argparse import ArgumentParser
 from utils import init_logging, exit_with_error
@@ -23,7 +24,7 @@ from utils import init_logging, exit_with_error
 EXIT_FILE_IO_ERROR = 1
 
 MIN_NOVEL_EXON_SIZE = 20
-SPLICE_VARS = ['AS', 'PNJ', 'NEJ']
+SPLICE_VARS = ['AS']
 SV_VARS = ['FUS', 'DEL', 'INS', 'UN']
 NOVEL_BLOCKS = ['EE', 'NE']
 
@@ -51,6 +52,10 @@ def parse_args():
                         metavar='BAM_FILE',
                         type=str,
                         help='''Contig BAM file''')
+    parser.add_argument(dest='tx_ref_file',
+                        type=str,
+                        metavar='TX_REF_FILE',
+                        help='''Transcriptiome GTF reference file.''')
     parser.add_argument(dest='fasta',
                         metavar='FASTA',
                         type=str,
@@ -120,6 +125,23 @@ def validate_novel_exons(novel_exons, args):
 
     return novel_exons
 
+def overlaps_exon(sv, ex_trees):
+    pos1 = sv['pos1'].split(':')
+    pos2 = sv['pos2'].split(':')
+
+    chrom = pos1[0]
+    start = int(pos1[1].split('(')[0])
+    end = int(pos2[1].split('(')[0])
+    end = start + 1 if sv['variant_type'] != 'DEL' else end
+
+    olap = ex_trees[chrom].overlaps(start, end)
+    if sv['variant_type'] == 'FUS':
+        chrom = pos2[0]
+        start = int(pos2[1].split('(')[0])
+        olap = olap or ex_trees[chrom].overlaps(start, start+1)
+
+    return olap
+
 def get_contigs_to_keep(args):
     '''
     Return contigs matching criteria:
@@ -140,7 +162,7 @@ def get_contigs_to_keep(args):
     spliced_exons = np.logical_and(is_spliced, is_exon)
     large_varsize = contigs.contig_varsize > MIN_NOVEL_EXON_SIZE
     novel_exons = contigs[np.logical_and(spliced_exons, large_varsize)]
-    novel_exons = validate_novel_exons(novel_exons, args)
+    novel_exons = validate_novel_exons(novel_exons, args) # splice motif checking
 
     # ensure exons contain a matching splice junction
     keep_contigs = []
@@ -151,8 +173,13 @@ def get_contigs_to_keep(args):
         matching_juncs = novel_juncs[np.logical_or(back_junc, front_junc)]
         keep_contigs.append(row['contig_id'])
 
-    # keep all SV and splice vars
+    # filter out SVs in intronic regions
     svs = contigs[contigs.variant_type.apply(lambda x: x in SV_VARS)]
+    gene_tree, ex_trees, ex_ref = ac.get_gene_lookup(args.tx_ref_file)
+    exonic_vars = svs.apply(overlaps_exon, axis=1, args=(ex_trees,))
+    svs = svs[exonic_vars]
+
+    # keep all splice vars
     splicevars = contigs[contigs.variant_type.apply(lambda x: x in SPLICE_VARS)]
 
     # ensure retained introns are spliced in some way (to distinguish from pre-mRNAs)

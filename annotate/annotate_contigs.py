@@ -140,16 +140,18 @@ def get_gene_lookup(tx_ref_file):
         # merged exon boundaries for block annotation
         ex_ref = tx_ref[tx_ref[2] == 'exon']
         ex_ref_out = pd.DataFrame()
+        ex_trees = {}
         for chrom in chroms:
             chr_ref = ex_ref[ex_ref[0] == chrom].drop_duplicates()
             ex_tree = IntervalTree()
             for s,e in zip(chr_ref[3].values, chr_ref[4].values):
-                ex_tree.addi(s-1, e, '')
+                ex_tree.addi(s-1, e)
             ex_tree.merge_overlaps()
             tmp = pd.DataFrame([(chrom, tree[0], tree[1]) for tree in ex_tree],
                                columns=['chrom', 'start', 'end'])
             ex_ref_out = pd.concat([ex_ref_out, tmp], ignore_index=True)
-    return ref_trees, ex_ref_out
+            ex_trees[chrom] = ex_tree
+    return ref_trees, ex_trees, ex_ref_out
 
 def get_juncs(tx):
     '''
@@ -525,6 +527,15 @@ def get_tx_juncs(read):
     tx_juncs = []
     unknown_juncs = []
     starts, ends = zip(*read.get_blocks())
+
+    # merge adjacent 'junctions' (i.e. insertions)
+    juncs = IntervalTree()
+    for s, e in zip(starts, ends):
+        juncs.addi(s, e)
+    juncs.merge_overlaps(strict=False)
+    starts = [junc[0] for junc in juncs]
+    ends = [junc[1] for junc in juncs]
+
     chroms = [read.reference_name] * (len(starts)-1)
     tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
     tx_juncs = [junc for junc in tx_juncs if (junc[2] - junc[1]) > GAP_MIN]
@@ -576,7 +587,7 @@ def annotate_contigs(args):
     Extract aligned contigs from supplied bam file and output
     annotated contig if it contains any novel bits
     '''
-    ref_trees, ex_ref = get_gene_lookup(args.tx_ref_file)
+    ref_trees, ex_tree, ex_ref = get_gene_lookup(args.tx_ref_file)
     juncs = get_junc_lookup(args.junc_file)
 
     bam = pysam.AlignmentFile(args.bam_file, 'rc')
