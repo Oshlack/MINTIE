@@ -80,13 +80,13 @@ def is_valid_splice_motif(row, fasta):
     criptional direction).
     '''
     both = row[4].startswith('[') and row[4].endswith(']')
-    right = row[4].endswith('[') or both
-    left = row[4].startswith(']') or both
+    left = row[4].endswith('[') or both
+    right = row[4].startswith(']') or both
 
     mloc = pd.DataFrame()
     slen = len(row[3])
     if left:
-        df = {'chr': row[0], 'pos1': row[1] - 2, 'pos2': row[1]}
+        df = {'chr': row[0], 'pos1': row[1] - 3, 'pos2': row[1] - 1}
         mloc = mloc.append(df, ignore_index=True)
     if right:
         df = {'chr': row[0], 'pos1': row[1] + slen, 'pos2': row[1] + slen + 2}
@@ -99,7 +99,7 @@ def is_valid_splice_motif(row, fasta):
     if len(bs) == 0:
         return False
 
-    left_loc = '%s:%d-%d' % (row[0], row[1] - 2, row[1])
+    left_loc = '%s:%d-%d' % (row[0], row[1] - 3, row[1] - 1)
     right_loc = '%s:%d-%d' % (row[0], row[1] + slen, row[1] + slen + 2)
 
     if both:
@@ -111,19 +111,18 @@ def is_valid_splice_motif(row, fasta):
     elif right:
         return bs[right_loc] in ['GT', 'CT']
 
-def validate_novel_exons(novel_exons, args):
+def get_valid_motif_vars(variants, args):
     '''
     Ensure novel exons contain valid canonical splice motifs
     '''
     fasta = args.fasta
     vcf = ms.load_vcf_file(args.vcf_file)
-    vcf = vcf[vcf[2].apply(lambda x: x in novel_exons.variant_id.values)]
+    vcf = vcf[vcf[2].apply(lambda x: x in variants.variant_id.values)]
 
     valid_motifs = vcf.apply(is_valid_splice_motif, axis=1, args=(fasta,))
     valid_vars = vcf[valid_motifs][2].values
-    novel_exons = novel_exons[novel_exons.variant_id.apply(lambda x: x in valid_vars)]
 
-    return novel_exons
+    return valid_vars
 
 def overlaps_exon(sv, ex_trees):
     pos1 = sv['pos1'].split(':')
@@ -147,8 +146,9 @@ def get_contigs_to_keep(args):
     Return contigs matching criteria:
     - novel block size > MIN_NOVEL_EXON_SIZE
     - novel blocks are spliced in some way
-    - novel exons have corresponding novel splice sites
-    - fusions, SVs and splice variants are not further filtered
+    - novel exons have corresponding novel splice
+      sites and novel splice donor/acceptor motifs
+    - TSVs occur in exonic regions
     '''
     try:
         cinfo_file = args.contig_info_file
@@ -156,42 +156,54 @@ def get_contigs_to_keep(args):
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
-    # filter novel blocks: require min size and spliced contig
-    is_exon = contigs.variant_type.apply(lambda x: x in NOVEL_BLOCKS)
-    is_spliced = contigs.contig_cigar.apply(lambda x: bool(re.search('N|H', x)))
-    spliced_exons = np.logical_and(is_spliced, is_exon)
-    large_varsize = contigs.contig_varsize > MIN_NOVEL_EXON_SIZE
-    novel_exons = contigs[np.logical_and(spliced_exons, large_varsize)]
-    novel_exons = validate_novel_exons(novel_exons, args) # splice motif checking
+    # general tests - var size and splicing
+    contigs['large_varsize'] = contigs.contig_varsize > MIN_NOVEL_EXON_SIZE
+    contigs['is_contig_spliced'] = contigs.contig_cigar.apply(lambda x: bool(re.search('N', x)))
 
-    # ensure exons contain a matching splice junction
-    keep_contigs = []
+    # test for valid splice motifs
+    contigs['valid_motif'] = False
+    check_motifs = contigs.variant_type.apply(lambda x: x not in SPLICE_VARS + SV_VARS)
+    valid_motif_vars = get_valid_motif_vars(contigs[check_motifs], args)
+    contigs.loc[check_motifs, 'valid_motif'] = contigs.variant_id.apply(lambda x: x in valid_motif_vars)
+
+    # check whether exons contain matching novel/partial novel junctions
+    spliced_exons = []
+    exons = contigs[contigs.variant_type.apply(lambda x: x in NOVEL_BLOCKS)]
     novel_juncs = contigs[contigs.variant_type.apply(lambda x: x in ['PNJ', 'NEJ'])]
-    for idx,row in novel_exons.iterrows():
+    for idx,row in exons.iterrows():
         back_junc = novel_juncs.pos2 == row['pos1']
         front_junc = novel_juncs.pos1 == row['pos2']
         matching_juncs = novel_juncs[np.logical_or(back_junc, front_junc)]
-        keep_contigs.append(row['contig_id'])
+        if len(matching_juncs) > 0:
+            spliced_exons.append(row['variant_id'])
+    contigs['spliced_exon'] = contigs.variant_id.apply(lambda x: x in spliced_exons)
 
-    # filter out SVs in intronic regions
-    svs = contigs[contigs.variant_type.apply(lambda x: x in SV_VARS)]
+    # novel exon contigs (spliced, valid motif and large variant sizew)
+    is_novel_exon = np.logical_and(contigs.spliced_exon, contigs.valid_motif)
+    is_novel_exon = np.logical_and(is_novel_exon, contigs.large_varsize)
+    ne_vars = contigs[is_novel_exon].variant_id.values
+
+    # check whether TSVs are within exons
+    contigs['overlaps_exon'] = False
+    exonic_var = contigs.variant_type.apply(lambda x: x in ['PNJ', 'EE', 'AS'])
+    contigs.loc[exonic_var, 'overlaps_exon'] = True
+    is_sv = contigs.variant_type.apply(lambda x: x in SV_VARS)
     gene_tree, ex_trees, ex_ref = ac.get_gene_lookup(args.tx_ref_file)
-    exonic_vars = svs.apply(overlaps_exon, axis=1, args=(ex_trees,))
-    svs = svs[exonic_vars]
+    contigs.loc[is_sv, 'overlaps_exon'] = contigs[is_sv].apply(overlaps_exon, axis=1, args=(ex_trees,))
+    sv_vars = contigs[np.logical_and(is_sv, contigs.overlaps_exon)].variant_id.values
 
     # keep all splice vars
-    splicevars = contigs[contigs.variant_type.apply(lambda x: x in SPLICE_VARS)]
+    as_vars = contigs.variant_id.values[contigs.variant_type.apply(lambda x: x in SPLICE_VARS)]
 
     # ensure retained introns are spliced in some way (to distinguish from pre-mRNAs)
     retained_intron = contigs.variant_type.apply(lambda x: x in ['RI'])
-    spliced_ri =  np.logical_and(retained_intron, is_spliced)
-    ris = contigs[np.logical_and(spliced_ri, large_varsize)]
+    spliced_ri =  np.logical_and(retained_intron, contigs.is_contig_spliced.values)
+    ri_vars = contigs[np.logical_and(spliced_ri, contigs.large_varsize)].variant_id.values
 
-    keep_contigs.extend(svs.contig_id)
-    keep_contigs.extend(splicevars.contig_id)
-    keep_contigs.extend(ris.contig_id)
-    keep_contigs = np.unique(keep_contigs)
-
+    # collate contigs to keep
+    keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars]))
+    contigs['variant_of_interest'] = contigs.variant_id.apply(lambda x: x in keep_vars)
+    keep_contigs = contigs[contigs.variant_of_interest].contig_id.values
     contigs = contigs[contigs.contig_id.apply(lambda x: x in keep_contigs)]
     contigs.to_csv(args.contig_out_file, sep='\t', index=None)
 
