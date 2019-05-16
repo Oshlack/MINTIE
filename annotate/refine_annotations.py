@@ -163,8 +163,9 @@ def get_contigs_to_keep(args):
     # test for valid splice motifs
     contigs['valid_motif'] = False
     check_motifs = contigs.variant_type.apply(lambda x: x not in SPLICE_VARS + SV_VARS)
-    valid_motif_vars = get_valid_motif_vars(contigs[check_motifs], args)
-    contigs.loc[check_motifs, 'valid_motif'] = contigs.variant_id.apply(lambda x: x in valid_motif_vars)
+    if any(check_motifs.values):
+        valid_motif_vars = get_valid_motif_vars(contigs[check_motifs], args)
+        contigs.loc[check_motifs, 'valid_motif'] = contigs.variant_id.apply(lambda x: x in valid_motif_vars)
 
     # check whether exons contain matching novel/partial novel junctions
     spliced_exons = []
