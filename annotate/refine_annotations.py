@@ -71,58 +71,72 @@ def parse_args():
 
     return parser.parse_args()
 
-def is_valid_splice_motif(row, fasta):
-    '''
-    Checks whether the given variant has a canonical splice site motif.
-    Novel exons are checked for valid donor and acceptor sites (in either
-    transcriptional direction), while extended exons on the left and right
-    are checked for either valid donor or acceptor sites (in either trans-
-    criptional direction).
-    '''
-    both = row[4].startswith('[') and row[4].endswith(']')
-    left = row[4].endswith('[') or both
-    right = row[4].startswith(']') or both
-
-    mloc = pd.DataFrame()
-    slen = len(row[3])
-    if left:
-        df = {'chr': row[0], 'pos1': row[1] - 3, 'pos2': row[1] - 1}
-        mloc = mloc.append(df, ignore_index=True)
-    if right:
-        df = {'chr': row[0], 'pos1': row[1] + slen, 'pos2': row[1] + slen + 2}
-        mloc = mloc.append(df, ignore_index=True)
-    mloc['pos1'], mloc['pos2'] = mloc.pos1.map(int), mloc.pos2.map(int)
-
-    g = BedTool.from_dataframe(mloc)
-    g = g.sequence(fi=fasta)
-    bs = bh.get_block_seqs(g)
-    if len(bs) == 0:
+def is_valid_motif(left_id, right_id, block_seqs):
+    try:
+        if left_id != '' and right_id != '':
+            valid_sense = block_seqs[left_id] == 'AG' and block_seqs[right_id] == 'GT'
+            valid_antisense = block_seqs[left_id] == 'AC' and block_seqs[right_id] == 'CT'
+            return valid_sense or valid_antisense
+        elif left_id != '':
+            return block_seqs[left_id] in ['AG', 'AC']
+        elif right_id != '':
+            return block_seqs[right_id] in ['GT', 'CT']
+        else:
+            return False
+    except KeyError:
+        # occurs if chrom not in reference
         return False
-
-    left_loc = '%s:%d-%d' % (row[0], row[1] - 3, row[1] - 1)
-    right_loc = '%s:%d-%d' % (row[0], row[1] + slen, row[1] + slen + 2)
-
-    if both:
-        valid_sense = bs[left_loc] == 'AG' and bs[right_loc] == 'GT'
-        valid_antisense = bs[left_loc] == 'AC' and bs[right_loc] == 'CT'
-        return valid_sense or valid_antisense
-    elif left:
-        return bs[left_loc] in ['AG', 'AC']
-    elif right:
-        return bs[right_loc] in ['GT', 'CT']
 
 def get_valid_motif_vars(variants, args):
     '''
-    Ensure novel exons contain valid canonical splice motifs
+    Checks whether the given variant has a canonical splice site motif,
+    returning those variant IDs with valid motifs. Novel exons are checked
+    for valid donor and acceptor sites (in either transcriptional direction),
+    while extended exons on the left and right are checked for either valid
+    donor or acceptor sites (in either transcriptional direction).
     '''
-    fasta = args.fasta
+    # get VCF data of given variants
     vcf = ms.load_vcf_file(args.vcf_file)
     vcf = vcf[vcf[2].apply(lambda x: x in variants.variant_id.values)]
+    vcf = vcf[vcf[3].apply(lambda x: np.invert(pd.isnull(x)))]
 
-    valid_motifs = vcf.apply(is_valid_splice_motif, axis=1, args=(fasta,))
-    valid_vars = vcf[valid_motifs][2].values
+    # construct motif locations for which to extract sequence
+    b_blocks = vcf[vcf[4].apply(lambda x: x.startswith('[') and x.endswith(']'))]
+    r_blocks = vcf[vcf[4].apply(lambda x: x.startswith(']'))]
+    l_blocks = vcf[vcf[4].apply(lambda x: x.endswith('['))]
+    left = pd.concat([l_blocks, b_blocks])
+    right = pd.concat([r_blocks, b_blocks])
+    mlocs = pd.DataFrame({'chr': pd.concat([left[0], right[0]]),
+                          'start': pd.concat([left[1] - 3, right[1] + right[3].apply(len)-1])})
+    mlocs['end'] = mlocs['start'] + 2
+    mlocs = mlocs.drop_duplicates()
 
-    return valid_vars
+    # extract sequences
+    g = BedTool.from_dataframe(mlocs).remove_invalid()
+    g = g.sequence(fi=args.fasta)
+    bs = bh.get_block_seqs(g)
+
+    # check whether variants have valid motifs
+    # left blocks
+    valid_vars = []
+    left_ids = ['%s:%d-%d' % loc for loc in zip(l_blocks[0], l_blocks[1]-3, l_blocks[1]-1)]
+    valid_left = [is_valid_motif(lid, '', bs) for lid in left_ids]
+    valid_vars.extend(l_blocks[valid_left][2].values)
+
+    # right blocks
+    rpos = r_blocks[1] + r_blocks[3].apply(len)-1
+    right_ids = ['%s:%d-%d' % loc for loc in zip(r_blocks[0], rpos, rpos+2)]
+    valid_right = [is_valid_motif('', rid, bs) for rid in right_ids]
+    valid_vars.extend(r_blocks[valid_right][2].values)
+
+    # both blocks (novel exons)
+    rpos = b_blocks[1] + b_blocks[3].apply(len)-1
+    left_ids = ['%s:%d-%d' % loc for loc in zip(b_blocks[0], b_blocks[1]-3, b_blocks[1]-1)]
+    right_ids = ['%s:%d-%d' % loc for loc in zip(b_blocks[0], rpos, rpos+2)]
+    valid_both = [is_valid_motif(lid, rid, bs) for lid, rid in zip(left_ids, right_ids)]
+    valid_vars.extend(b_blocks[valid_both][2].values)
+
+    return np.unique(valid_vars)
 
 def overlaps_exon(sv, ex_trees):
     pos1 = sv['pos1'].split(':')
