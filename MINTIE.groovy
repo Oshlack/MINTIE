@@ -40,7 +40,7 @@ gmap_tx_index="/group/bioi1/shared/transcriptomes/hg38/indexes/gmapdb"
 ann_info="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf.info"
 tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf"
 gene_filter="/group/bioi1/marekc/20170918_cryptic_variant/ipredict_samples/prism_gene_list.txt"
-var_filter="FUS DEL INS UN"
+var_filter="FUS DEL INS UN EE NE RI"
 
 controls_dir="controls"
 sample_n_controls=29

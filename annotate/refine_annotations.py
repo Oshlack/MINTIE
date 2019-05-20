@@ -85,6 +85,8 @@ def is_valid_motif(left_id, right_id, block_seqs):
             return False
     except KeyError:
         # occurs if chrom not in reference
+        logging.info('''WARNING: one of the following motif Locations could not be
+                        retrieved from the provided reference: %s, %s''' % (left_id, right_id))
         return False
 
 def get_valid_motif_vars(variants, args):
@@ -138,6 +140,14 @@ def get_valid_motif_vars(variants, args):
 
     return np.unique(valid_vars)
 
+def check_overlap(ex_trees, chrom, start, end):
+    olap = False
+    try:
+        olap = ex_trees[chrom].overlaps(start, end)
+    except KeyError:
+        logging.info('WARNING: chrom %s not found in provided reference.' % chrom)
+    return olap
+
 def overlaps_exon(sv, ex_trees):
     pos1 = sv['pos1'].split(':')
     pos2 = sv['pos2'].split(':')
@@ -147,11 +157,11 @@ def overlaps_exon(sv, ex_trees):
     end = int(pos2[1].split('(')[0])
     end = start + 1 if sv['variant_type'] != 'DEL' else end
 
-    olap = ex_trees[chrom].overlaps(start, end)
+    olap = check_overlap(ex_trees, chrom, start, end)
     if sv['variant_type'] == 'FUS':
         chrom = pos2[0]
         start = int(pos2[1].split('(')[0])
-        olap = olap or ex_trees[chrom].overlaps(start, start+1)
+        olap = olap or check_overlap(ex_trees, chrom, start, start + 1)
 
     return olap
 

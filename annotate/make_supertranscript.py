@@ -136,8 +136,8 @@ def get_gene_strands(gtf, genes):
     strands = []
     for gene in genes:
         gene = gene.split('|')[0] # take first gene as representative in case of overlaps
-        strand = gtf[gtf.gene == gene].strand.values[0]
-        strand = strand if gene != '' else ''
+        strand = gtf[gtf.gene == gene].strand.values
+        strand = strand[0] if gene != '' and len(strand) > 0 else ''
         strands.append(strand)
     return strands
 
