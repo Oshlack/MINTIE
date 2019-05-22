@@ -81,18 +81,18 @@ def parse_args():
     return parser.parse_args()
 
 def get_all_genes(overlapping_genes):
-    genes = overlapping_genes.split(':')
-    genes = [gene.split('|') for gene in genes]
-    genes = [g for gene in genes for g in gene]
-    return genes
-
-def is_in_genelist(overlapping_genes, genelist):
-    return any([gene in genelist for gene in overlapping_genes])
+    if isinstance(overlapping_genes, str):
+        genes = overlapping_genes.split(':')
+        genes = [gene.split('|') for gene in genes]
+        genes = [g for gene in genes for g in gene if g != '']
+        return genes
+    else:
+        return []
 
 def filter_by_gene(contigs, gene_filter):
     genelist = gene_filter[0].values
     overlapping_genes = contigs.overlapping_genes.apply([lambda og: get_all_genes(og)])
-    overlapping_genes = overlapping_genes.apply([lambda og: is_in_genelist(og, genelist)])
+    overlapping_genes = overlapping_genes.apply([lambda og: len(np.intersect1d(np.array(og), genelist)) > 0])
     contigs = contigs[overlapping_genes.values]
     return contigs
 
