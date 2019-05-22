@@ -17,6 +17,7 @@ import ipdb
 import bedtool_helper as bh
 import make_supertranscript as ms
 import annotate_contigs as ac
+import pybedtools as pbt
 from pybedtools import BedTool
 from argparse import ArgumentParser
 from utils import init_logging, exit_with_error
@@ -112,6 +113,19 @@ def get_valid_motif_vars(variants, args):
                           'start': pd.concat([left[1] - 3, right[1] + right[3].apply(len)-1])})
     mlocs['end'] = mlocs['start'] + 2
     mlocs = mlocs.drop_duplicates()
+
+    # ensure coords aren't negative or exceed chrom len
+    mlocs = mlocs[mlocs['start'] >= 0]
+    chr_sizes = pbt.chromsizes('hg38') #TODO: allow reference to be argument
+    for chrom in np.unique(mlocs['chr'].values):
+        ref_chrom = 'chr%s' % chrom if chrom != 'MT' else 'chrM'
+        try:
+            chr_max = chr_sizes[ref_chrom][1]
+            over_limit = np.logical_or(mlocs.start > chr_max, mlocs.end > chr_max)
+            mlocs = mlocs.drop(mlocs[np.logical_and(mlocs['chr'] == chrom, over_limit)].index)
+        except KeyError:
+            logging.info("WARNING: chrom %s does not exist in hg38 reference." % ref_chrom)
+            continue
 
     # extract sequences
     g = BedTool.from_dataframe(mlocs).remove_invalid()
