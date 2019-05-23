@@ -29,6 +29,7 @@ EXIT_FILE_IO_ERROR = 1
 
 # headers for GTF file
 GTF_COLS = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute']
+BED_EXT_COLS = ['chr', 'start', 'end', 'name', 'score', 'strand', 'thickStart', 'thickEnd', 'itemRgb']
 
 # only these variant types require modification to reference supertranscripts
 VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS']
@@ -243,18 +244,18 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
     contig_name = block_bed['chr'].values[0]
 
     gene_gtf = gtf[gtf.feature == 'gene']
-    gene_names, gene_starts, gene_ends, gene_strands = [], [], [], []
+    gene_names, gene_starts, gene_ends, gene_strands, gene_cols = [], [], [], [], []
     for gene in genes:
         gn = gene_gtf[gene_gtf.gene == gene]
         if len(gn) == 0:
-            logging.info('WARNING: gene %s not found in reference GTF' % gene)
+            logging.info('WARNING: gene %s not found in reference GTF.' % gene)
             continue
 
         start, end = gn.start.values[0] - 1, gn.end.values[0]
         start_block = blocks[np.logical_and(blocks.start <= start, blocks.end >= start)]
         end_block = blocks[np.logical_and(blocks.start <= end, blocks.end >= end)]
         if len(start_block) == 0 or len(end_block) == 0:
-            logging.info('WARNING: part of gene %s sits outside the reference blocks; skipping')
+            logging.info('WARNING: part of gene %s sits outside the reference blocks; skipping.')
             continue
         start_offset = start - min(start_block.start)
         end_offset = max(end_block.end) - end
@@ -273,15 +274,21 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
 
         gene_start = seg_starts[start_block.index[0]] + start_offset
         gene_end = seg_ends[end_block.index[0]] - end_offset
+
+        R, G, B = np.random.randint(0, 255, 3)
+        gene_col = '%s,%s,%s' % (R, G, B)
+
         gene_starts.append(gene_start)
         gene_ends.append(gene_end)
-
         gene_names.append(gene)
+        gene_cols.append(gene_col)
 
-    #TODO: add random colours for genes
     if len(gene_starts) > 0:
         bed = pd.DataFrame({'chr': contig_name, 'start': gene_starts, 'end': gene_ends,
-                            'name': gene_names, 'score': '.', 'strand': gene_strands})
+                            'name': gene_names, 'score': '.', 'strand': gene_strands,
+                            'thickStart': gene_starts, 'thickEnd': gene_ends,
+                            'itemRgb': gene_cols},
+                            columns=BED_EXT_COLS)
         bed.to_csv(st_gene_bed, mode='a', index=False, header=False, sep='\t')
 
 def write_gene(contig, blocks, block_seqs, args, genes, gtf):
@@ -317,7 +324,7 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     colours = bh.get_block_colours(blocks, names)
     bed = pd.DataFrame({'chr': contig_name, 'start': seg_starts, 'end': seg_ends,
                         'name': names, 'score': 0, 'strand': '.', 'thickStart': seg_starts,
-                        'thickEnd': seg_ends, 'itemRgb': colours})
+                        'thickEnd': seg_ends, 'itemRgb': colours}, columns=BED_EXT_COLS)
     bed.to_csv(st_block_bed, mode='a', index=False, header=False, sep='\t')
 
     # write supertranscript gene bed annotation
@@ -364,7 +371,7 @@ def get_block_info(args, genes, strands, gtf, genome_fasta):
             for gbs in gene_block_seqs:
                 block_seqs[gbs] = gene_block_seqs[gbs]
             if gene not in canonical_genes_written and gene.find('|') < 0:
-                logging.info('Writing canonical gene %s' % gene)
+                logging.info('Writing %s' % gene)
                 canonical_genes_written.append(gene)
                 write_gene('', bh.sort_blocks(blocks), block_seqs, args, [gene], gtf)
     return blocks.drop_duplicates(), block_seqs
@@ -398,11 +405,18 @@ def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
 
     if vtype in ['INS', 'UN'] and len(block_affected) > 0:
         if len(block_affected) > 1:
-            logging.info('WARNING: multiple blocks affected by variant; exons may not have been merged properly')
+            logging.info('''WARNING: multiple blocks affected by variant;
+                            Exons may not have been merged properly''')
         block = block_affected.reset_index().loc[0]
-        blocks, block_seqs = bh.split_block(blocks, block, block_seqs, start_pos, end_pos, seq, name, strand)
+        blocks, block_seqs = bh.split_block(blocks, block, block_seqs, start_pos,
+                                            end_pos, seq, name, strand)
     else:
-        blocks = blocks.append([{'chr': chrom, 'start': start_pos, 'end': end_pos, 'name': name, 'score': '.', 'strand': strand}])
+        blocks = blocks.append([{'chr': chrom,
+                                 'start': start_pos,
+                                 'end': end_pos,
+                                 'name': name,
+                                 'score': '.',
+                                 'strand': strand}])
         block_seqs['%s:%d-%d(%s)' % (chrom, start_pos, end_pos, strand)] = seq
     return blocks, block_seqs
 
@@ -436,14 +450,14 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
     if len(blocks) == 0 or len(blocks) != len(block_seqs):
         return
 
-    vcf_records = cvcf[cvcf[2].apply(lambda x: x in convars)] if len(convars) > 0 else pd.DataFrame()
+    vcf_records = cvcf[cvcf[2].isin(convars)] if len(convars) > 0 else pd.DataFrame()
     for idx,record in vcf_records.iterrows():
         gene = con_info[con_info.variant_id == record[2]].overlapping_genes.values[0]
         strand = [s for g,s in zip(genes, strands) if g == gene][0]
         blocks, block_seqs = add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand)
 
     contig = con_info.contig_id.values[0]
-    logging.info('Writing contig %s' % contig)
+    logging.info('Writing supertranscript for contig %s' % contig)
     blocks = bh.sort_blocks(blocks)
     blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
@@ -454,7 +468,9 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
     '''
     wrapper function for making ST annotation from contigs
     '''
-    contigs_to_annotate = contigs[contigs.variant_type.apply(lambda x: x in VARS_TO_ANNOTATE)]
+    annotate_contigs = np.logical_and(contigs.variant_of_interest,
+                                     contigs.variant_type.isin(VARS_TO_ANNOTATE))
+    contigs_to_annotate = contigs[annotate_contigs]
     contig_ids = np.unique(contigs_to_annotate.contig_id.values)
 
     con_infos = []
