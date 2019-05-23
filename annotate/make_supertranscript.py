@@ -384,14 +384,13 @@ def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
     vtype = re.search('SVTYPE=(\w+)', record[7])
     vtype = vtype.group(1) if vtype else 'UN'
 
-    seq = re.search('([ATGCNatgc]+)', record[4])
+    seq = re.findall('([ATGCNatgc]+)', record[4]) # TODO: make this parsing more robust
     if not seq:
         return blocks, block_seqs
-    seq = seq.group(1)
-    seq = seq[1:] if vtype == 'INS' else seq
+    seq = max(seq, key=len)
     seq = reverse_complement(seq) if strand == '-' else seq
 
-    blocksize = len(seq) if vtype in ['EE', 'NE', 'RI'] else 0
+    blocksize = len(seq) if vtype in ['EE', 'NE', 'RI', 'UN'] else 0
     start_pos = int(record[1])
     end_pos = int(start_pos) + 1 if blocksize == 0 else int(start_pos) + blocksize
 
