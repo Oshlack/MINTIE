@@ -25,9 +25,12 @@ from utils import init_logging, exit_with_error
 EXIT_FILE_IO_ERROR = 1
 
 MIN_NOVEL_EXON_SIZE = 20
+GAP_MIN = 7
 SPLICE_VARS = ['AS']
-SV_VARS = ['FUS', 'DEL', 'INS', 'UN']
+SV_VARS = ['DEL', 'INS', 'UN']
 NOVEL_BLOCKS = ['EE', 'NE']
+NOVEL_JUNCS = ['PNJ', 'NEJ']
+FUSIONS = ['FUS']
 
 def parse_args():
     '''
@@ -200,50 +203,59 @@ def get_contigs_to_keep(args):
 
     # test for valid splice motifs
     contigs['valid_motif'] = False
-    check_motifs = contigs.variant_type.apply(lambda x: x not in SPLICE_VARS + SV_VARS)
+    check_motifs = contigs.variant_type.isin(NOVEL_JUNCS + NOVEL_BLOCKS)
     if any(check_motifs.values):
         valid_motif_vars = get_valid_motif_vars(contigs[check_motifs], args)
-        contigs.loc[check_motifs, 'valid_motif'] = contigs.variant_id.apply(lambda x: x in valid_motif_vars)
+        contigs.loc[check_motifs, 'valid_motif'] = \
+            contigs.variant_id.isin(valid_motif_vars)
 
     # check whether exons contain matching novel/partial novel junctions
     spliced_exons = []
-    exons = contigs[contigs.variant_type.apply(lambda x: x in NOVEL_BLOCKS)]
-    novel_juncs = contigs[contigs.variant_type.apply(lambda x: x in ['PNJ', 'NEJ'])]
+    exons = contigs[contigs.variant_type.isin(NOVEL_BLOCKS)]
+    novel_juncs = contigs[contigs.variant_type.isin(NOVEL_JUNCS)]
     for idx,row in exons.iterrows():
         back_junc = novel_juncs.pos2 == row['pos1']
         front_junc = novel_juncs.pos1 == row['pos2']
         matching_juncs = novel_juncs[np.logical_or(back_junc, front_junc)]
         if len(matching_juncs) > 0:
             spliced_exons.append(row['variant_id'])
-    contigs['spliced_exon'] = contigs.variant_id.apply(lambda x: x in spliced_exons)
+    contigs['spliced_exon'] = contigs.variant_id.isin(spliced_exons)
 
     # novel exon contigs (spliced, valid motif and large variant sizew)
     is_novel_exon = np.logical_and(contigs.spliced_exon, contigs.valid_motif)
     is_novel_exon = np.logical_and(is_novel_exon, contigs.large_varsize)
     ne_vars = contigs[is_novel_exon].variant_id.values
 
+    # check whether TSVs meets size requirements
+    is_sv = contigs.variant_type.isin(SV_VARS)
+    is_fus = contigs.variant_type.isin(FUSIONS)
+    large_clip = np.logical_or(contigs.varsize >= GAP_MIN,
+                               contigs.contig_varsize >= GAP_MIN)
+    keep_sv = np.logical_and(large_clip, is_sv)
+    keep_sv = np.logical_or(keep_sv, is_fus)
+
     # check whether TSVs are within exons
     contigs['overlaps_exon'] = False
-    exonic_var = contigs.variant_type.apply(lambda x: x in ['PNJ', 'EE', 'AS'])
+    exonic_var = contigs.variant_type.isin(['PNJ', 'EE', 'AS'])
     contigs.loc[exonic_var, 'overlaps_exon'] = True
-    is_sv = contigs.variant_type.apply(lambda x: x in SV_VARS)
     gene_tree, ex_trees, ex_ref = ac.get_gene_lookup(args.tx_ref_file)
-    contigs.loc[is_sv, 'overlaps_exon'] = contigs[is_sv].apply(overlaps_exon, axis=1, args=(ex_trees,))
-    sv_vars = contigs[np.logical_and(is_sv, contigs.overlaps_exon)].variant_id.values
+    contigs.loc[keep_sv, 'overlaps_exon'] = contigs[keep_sv].apply(overlaps_exon,
+                                                                   axis=1, args=(ex_trees,))
+    sv_vars = contigs[np.logical_and(keep_sv, contigs.overlaps_exon)].variant_id.values
 
     # keep all splice vars
-    as_vars = contigs.variant_id.values[contigs.variant_type.apply(lambda x: x in SPLICE_VARS)]
+    as_vars = contigs.variant_id.values[contigs.variant_type.isin(SPLICE_VARS)]
 
     # ensure retained introns are spliced in some way (to distinguish from pre-mRNAs)
-    retained_intron = contigs.variant_type.apply(lambda x: x in ['RI'])
+    retained_intron = contigs.variant_type == 'RI'
     spliced_ri =  np.logical_and(retained_intron, contigs.is_contig_spliced.values)
     ri_vars = contigs[np.logical_and(spliced_ri, contigs.large_varsize)].variant_id.values
 
     # collate contigs to keep
     keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars]))
-    contigs['variant_of_interest'] = contigs.variant_id.apply(lambda x: x in keep_vars)
+    contigs['variant_of_interest'] = contigs.variant_id.isin(keep_vars)
     keep_contigs = contigs[contigs.variant_of_interest].contig_id.values
-    contigs = contigs[contigs.contig_id.apply(lambda x: x in keep_contigs)]
+    contigs = contigs[contigs.contig_id.isin(keep_contigs)]
     contigs.to_csv(args.contig_out_file, sep='\t', index=None)
 
     return(keep_contigs)
