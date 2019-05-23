@@ -362,7 +362,8 @@ def get_block_info(args, genes, strands, gtf, genome_fasta):
     blocks, block_seqs = pd.DataFrame(), {}
     for gene, strand in zip(genes, strands):
         if gene != '':
-            gene_blocks, gene_block_seqs = bedtool_helper.get_merged_exons(gene.split('|'), gtf, genome_fasta, strand)
+            gene_blocks, gene_block_seqs = bedtool_helper.get_merged_exons(gene.split('|'),
+                                                                           gtf, genome_fasta, strand)
             if len(gene_blocks) == 0:
                  return blocks, block_seqs
             if len(gene_blocks.drop_duplicates()) != len(gene_block_seqs):
@@ -390,7 +391,7 @@ def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
     seq = max(seq, key=len)
     seq = reverse_complement(seq) if strand == '-' else seq
 
-    blocksize = len(seq) if vtype in ['EE', 'NE', 'RI', 'UN'] else 0
+    blocksize = len(seq) if vtype in ['EE', 'NE', 'RI'] else 0
     start_pos = int(record[1])
     end_pos = int(start_pos) + 1 if blocksize == 0 else int(start_pos) + blocksize
 
