@@ -4,9 +4,7 @@
 # samples and create a matched transcript and EC matrix
 ########################################################
 
-import os
 import argparse
-import re
 import pandas as pd
 import numpy as np
 
@@ -25,56 +23,62 @@ def load_ecs(ec_file):
     equivalence class transcript IDs and counts
     '''
     ec_df = pd.read_csv(ec_file, header=None)
-    ec_df = ec_df[0].apply(lambda x: x.split('\t'))
-    transcripts = ec_df[ec_df.apply(len)==1][2:]
-    transcripts = [t for tx in transcripts for t in tx]
+    ecc = [x.split('\t') for x in ec_df[0].values if len(x.split('\t')) > 1]
+    ec_txs = ['|'.join(x[1:-1]) for x in ecc]
+    ec_counts = [int(x[-1]) for x in ecc]
 
-    # extract counts and transcript IDs
-    ec_df = ec_df[ec_df.apply(len)>1]
-    counts = ec_df.apply(lambda x: int(x[-1])).values
-    tx_ids = ec_df.apply(lambda x: x[1:-1]).values
+    return ec_txs, ec_counts
 
-    output = {'transcripts': transcripts,
-              'tx_ids': tx_ids,
-              'counts': counts}
-
-    return(output)
-
-def build_ec_dict(ec_dict, sample, name):
+def build_ec_matrix(sample_ecs, sample_names):
     '''
     Build equivalence class dictionary of
     counts using transcript IDs as keys
     '''
-    tx_ids = map(lambda x: '|'.join(list(map(str, x))), sample['tx_ids'])
-    for tx_id, count in zip(tx_ids, sample['counts']):
-        if tx_id not in ec_dict.keys():
-            ec_dict[tx_id] = {}
-        ec_dict[tx_id][name] = count
-    return(ec_dict)
+    ec_dicts = {}
+    for idx,sec in enumerate(sample_ecs):
+        ec_dict = {}
+        ec_list = [ec for ec in zip(sec[0], sec[1])]
+        ec_dict.update(ec_list)
+        ec_dicts[sample_names[idx]] = ec_dict
 
+    return pd.DataFrame(ec_dicts).fillna(0)
+
+def construct_dataframe(ec_matrix, tx_lookup):
+    '''
+    - split transcript IDs
+    - add EC names
+    - convert transcript IDs to transcript names
+    '''
+    tmp = [(eid, etxs.split('|')) for eid, etxs in enumerate(ec_matrix.index.values)]
+    tmp = [(tid, eid) for eid, tids in tmp for tid in tids]
+    tx_ids, ec_ids = zip(*tmp)
+
+    ec_names = ['ec%d' % (i+1) for i in ec_ids]
+    ec_matrix = ec_matrix.iloc[np.array(ec_ids)]
+    ec_matrix = ec_matrix.assign(ec_names=ec_names)
+    ec_matrix = ec_matrix.assign(tx_ids=tx_ids)
+
+    tx_names = [tx_lookup[tx_id] for tx_id in ec_matrix.tx_ids.map(int).values]
+    ec_matrix = ec_matrix.assign(transcript=tx_names)
+
+    return ec_matrix
+
+def get_tx_lookup(ec_file):
+    ec_file = ec_files[0]
+    ec_df = pd.read_csv(ec_file, header=None)
+    tx_lookup = [x for x in ec_df[0].values if len(x.split('\t')) == 1][2:]
+    return np.array(tx_lookup)
+
+print('Loading ECs...')
 sample_ecs = [load_ecs(file) for file in ec_files]
 sample_names = sample_names.split(',')
 
-# build EC dictionary
-ec_dict = {}
-for idx, sample_ec in enumerate(sample_ecs):
-    ec_dict = build_ec_dict(ec_dict, sample_ec, sample_names[idx])
+print('Building EC matrix...')
+ec_matrix = build_ec_matrix(sample_ecs, sample_names)
 
-# construct counts dataframe
-counts = pd.DataFrame(ec_dict).transpose().fillna(0)
-ec_names = ['ec%d' % (i+1) for i in range(len(counts))]
-counts = counts.assign(ec_names=ec_names)
-counts = counts.assign(tx_ids=counts.index.values)
+print('Constructing dataframe...')
+tx_lookup = get_tx_lookup(ec_files[0])
+ec_matrix = construct_dataframe(ec_matrix, tx_lookup)
 
-# split ECs with multiple transcript IDs into separate rows
-tmp = counts.tx_ids.str.split('|').apply(pd.Series, 1).stack()
-tmp.index = tmp.index.droplevel(-1)
-tmp = pd.DataFrame(tmp, columns=['tx_id'])
-tmp.name = 'tx_ids'
-counts = counts.join(tmp)
-del counts['tx_ids']
-
-# transcript IDs > names
-counts['transcript'] = np.array([sample_ecs[0]['transcripts'][tidx] for tidx in counts.tx_id.map(int).values])
-
-counts.to_csv(outfile, sep='\t', index=False)
+print('Writing output...')
+ec_matrix.to_csv(outfile, sep='\t', index=False)
