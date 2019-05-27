@@ -84,7 +84,7 @@ def get_merged_exons(genes, gtf, genome_fasta, strand):
         if type(genes) == str:
             blocks['name'] = genes
         else:
-            blocks['name'] = '|'.join(list(genes))
+            blocks['name'] = genes[0] # use first gene as representative
 
         blocks['score'] = '.'
         blocks['strand'] = strand

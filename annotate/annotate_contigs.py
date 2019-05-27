@@ -200,8 +200,8 @@ def get_overlapping_genes(read, ref_trees):
     try:
         ref_tree = ref_trees[read.reference_name]
     except KeyError:
-       logging.info('WARNING: reference chromosome %s (from read %s) was not found in supplied reference' %
-                    (read.reference_name, read.query_name))
+       logging.info('WARNING: reference chromosome %s (from read %s) was not found in supplied reference' \
+                    % (read.reference_name, read.query_name))
        return ''
 
     blocks = read.get_blocks()
@@ -223,7 +223,8 @@ def get_next_letter(last_letter):
         next_letter = list(string.ascii_letters)[next_letter_pos]
         return next_letter
     except IndexError:
-        logging.info('Cannot increment letter, non-ascii letter (%s) provided or next letter out of bounds' % last_letter)
+        logging.info('Cannot increment letter, non-ascii letter (%s) provided or next letter out of bounds' \
+                     % last_letter)
         return ''
 
 def get_next_id(qname):
@@ -251,7 +252,8 @@ def annotate_gaps(cv, read, ci_file):
 
         # position of variant on contig
         cv.cpos = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_CONTIG])
-        cv.cvsize = cv.vsize if read.cigar[gap_idx][0] == CIGAR['insertion'] else 0 # only insertions affect contig pos
+        cv.cvsize = cv.vsize if read.cigar[gap_idx][0] == CIGAR['insertion'] else 0
+        # ^ only insertions affect contig pos
 
         if cigar[0] == CIGAR['insertion']:
             cv.cvtype = 'INS'
@@ -271,7 +273,8 @@ def annotate_gaps(cv, read, ci_file):
         print(cv.vcf_output())
 
 def annotate_softclips(cv, read, ci_file):
-    sc_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] == CIGAR['soft-clip'] and clip[1] >= CLIP_MIN]
+    sc_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] == CIGAR['soft-clip'] \
+                                                             and clip[1] >= CLIP_MIN]
     for sc_idx in sc_idxs:
         cigar = read.cigar[sc_idx]
         cv.cvtype, cv.vsize, cv.cvsize = 'UN', int(cigar[1]), int(cigar[1])

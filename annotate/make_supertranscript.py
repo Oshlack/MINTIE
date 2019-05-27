@@ -213,7 +213,8 @@ def load_gtf_file(gtf_file):
     if len(gtf_pd[gtf_pd.feature == 'gene']) == 0:
         aggregator = {'start': lambda x: min(x),
                       'end': lambda x: max(x)}
-        gene_gtf_pd = gtf_pd.groupby(['chr', 'score', 'strand', 'frame', 'gene'], as_index=False, sort=False).agg(aggregator)
+        gene_gtf_pd = gtf_pd.groupby(['chr', 'score', 'strand', 'frame', 'gene'],
+                                     as_index=False, sort=False).agg(aggregator)
         gene_gtf_pd['source'] = 'ALL'
         gene_gtf_pd['attribute'] = ''
         gene_gtf_pd['feature'] = 'gene'
@@ -237,7 +238,7 @@ def load_vcf_file(contig_vcf):
 
 def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
     '''
-    write gene annotation to created supertranscript reference
+    Write gene locations on ST in bed file
     '''
     seg_starts, seg_ends = block_bed.start, block_bed.end
     seg_starts.index, seg_ends.index = blocks.index, blocks.index
@@ -245,7 +246,22 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
 
     gene_gtf = gtf[gtf.feature == 'gene']
     gene_names, gene_starts, gene_ends, gene_strands, gene_cols = [], [], [], [], []
+
+    # get gene strands from block annotation
+    # (inferring strand if gene not present)
+    block_strands = []
+    last_strand = blocks.strand.values[0]
     for gene in genes:
+        for gn in gene:
+            gn_match = blocks.name.str.contains(gn)
+            if any(gn_match):
+                last_strand = blocks[gn_match].strand.values[0]
+                block_strands.append(last_strand)
+            else:
+                block_strands.append(last_strand)
+    genes = [g for gn in genes for g in gn]
+
+    for gene, block_strand in zip(genes, block_strands):
         gn = gene_gtf[gene_gtf.gene == gene]
         if len(gn) == 0:
             logging.info('WARNING: gene %s not found in reference GTF.' % gene)
@@ -262,7 +278,6 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
 
         # relative to the ST, only assign antisense direction
         # if the reference strand differs from the block strand
-        block_strand = blocks[blocks.name.str.contains(gene)].strand.values[0]
         ref_strand = gn.strand.values[0]
         gene_strand = '+' if block_strand == ref_strand else '-'
         gene_strands.append(gene_strand)
@@ -310,9 +325,10 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     seg_starts = np.concatenate([[0], seg_ends[:-1]])
     segs = ['%s-%s' % (s1+1, s2) for s1,s2 in zip(seg_starts, seg_ends)]
 
-    genes = [gn for gn in genes if gn != '']
+    # for contig name, extract first gene as representative
+    gene_name = [gn.split('|')[0] for gn in genes if gn != '']
+    contig_name = '%s|%s|%s' % (sample, contig, ':'.join(gene_name)) if contig != '' else gene_name[0]
     names = blocks['name'].apply(lambda x: x.split('|')[-1]).values
-    contig_name = '%s|%s|%s' % (sample, contig, '|'.join(genes)) if contig != '' else genes[0]
     header = '>%s segs:%s names:%s\n' % (contig_name, ','.join(segs), ','.join(names))
 
     # write supertranscript fasta
@@ -328,6 +344,7 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     bed.to_csv(st_block_bed, mode='a', index=False, header=False, sep='\t')
 
     # write supertranscript gene bed annotation
+    genes = [gn.split('|') for gn in genes if gn != '']
     write_supertranscript_genes(blocks, bed, gtf, genes, st_gene_bed)
 
 def write_canonical_genes(args, contigs, gtf):
@@ -375,7 +392,7 @@ def get_block_info(args, genes, strands, gtf, genome_fasta):
                 logging.info('Writing %s' % gene)
                 canonical_genes_written.append(gene)
                 write_gene('', bh.sort_blocks(blocks), block_seqs, args, [gene], gtf)
-    return blocks.drop_duplicates(), block_seqs
+    return blocks, block_seqs
 
 def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
     '''
@@ -395,7 +412,7 @@ def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
     start_pos = int(record[1])
     end_pos = int(start_pos) + 1 if blocksize == 0 else int(start_pos) + blocksize
 
-    name = '|'.join(genes) + '|' + vtype
+    name = genes[0] + '|' + vtype
     block_affected = blocks[np.logical_and(blocks.start < start_pos, blocks.end > start_pos)]
 
     # minor coordinate correction for left-sided soft-clips
@@ -461,8 +478,12 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
     blocks = bh.sort_blocks(blocks)
     blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
-    genes = genes[0] + '|' + genes[1] if genes[1] != '' else genes[0]
-    write_gene(contig, blocks, block_seqs, args, genes.split('|'), gtf)
+    if genes[0] == genes[1]:
+        #TODO: handle case where genes need to be orientated differently
+        blocks = blocks.append(blocks, ignore_index=True)
+
+    genes = genes[0] + ':' + genes[1] if genes[1] != '' else genes[0]
+    write_gene(contig, blocks, block_seqs, args, genes.split(':'), gtf)
 
 def make_supertranscripts(args, contigs, cvcf, gtf):
     '''
