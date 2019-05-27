@@ -31,6 +31,13 @@ EXIT_FILE_IO_ERROR = 1
 BED_COLS = ['contig', 'start', 'end', 'name', 'score', 'strand', 'tStart', 'tEnd', 'itemRgb']
 SPLIT_LEN = 10 # split variants longer than this many base-pairs into two separate junctions to count reads for
 
+# DE filters
+MIN_LOGFC = 5
+
+# score variables
+VAR_WEIGHT = {'FUS': 1, 'INS': 1, 'DEL': 1, 'UN': 0.7, 'NE': 0.5, 'RI': 0.25, 'EE': 0.2, 'AS': 0.1}
+EXP_WEIGHT = 0.6 # weight of expression related components; rest of weight is variant type
+
 def parse_args():
     '''
     Parse command line arguments.
@@ -100,6 +107,7 @@ def add_de_info(contigs, de_results):
     de_results = de_results.rename(columns={'contig': 'contig_id', 'contigs': 'contigs_in_EC'})
     contigs = pd.merge(contigs, de_results, on='contig_id')
     contigs = contigs.drop(['genes'], axis=1)
+    contigs = contigs[contigs.logFC >= MIN_LOGFC]
     return contigs
 
 def get_st_alignments(contigs, st_bam):
@@ -107,7 +115,7 @@ def get_st_alignments(contigs, st_bam):
     st_alignment = []
     for contig in contigs.contig_id.values:
         aligned_conts = [read.reference_name for read in bam.fetch() if read.query_name == contig]
-        aligned_conts = ','.join(aligned_conts)
+        aligned_conts = ','.join(np.unique(aligned_conts))
         st_alignment.append(aligned_conts)
     contigs['ST_alignment'] = st_alignment
     return contigs
@@ -133,7 +141,38 @@ def get_crossing_reads(contigs, read_align, st_bed):
             st_blocks = make_junctions(st_blocks)
             rc = cjr.get_read_counts(read_align, st_blocks)
             contigs.loc[idx, 'crossing_reads'] = ','.join(rc.crossing.apply(str).values)
-            contigs.loc[idx, 'junctions'] = ','.join(['%s-%s' % (s,e) for s,e in zip(rc.start.values, rc.end.values)])
+            se = zip(rc.start.values, rc.end.values)
+            contigs.loc[idx, 'junctions'] = ','.join(['%s-%s' % (s,e) for s,e in se])
+    return contigs
+
+def add_score(contigs):
+    '''
+    add a score per variant based on:
+    - expression metrics
+        - p-value
+        - logFC
+        - reads in case EC(s)
+        - reads in control EC(s)
+    - variant type (based on pre-defined weights)
+    '''
+    top_pval = np.max(np.negative(np.log(contigs.PValue)))
+    pval_score = np.negative(np.log(contigs.PValue)) / top_pval
+
+    top_logFC = np.max(contigs.logFC)
+    logFC_score = contigs.logFC / top_logFC
+
+    case_read_score = contigs.case_reads / np.max(contigs.case_reads)
+    con_read_score = 1 - (contigs.controls_total_reads / np.max(contigs.controls_total_reads))
+
+    exp_score = 1/4 * np.array([pval_score, logFC_score, con_read_score, case_read_score])
+    exp_score = np.sum(exp_score, axis=0) * EXP_WEIGHT
+
+    tsv_score = np.array([VAR_WEIGHT[var] for var in contigs.variant_type]) * (1 - EXP_WEIGHT)
+
+    scores = exp_score + tsv_score
+    contigs['score'] = scores
+    contigs = contigs.sort_values(by='score', ascending=False)
+
     return contigs
 
 def main():
@@ -141,12 +180,16 @@ def main():
     init_logging(args.log)
 
     try:
-        contigs = pd.read_csv(args.contig_info, sep='\t')
-        de_results = pd.read_csv(args.de_results, sep='\t')
-        gene_filter = pd.read_csv(args.gene_filter, header=None) if args.gene_filter != '' else pd.DataFrame()
-        st_bed = pd.read_csv(args.st_bed, sep='\t', header=None, names=BED_COLS)
+        contigs = pd.read_csv(args.contig_info, sep='\t', low_memory=False)
+        de_results = pd.read_csv(args.de_results, sep='\t', low_memory=False)
+        gene_filter = pd.read_csv(args.gene_filter, header=None, low_memory=False) if args.gene_filter != '' \
+                                                                                   else pd.DataFrame()
+        st_bed = pd.read_csv(args.st_bed, sep='\t', header=None, names=BED_COLS, low_memory=False)
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
+
+    # consider only variants of interest
+    contigs = contigs[contigs.variant_of_interest]
 
     if args.var_filter:
         contigs = contigs[contigs.variant_type.apply(lambda v: v in args.var_filter).values]
@@ -159,6 +202,7 @@ def main():
     contigs = add_de_info(contigs, de_results)
     contigs = get_st_alignments(contigs, args.cont_align)
     contigs = get_crossing_reads(contigs, args.read_align, st_bed)
+    contigs = add_score(contigs)
 
     contigs.to_csv(sys.stdout, index=False, sep='\t', na_rep='NA')
 
