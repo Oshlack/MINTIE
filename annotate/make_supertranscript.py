@@ -16,6 +16,7 @@ import logging
 import os
 import bedtool_helper
 import tempfile
+import pickle
 import block_helper as bh
 from pybedtools import BedTool
 from Bio import SeqIO
@@ -183,6 +184,7 @@ def get_output_files(sample, outdir):
 
     return genome_bed, st_block_bed, st_gene_bed, st_fasta
 
+@cached('gene_gtf.pickle')
 def load_gtf_file(gtf_file):
     '''
     load in reference GTF file containing gene/exon info
@@ -286,7 +288,6 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
         tmp = start_block.copy()
         start_block = end_block if antisense else start_block
         end_block = tmp if antisense else end_block
-
         gene_start = seg_starts[start_block.index[0]] + start_offset
         gene_end = seg_ends[end_block.index[0]] - end_offset
 
@@ -297,6 +298,10 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
         gene_ends.append(gene_end)
         gene_names.append(gene)
         gene_cols.append(gene_col)
+
+    if len(genes) > 1 and genes[0] == genes[1]:
+        gene_starts[1] = gene_ends[0]
+        gene_ends[1] = gene_ends[1] * 2
 
     if len(gene_starts) > 0:
         bed = pd.DataFrame({'chr': contig_name, 'start': gene_starts, 'end': gene_ends,
@@ -327,7 +332,7 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
 
     # for contig name, extract first gene as representative
     gene_name = [gn.split('|')[0] for gn in genes if gn != '']
-    contig_name = '%s|%s|%s' % (sample, contig, ':'.join(gene_name)) if contig != '' else gene_name[0]
+    contig_name = '%s|%s|%s' % (sample, contig, '|'.join(gene_name)) if contig != '' else gene_name[0]
     names = blocks['name'].apply(lambda x: x.split('|')[-1]).values
     header = '>%s segs:%s names:%s\n' % (contig_name, ','.join(segs), ','.join(names))
 
@@ -336,8 +341,26 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     with open(st_fasta, 'a') as st_fasta:
         st_fasta.writelines([header, sequence])
 
+    # alternate block colour tracks in cases of fusion
+    if len(genes) > 1:
+        blocks = blocks.reset_index()
+        g1 = blocks.name.str.contains(genes[0]).values
+        g2 = blocks.name.str.contains(genes[1]).values if genes[1] != '' \
+                                                       else np.array([False] * len(blocks))
+        if genes[0].split('|')[0] == genes[1].split('|')[0]:
+            half_idx = int((len(blocks)/2))
+            g1 = blocks.index < half_idx
+            g2 = blocks.index >= half_idx
+
+        c1 = bh.get_block_colours(blocks[g1], names[g1])
+        c2 = bh.get_block_colours(blocks[g2], names[g2], alt=True)
+        colours = np.concatenate([c1, c2])
+
+        assert len(colours) == len(seg_starts)
+    else:
+        colours = bh.get_block_colours(blocks, names)
+
     # write supertranscript block bed annotation
-    colours = bh.get_block_colours(blocks, names)
     bed = pd.DataFrame({'chr': contig_name, 'start': seg_starts, 'end': seg_ends,
                         'name': names, 'score': 0, 'strand': '.', 'thickStart': seg_starts,
                         'thickEnd': seg_ends, 'itemRgb': colours}, columns=BED_EXT_COLS)
@@ -392,7 +415,7 @@ def get_block_info(args, genes, strands, gtf, genome_fasta):
                 logging.info('Writing %s' % gene)
                 canonical_genes_written.append(gene)
                 write_gene('', bh.sort_blocks(blocks), block_seqs, args, [gene], gtf)
-    return blocks, block_seqs
+    return blocks.drop_duplicates(), block_seqs
 
 def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
     '''
@@ -478,19 +501,20 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
     blocks = bh.sort_blocks(blocks)
     blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
-    if genes[0] == genes[1]:
-        #TODO: handle case where genes need to be orientated differently
+    if genes[0].split('|')[0] == genes[1].split('|')[0]:
+        #TODO: handle case where genes need to be orientated differently or
+        #cases where genes overlap in genes 1 and 2 but have a different genes
+        #in their respective leading positions
         blocks = blocks.append(blocks, ignore_index=True)
 
-    genes = genes[0] + ':' + genes[1] if genes[1] != '' else genes[0]
-    write_gene(contig, blocks, block_seqs, args, genes.split(':'), gtf)
+    write_gene(contig, blocks, block_seqs, args, genes, gtf)
 
 def make_supertranscripts(args, contigs, cvcf, gtf):
     '''
     wrapper function for making ST annotation from contigs
     '''
     annotate_contigs = np.logical_and(contigs.variant_of_interest,
-                                     contigs.variant_type.isin(VARS_TO_ANNOTATE))
+                                      contigs.variant_type.isin(VARS_TO_ANNOTATE))
     contigs_to_annotate = contigs[annotate_contigs]
     contig_ids = np.unique(contigs_to_annotate.contig_id.values)
 

@@ -11,8 +11,10 @@ import numpy as np
 VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS']
 
 # alternating colours for bed track, and variant colour
-COL1 = '189,189,189' #light grey
-COL2 = '99,99,99' # dark grey
+COL1 = '99,99,99' # dark grey
+COL2 = '189,189,189' #light grey
+COL3 = '49,130,189' # dark blue
+COL4 = '222,235,247' # light blue
 VARCOL = '255,255,153' # bright yellow
 
 def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, name, strand):
@@ -62,10 +64,10 @@ def sort_blocks(blocks):
             blocks = antisense_blocks
     return blocks
 
-def get_block_colours(blocks, names):
+def get_block_colours(blocks, names, alt=False):
     colours = np.empty((len(blocks),), dtype='U50')
-    colours[::2] = COL1
-    colours[1::2] = COL2
+    colours[::2] = COL1 if not alt else COL3
+    colours[1::2] = COL2 if not alt else COL4
     novel_vars = [x in VARS_TO_ANNOTATE for x in names]
     colours[novel_vars] = VARCOL
     return colours
