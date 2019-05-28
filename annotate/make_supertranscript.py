@@ -33,7 +33,7 @@ GTF_COLS = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'fram
 BED_EXT_COLS = ['chr', 'start', 'end', 'name', 'score', 'strand', 'thickStart', 'thickEnd', 'itemRgb']
 
 # only these variant types require modification to reference supertranscripts
-VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS']
+VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS','DEL']
 
 # regex masks
 STRAND = '\(([+-])\)'
@@ -434,6 +434,8 @@ def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
     blocksize = len(seq) if vtype in ['EE', 'NE', 'RI'] else 0
     start_pos = int(record[1])
     end_pos = int(start_pos) + 1 if blocksize == 0 else int(start_pos) + blocksize
+    end_pos = int(start_pos) + (len(record[3]) - len(seq)) if vtype == 'DEL' \
+                                                           else end_pos
 
     name = genes[0] + '|' + vtype
     block_affected = blocks[np.logical_and(blocks.start < start_pos, blocks.end > start_pos)]
@@ -443,7 +445,7 @@ def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
     start_pos = (start_pos - 1) if left_sc else start_pos
     end_pos = (end_pos - 1) if left_sc else end_pos
 
-    if vtype in ['INS', 'UN'] and len(block_affected) > 0:
+    if vtype in ['INS', 'UN', 'DEL'] and len(block_affected) > 0:
         if len(block_affected) > 1:
             logging.info('''WARNING: multiple blocks affected by variant;
                             Exons may not have been merged properly''')
@@ -522,6 +524,7 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
     for contig in contig_ids:
         con_info = contigs_to_annotate[contigs_to_annotate.contig_id == contig]
         contig_to_supertranscript(con_info, args, cvcf, gtf)
+
 
 def main():
     args = parse_args()

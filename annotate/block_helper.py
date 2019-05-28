@@ -8,7 +8,7 @@ Portability : POSIX
 '''
 import numpy as np
 
-VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS']
+VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS','DEL']
 
 # alternating colours for bed track, and variant colour
 COL1 = '99,99,99' # dark grey
