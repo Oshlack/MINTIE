@@ -24,21 +24,22 @@ def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, name, strand):
     '''
     blocks = blocks[blocks.index!=block['index']]
     ref_seq = block_seqs['%s:%d-%d(%s)' % (block['chr'], block.start, block.end, strand)]
-    left_seq = ref_seq[:gpos1-block.start]
-    right_seq = ref_seq[gpos2-block.start-1:]
+    end = -1 if 'DEL' else len(ref_seq) - 1
+    left_seq = ref_seq[1:gpos1-block.start]
+    right_seq = ref_seq[gpos2-block.start-1:end]
 
     block_seqs['%s:%d-%d(%s)' % (block['chr'], gpos1, gpos2, strand)] = str(seq)
     var_block = [{'chr': block['chr'], 'start': gpos1, 'end': gpos2, \
                   'name': name, 'score': '.', 'strand': strand}]
     blocks = blocks.append(var_block, ignore_index=True)
 
-    if gpos1 - block.start != 0:
+    if gpos1 - block.start > 0:
         block_seqs['%s:%d-%d(%s)' % (block['chr'], block.start, gpos1, strand)] = left_seq
         left_block = [{'chr': block['chr'], 'start': block.start, 'end': gpos1, \
                        'name': block['name'], 'score': '.', 'strand': strand}]
         blocks = blocks.append(left_block, ignore_index=True)
 
-    if block.end - gpos2 != 0:
+    if block.end - gpos2 > 0:
         block_seqs['%s:%d-%d(%s)' % (block['chr'], gpos2, block.end, strand)] = right_seq
         right_block = [{'chr': block['chr'], 'start': gpos2, 'end': block.end, \
                         'name': block['name'], 'score': '.', 'strand': strand}]

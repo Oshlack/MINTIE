@@ -17,12 +17,12 @@ import os
 import bedtool_helper
 import tempfile
 import pickle
+import ipdb
 import block_helper as bh
 from pybedtools import BedTool
 from Bio import SeqIO
 from argparse import ArgumentParser
 from utils import cached, init_logging, exit_with_error
-import ipdb
 
 pd.set_option("mode.chained_assignment", None)
 
@@ -98,8 +98,6 @@ def get_gene(attribute):
     '''
     extract gene name from a single GTF attribute string
     '''
-#    re_gene = re.search('gene_name "([\w\-\.\/]+)"', attribute)
-#    gene = re_gene.group(1) if re_gene else ''
     try:
         return attribute['gene_name']
     except KeyError:
@@ -159,18 +157,6 @@ def get_strand_info(con_info, gstrands):
             return gstrands
     else:
         return gstrands
-
-#def get_sorted_blocks(blocks, genes):
-#    '''
-#    sort blocks within each gene, but keep gene order consistent
-#    '''
-#    gene_blocks = blocks.name.apply([lambda x: x.split('|')[0]][0]).values
-#    gene_blocks = blocks.name.apply(lambda x: '|'.join(x.split('|')[:-1])).values
-#    sorted_blocks = pd.DataFrame()
-#    for gene in genes:
-#        gblocks = bh.sort_blocks(blocks[gene_blocks == gene])
-#        sorted_blocks = sorted_blocks.append(gblocks, ignore_index=True)
-#    return sorted_blocks
 
 #=====================================================================================================
 # Read/write functions
@@ -429,6 +415,7 @@ def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
     if not seq:
         return blocks, block_seqs
     seq = max(seq, key=len)
+    seq = seq[1:] if vtype in ['INS', 'UN', 'DEL'] else seq
     seq = reverse_complement(seq) if strand == '-' else seq
 
     blocksize = len(seq) if vtype in ['EE', 'NE', 'RI'] else 0
@@ -524,7 +511,6 @@ def make_supertranscripts(args, contigs, cvcf, gtf):
     for contig in contig_ids:
         con_info = contigs_to_annotate[contigs_to_annotate.contig_id == contig]
         contig_to_supertranscript(con_info, args, cvcf, gtf)
-
 
 def main():
     args = parse_args()
