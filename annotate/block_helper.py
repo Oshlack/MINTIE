@@ -8,7 +8,22 @@ Portability : POSIX
 '''
 import numpy as np
 
+CIGAR = {'match': 0,
+         'insertion': 1,
+         'deletion': 2,
+         'skipped': 3,
+         'soft-clip': 4,
+         'hard-clip': 5,
+         'silent_deletion': 6}
+
 VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS','DEL']
+GAPS = [CIGAR[c] for c in ['insertion', 'deletion', 'silent_deletion']]
+CLIPS = [CIGAR[c] for c in ['soft-clip', 'hard-clip']]
+
+# any cigar criteria that is >0 bp on an aligned contig
+AFFECT_CONTIG = [CIGAR[c] for c in ['match', 'insertion', 'soft-clip', 'hard-clip']]
+# any cigar criteria that is >0 bp on the reference genome
+AFFECT_REF = [CIGAR[c] for c in ['match', 'deletion']]
 
 # alternating colours for bed track, and variant colour
 COL1 = '99,99,99' # dark grey
@@ -19,7 +34,7 @@ VARCOL = '255,255,153' # bright yellow
 
 def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, name, strand):
     '''
-    split a sequence block at the gpos location, separating
+    Split a sequence block at the gpos location, separating
     into left and right blocks and sequences (if necessary)
     '''
     blocks = blocks[blocks.index!=block['index']]
@@ -49,7 +64,7 @@ def split_block(blocks, block, block_seqs, gpos1, gpos2, seq, name, strand):
 
 def sort_blocks(blocks):
     '''
-    sort blocks in ascending order if on the sense strand,
+    Sort blocks in ascending order if on the sense strand,
     and descending order if on the antisense strand
     '''
     blocks = blocks.drop_duplicates().sort_values(by=['chr','start','end']).reset_index(drop=True)
@@ -66,6 +81,9 @@ def sort_blocks(blocks):
     return blocks
 
 def get_block_colours(blocks, names, alt=False):
+    '''
+    Get alternating colours for supertranscript block bed
+    '''
     colours = np.empty((len(blocks),), dtype='U50')
     colours[::2] = COL1 if not alt else COL3
     colours[1::2] = COL2 if not alt else COL4
@@ -73,3 +91,28 @@ def get_block_colours(blocks, names, alt=False):
     colours[novel_vars] = VARCOL
     return colours
 
+def is_novel_block(block, chr_ref):
+    '''
+    Checks a contig's sequence blocks and returns
+    false if the block matches (or is contained)
+    within a referenced exon, and true otherwise
+    '''
+    match = chr_ref[np.logical_and(block[0] >= chr_ref.start, block[1] <= chr_ref.end)]
+    block_size = block[1] - block[0]
+    return len(match) == 0 and block_size > CLIP_MIN
+
+def get_block_sequence(read, block_idx):
+    '''
+    Return query and reference sequence of
+    specified block from contig read
+    '''
+    qseq = read.query_sequence
+    rseq = read.get_reference_sequence()
+
+    cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_CONTIG and c != CIGAR['hard-clip']])
+    cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_CONTIG and c != CIGAR['hard-clip']])
+
+    rpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_REF])
+    rpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_REF])
+
+    return qseq[cpos1:cpos2], rseq[rpos1:rpos2]

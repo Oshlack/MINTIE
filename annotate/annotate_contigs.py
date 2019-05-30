@@ -20,6 +20,7 @@ import re
 import logging
 import sys
 import string
+import block_helper as bh
 from argparse import ArgumentParser
 from intervaltree import Interval, IntervalTree
 from cv_vcf import CrypticVariant, VCF
@@ -60,7 +61,6 @@ AFFECT_REF = [CIGAR[c] for c in ['match', 'deletion']]
 # read processing record
 record = {}
 
-
 def parse_args():
     '''
     Parse command line arguments.
@@ -100,6 +100,32 @@ def parse_args():
                         help='''Transcriptiome GTF reference file.''')
     return parser.parse_args()
 
+#=====================================================================================================
+# Utility functions
+#=====================================================================================================
+
+def get_next_letter(last_letter):
+    '''
+    Convenience function to get next letter in alphabet
+    '''
+    try:
+        next_letter_pos = np.where(np.array(list(string.ascii_letters)) == last_letter)[0][0]+1
+        next_letter = list(string.ascii_letters)[next_letter_pos]
+        return next_letter
+    except IndexError:
+        raise IndexError('Cannot increment letter for variant ID (%s).' \
+            % last_letter + 'There may be too many variants on the given contig.')
+
+def get_next_id(qname):
+    if qname not in record:
+        vid = qname + 'a'
+        record[qname] = [vid]
+        return vid
+    else:
+        vid = qname + get_next_letter(record[qname][-1][-1])
+        record[qname].append(vid)
+        return vid
+
 def get_gene(attribute):
     re_gene = re.search('gene_name "([\w\-\.\/]+)"', attribute)
     gene = re_gene.group(1) if re_gene else ''
@@ -114,44 +140,56 @@ def get_gene_lookup(tx_ref_file):
     chromosome, start and ends for all exons.
     '''
     ref_trees, ex_ref_out = None, None
-    if tx_ref_file != '':
-        logging.info('Generating lookup for genes...')
+    if tx_ref_file == '':
+        return ref_trees, ex_trees, ex_ref_out
 
-        #TODO: standardise with make_supertranscript for gtf handling
-        tx_ref = pd.read_csv(tx_ref_file, comment='#', sep='\t', header=None)
-        tx_ref['gene'] = tx_ref[8].apply(lambda x: get_gene(x))
-        aggregator = {3: lambda x: min(x),
-                      4: lambda x: max(x)}
-        gn_ref = tx_ref.groupby([0, 'gene'], as_index=False, sort=False).agg(aggregator)
-        gn_ref = gn_ref[[0, 3, 4, 'gene']]
-        gn_ref.columns = ['chrom', 'start', 'end', 'gene']
-        gn_ref = gn_ref.drop_duplicates()
+    logging.info('Generating lookup for genes...')
+    #TODO: standardise with make_supertranscript for gtf handling
+    tx_ref = pd.read_csv(tx_ref_file, comment='#', sep='\t', header=None)
+    tx_ref['gene'] = tx_ref[8].apply(lambda x: get_gene(x))
+    aggregator = {3: lambda x: min(x),
+                  4: lambda x: max(x)}
+    gn_ref = tx_ref.groupby([0, 'gene'], as_index=False, sort=False).agg(aggregator)
+    gn_ref = gn_ref[[0, 3, 4, 'gene']]
+    gn_ref.columns = ['chrom', 'start', 'end', 'gene']
+    gn_ref = gn_ref.drop_duplicates()
 
-        # start/end coordinates for gene matching
-        ref_trees = {}
-        chroms = np.unique(gn_ref.chrom.values)
-        for chrom in chroms:
-            chr_ref = gn_ref[gn_ref.chrom == chrom].drop_duplicates()
-            ref_tree = IntervalTree()
-            for s,e,g in zip(chr_ref['start'].values, chr_ref['end'].values, chr_ref['gene'].values):
-                ref_tree.addi(s-1, e, g)
-            ref_trees[chrom] = ref_tree
+    # start/end coordinates for gene matching
+    ref_trees = {}
+    chroms = np.unique(gn_ref.chrom.values)
+    for chrom in chroms:
+        chr_ref = gn_ref[gn_ref.chrom == chrom].drop_duplicates()
+        ref_tree = IntervalTree()
+        for s,e,g in zip(chr_ref['start'].values, chr_ref['end'].values, chr_ref['gene'].values):
+            ref_tree.addi(s-1, e, g)
+        ref_trees[chrom] = ref_tree
 
-        # merged exon boundaries for block annotation
-        ex_ref = tx_ref[tx_ref[2] == 'exon']
-        ex_ref_out = pd.DataFrame()
-        ex_trees = {}
-        for chrom in chroms:
-            chr_ref = ex_ref[ex_ref[0] == chrom].drop_duplicates()
-            ex_tree = IntervalTree()
-            for s,e in zip(chr_ref[3].values, chr_ref[4].values):
-                ex_tree.addi(s-1, e)
-            ex_tree.merge_overlaps()
-            tmp = pd.DataFrame([(chrom, tree[0], tree[1]) for tree in ex_tree],
-                               columns=['chrom', 'start', 'end'])
-            ex_ref_out = pd.concat([ex_ref_out, tmp], ignore_index=True)
-            ex_trees[chrom] = ex_tree
+    # merged exon boundaries for block annotation
+    ex_ref = tx_ref[tx_ref[2] == 'exon']
+    ex_ref_out = pd.DataFrame()
+    ex_trees = {}
+    for chrom in chroms:
+        chr_ref = ex_ref[ex_ref[0] == chrom].drop_duplicates()
+        ex_tree = IntervalTree()
+        for s,e in zip(chr_ref[3].values, chr_ref[4].values):
+            ex_tree.addi(s-1, e)
+        ex_tree.merge_overlaps()
+        tmp = pd.DataFrame([(chrom, tree[0], tree[1]) for tree in ex_tree],
+                           columns=['chrom', 'start', 'end'])
+        ex_ref_out = pd.concat([ex_ref_out, tmp], ignore_index=True)
+        ex_trees[chrom] = ex_tree
+
     return ref_trees, ex_trees, ex_ref_out
+
+def get_chr_ref(read, ex_ref):
+    '''
+    Get all exons on the chromosome the read is aligned to
+    '''
+    chr_ref = ex_ref[ex_ref.chrom == read.reference_name]
+    if len(chr_ref) == 0:
+       logging.info('WARNING: reference chromosome %s (from read %s) was not found in supplied reference' %
+                    (read.reference_name, read.query_name))
+    return chr_ref
 
 def get_juncs(tx):
     '''
@@ -196,6 +234,28 @@ def get_junc_lookup(junc_file):
 
     return (juncs, locs)
 
+def get_tx_juncs(read):
+    '''
+    Get all junctions from the given contig
+    '''
+    tx_juncs = []
+    unknown_juncs = []
+    starts, ends = zip(*read.get_blocks())
+
+    # merge adjacent 'junctions' (i.e. insertions)
+    juncs = IntervalTree()
+    for s, e in zip(starts, ends):
+        juncs.addi(s, e)
+    juncs.merge_overlaps(strict=False)
+    starts = [junc[0] for junc in juncs]
+    ends = [junc[1] for junc in juncs]
+
+    chroms = [read.reference_name] * (len(starts)-1)
+    tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
+    tx_juncs = [junc for junc in tx_juncs if (junc[2] - junc[1]) > GAP_MIN]
+
+    return tx_juncs
+
 def get_overlapping_genes(read, ref_trees):
     try:
         ref_tree = ref_trees[read.reference_name]
@@ -214,28 +274,9 @@ def get_overlapping_genes(read, ref_trees):
 
     return('|'.join(genes))
 
-def get_next_letter(last_letter):
-    '''
-    Convenience function to get next letter in alphabet
-    '''
-    try:
-        next_letter_pos = np.where(np.array(list(string.ascii_letters)) == last_letter)[0][0]+1
-        next_letter = list(string.ascii_letters)[next_letter_pos]
-        return next_letter
-    except IndexError:
-        logging.info('Cannot increment letter, non-ascii letter (%s) provided or next letter out of bounds' \
-                     % last_letter)
-        return ''
-
-def get_next_id(qname):
-    if qname not in record:
-        vid = qname + 'a'
-        record[qname] = [vid]
-        return vid
-    else:
-        vid = qname + get_next_letter(record[qname][-1][-1])
-        record[qname].append(vid)
-        return vid
+#=====================================================================================================
+# Annotation functions
+#=====================================================================================================
 
 def annotate_gaps(cv, read, ci_file):
     '''
@@ -297,47 +338,11 @@ def annotate_softclips(cv, read, ci_file):
         CrypticVariant.write_contig_info(ci_file, cv)
         print(cv.vcf_output())
 
-def get_chr_ref(read, ex_ref):
-    '''
-    get exon coordinates for a given read's alignment chromosome
-    '''
-    chr_ref = ex_ref[ex_ref.chrom == read.reference_name]
-    if len(chr_ref) == 0:
-       logging.info('WARNING: reference chromosome %s (from read %s) was not found in supplied reference' %
-                    (read.reference_name, read.query_name))
-    return chr_ref
-
-def is_novel_block(block, chr_ref):
-    '''
-    checks a read's sequence blocks and returns
-    false if the block matches (or is contained)
-    within a referenced exon, and true otherwise
-    '''
-    match = chr_ref[np.logical_and(block[0] >= chr_ref.start, block[1] <= chr_ref.end)]
-    block_size = block[1] - block[0]
-    return len(match) == 0 and block_size > CLIP_MIN
-
-def get_block_sequence(read, block_idx):
-    '''
-    return query and reference sequence of
-    specified block
-    '''
-    qseq = read.query_sequence
-    rseq = read.get_reference_sequence()
-
-    cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_CONTIG and c != CIGAR['hard-clip']])
-    cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_CONTIG and c != CIGAR['hard-clip']])
-
-    rpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_REF])
-    rpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_REF])
-
-    return qseq[cpos1:cpos2], rseq[rpos1:rpos2]
-
 def annotate_block_right(cv, read, cpos, olapping, block, block_idx):
     '''
     extended exon to the *right* of the reference sequence
     '''
-    qseq, rseq = get_block_sequence(read, block_idx)
+    qseq, rseq = bh.get_block_sequence(read, block_idx)
     seq_left_pos = block[1] - max(olapping.end)
     cv.ref, cv.alt = rseq[(-seq_left_pos):], ']' + qseq[(-seq_left_pos):]
     cv.cpos, cv.pos = cpos, max(olapping.end) + 1
@@ -348,7 +353,7 @@ def annotate_block_left(cv, read, cpos, olapping, block, block_idx):
     '''
     extended exon is to the *left* of the reference sequence
     '''
-    qseq, rseq = get_block_sequence(read, block_idx)
+    qseq, rseq = bh.get_block_sequence(read, block_idx)
     seq_right_pos = min(olapping.start) - block[0]
     cv.ref, cv.alt = rseq[:seq_right_pos], qseq[:seq_right_pos] + '['
     cv.cpos, cv.pos = cpos, min(olapping.start) - len(cv.ref) + 1
@@ -360,7 +365,7 @@ def annotate_blocks(cv, read, chr_ref, ci_file):
     Annotate any sequence that is outside of exonic regions
     '''
     cv.parid = '.' # blocks don't have pairs
-    novel_blocks = [(idx, block) for idx, block in cv.blocks if is_novel_block(block, chr_ref)]
+    novel_blocks = [(idx, block) for idx, block in cv.blocks if bh.is_novel_block(block, chr_ref)]
     for block_idx, block in novel_blocks:
         cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_CONTIG])
         cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_CONTIG])
@@ -374,7 +379,7 @@ def annotate_blocks(cv, read, chr_ref, ci_file):
         if len(left) > 0 and len(right) > 0:
             # retained intron
             cv.cvtype = 'RI'
-            qseq, rseq = get_block_sequence(read, block_idx)
+            qseq, rseq = bh.get_block_sequence(read, block_idx)
             seq_right_pos = block[1] - min(left.start)
             seq_left_pos = max(right.end) - block[0]
 
@@ -409,7 +414,7 @@ def annotate_blocks(cv, read, chr_ref, ci_file):
             cv.vid = get_next_id(read.query_name)
         else:
             # block does not cross any annotation
-            qseq, rseq = get_block_sequence(read, block_idx)
+            qseq, rseq = bh.get_block_sequence(read, block_idx)
             cv.ref, cv.alt = rseq, '[' + qseq + ']'
             cv.pos, cv.cvtype = block[0], 'NE'
             cv.cpos = cpos1
@@ -526,24 +531,6 @@ def annotate_juncs(cv, read, locs, novel_juncs, ci_file):
         print(cp.vcf_output())
         CrypticVariant.write_contig_info(ci_file, cv, cp)
 
-def get_tx_juncs(read):
-    tx_juncs = []
-    unknown_juncs = []
-    starts, ends = zip(*read.get_blocks())
-
-    # merge adjacent 'junctions' (i.e. insertions)
-    juncs = IntervalTree()
-    for s, e in zip(starts, ends):
-        juncs.addi(s, e)
-    juncs.merge_overlaps(strict=False)
-    starts = [junc[0] for junc in juncs]
-    ends = [junc[1] for junc in juncs]
-
-    chroms = [read.reference_name] * (len(starts)-1)
-    tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
-    tx_juncs = [junc for junc in tx_juncs if (junc[2] - junc[1]) > GAP_MIN]
-    return tx_juncs
-
 def annotate_single_read(args, read, juncs, ex_ref, ref_trees, outbam=None, genes=''):
     '''
     Annotate insertions, deletions and soft-clips on a single read
@@ -566,7 +553,7 @@ def annotate_single_read(args, read, juncs, ex_ref, ref_trees, outbam=None, gene
 
     # check for novel blocks
     chr_ref = get_chr_ref(read, ex_ref)
-    has_novel_blocks = any([is_novel_block(block, chr_ref) for block in read.get_blocks()])
+    has_novel_blocks = any([bh.is_novel_block(block, chr_ref) for block in read.get_blocks()])
 
     if has_gaps or has_scs or has_novel_juncs or has_novel_blocks:
         cv = CrypticVariant().from_read(read)
