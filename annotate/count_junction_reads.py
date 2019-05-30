@@ -11,6 +11,7 @@ import pysam
 import os
 import re
 import ipdb
+import logging
 
 rc_dtype = [('contig', '<U150'),
             ('start', 'int64'),
