@@ -83,7 +83,7 @@ def parse_args():
                         metavar='VAR_FILTER',
                         type=str,
                         nargs='+',
-                        help='''Variants to keep.''')
+                        help='''Types of variant to keep.''')
 
     return parser.parse_args()
 
@@ -131,12 +131,12 @@ def make_junctions(st_blocks):
     return st_blocks[st_blocks.end - st_blocks.start <= SPLIT_LEN]
 
 def get_crossing_reads(contigs, read_align, st_bed):
-    #TODO: handle fusions and deletions
+    #TODO: handle fusions
     contigs['crossing_reads'] = np.float('nan')
     contigs['junctions'] = np.float('nan')
     for idx,row in contigs.iterrows():
-        st = row['ST_alignment']
-        st_blocks = st_bed[np.logical_and(st_bed.contig == st, st_bed['name'] == row.variant_type)]
+        st = '%s\|%s' % (row['sample'].split('_')[0], row['contig_id'])
+        st_blocks = st_bed[st_bed.contig.str.contains(st)]
         if len(st_blocks) > 0:
             st_blocks = make_junctions(st_blocks)
             rc = cjr.get_read_counts(read_align, st_blocks)
