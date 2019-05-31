@@ -1,165 +1,175 @@
 dedupe = {
    from("*.gz"){
-      output.dir=branch.name
-      produce(branch.name+'.1.fastq.gz',branch.name+'.2.fastq.gz'){
+      def sample_name = branch.name.split('_')[0]
+      output.dir = sample_name
+      produce(sample_name+'.1.fastq.gz',sample_name+'.2.fastq.gz'){
          exec """
-             gunzip -c $input1.gz > $branch.name/temp1.fastq ;
-             gunzip -c $input2.gz > $branch.name/temp2.fastq ;
-         echo $branch.name/temp1.fastq > $branch.name/fastq.list ;
-         echo $branch.name/temp2.fastq >> $branch.name/fastq.list ;
-         echo "Reads before:" ; wc -l $branch.name/temp1.fastq ;
-         $fastq_dedupe -i $branch.name/fastq.list -o $output1.prefix -p $output2.prefix ;
+         gunzip -c $input1.gz > $sample_name/temp1.fastq ;
+         gunzip -c $input2.gz > $sample_name/temp2.fastq ;
+         echo $sample_name/temp1.fastq > $sample_name/fastq.list ;
+         echo $sample_name/temp2.fastq >> $sample_name/fastq.list ;
+         echo "Reads before:" ; wc -l $sample_name/temp1.fastq ;
+         $fastq_dedupe -i $sample_name/fastq.list -o $output1.prefix -p $output2.prefix ;
          echo "Reads after:" ; wc -l $output1.prefix ;
          gzip $output1.prefix $output2.prefix ;
-         rm $branch.name/fastq.list $branch.name/temp1.fastq $branch.name/temp2.fastq
+         rm $sample_name/fastq.list $sample_name/temp1.fastq $sample_name/temp2.fastq
       """, "dedupe"
       }
    }
 }
 
 SOAPassemble = {
-     output.dir=branch.name ;
-     def Ks = Ks.split(',').join(' ')
-     def trimmomatic = trimmomatic.split('\\.')[-1] == 'jar' ? 'java -jar ' + trimmomatic : trimmomatic
-     produce(branch.name+'_denovo_filt.fasta', branch.name+'.fasta'){
-         exec """
-             $trimmomatic PE -threads $threads -phred$scores $input1.gz $input2.gz
-                 $branch.name/trim1.fastq /dev/null $branch.name/trim2.fastq /dev/null
-                 LEADING:$minQScore TRAILING:$minQScore MINLEN:$min_read_length ;
+    def sample_name = branch.name.split('_')[0]
+    def Ks = Ks.split(',').join(' ')
+    def trimmomatic = trimmomatic.split('\\.')[-1] == 'jar' ? 'java -jar ' + trimmomatic : trimmomatic
+    output.dir = sample_name
+    produce(sample_name+'_denovo_filt.fasta', sample_name+'.fasta'){
+        exec """
+        $trimmomatic PE -threads $threads -phred$scores $input1.gz $input2.gz
+            $sample_name/trim1.fastq /dev/null $sample_name/trim2.fastq /dev/null
+            LEADING:$minQScore TRAILING:$minQScore MINLEN:$min_read_length ;
 
-         if [ ! -d $output.dir/SOAPassembly ]; then mkdir $output.dir/SOAPassembly ; fi ;
-         cd $branch.name/SOAPassembly ;
+        if [ ! -d $output.dir/SOAPassembly ]; then mkdir $output.dir/SOAPassembly ; fi ;
+        cd $sample_name/SOAPassembly ;
 
-         echo \"max_rd_len=\$max_read_length\" > config.config ;
-         echo -e \"[LIB]\\nq1=../trim1.fastq\\nq2=../trim2.fastq\" >> config.config ;
-         if [ -e SOAP.fasta ]; then rm SOAP.fasta ; fi ;
-         for k in $Ks ; do
-           $soap pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
-           $soap contig -g outputGraph_\$k ;
-           cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
-         done ;
-         cd ../../ ;
-         $fasta_dedupe in=$branch.name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true |
-         fasta_formatter |
-         awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }'
-         > $output1 ;
-         cat $output1 $trans_fasta > $output2 ;
-         rm $branch.name/trim1.fastq $branch.name/trim2.fastq ;
-     ""","SOAPassemble"
-     }
+        echo \"max_rd_len=$max_read_length\" > config.config ;
+        echo -e \"[LIB]\\nq1=../trim1.fastq\\nq2=../trim2.fastq\" >> config.config ;
+        if [ -e SOAP.fasta ]; then rm SOAP.fasta ; fi ;
+        for k in $Ks ; do
+        $soap pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
+        $soap contig -g outputGraph_\$k ;
+        cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
+        done ;
+        cd ../../ ;
+        $fasta_dedupe in=$sample_name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true |
+        fasta_formatter |
+        awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }'
+        > $output1 ;
+        cat $output1 $trans_fasta > $output2 ;
+        rm $sample_name/trim1.fastq $sample_name/trim2.fastq ;
+        ""","SOAPassemble"
+    }
 }
 
 create_salmon_index = {
-   def salmon_index=branch.name+"/all_fasta_index"
-   output.dir=branch.name+"/all_fasta_index"
-   produce('sa.bin','hash.bin','rsd.bin'){
-      exec """
+    def sample_name = branch.name.split('_')[0]
+    def salmon_index = sample_name + "/all_fasta_index"
+    output.dir = sample_name + "/all_fasta_index"
+    produce('sa.bin','hash.bin','rsd.bin'){
+        exec """
          $salmon index -t $input2 -i $salmon_index ;
-     """
-   }
+         """
+    }
 }
 
 run_salmon = {
-   def workingDir = System.getProperty("user.dir");
-   def (rf1, rf2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
-   def salmon_index="all_fasta_index"
-   def base_outdir = "salmon_out"
-   def controls_dir = fastqControlsFormat.split("/")[-2]
+    def workingDir = System.getProperty("user.dir");
+    def (rf1, rf2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
+    def salmon_index="all_fasta_index"
+    def base_outdir = "salmon_out"
+    def controls_dir = fastqControlsFormat.split("/")[-2]
+    def sample_name = branch.parent.name.split('_')[0]
 
-   if(type=="controls"){
-        output.dir=branch.parent.parent.name+"/"+controls_dir+"/"+branch.name+"_salmon_out/aux_info"
-        base_outdir=branch.name+"_salmon_out"
-        salmon_index="../all_fasta_index"
-   } else {
-        output.dir=branch.parent.name+"/salmon_out/aux_info"
-   }
+    if(type == "controls"){
+        sample_name = branch.parent.parent.name.split('_')[0]
+        def control_name = branch.name.split('_')[0]
 
-   produce("eq_classes.txt"){
-      exec """
+        output.dir = sample_name + "/" + controls_dir + "/" + control_name + "_salmon_out/aux_info"
+        base_outdir = control_name + "_salmon_out"
+        salmon_index = "../all_fasta_index"
+    } else {
+        output.dir = sample_name + "/salmon_out/aux_info"
+    }
+
+    produce("eq_classes.txt"){
+        exec """
         cd $output.dir/../.. ;
         $salmon quant --dumpEq --seqBias -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $base_outdir
-     """, "run_salmon"
-   }
+        """, "run_salmon"
+    }
 }
 
 run_de = {
-   output.dir = branch.name
-   def case_name = branch.name
-   //def salmon_dir = branch.name+"/salmon_out/aux_info"
-   produce("eq_class_comp_diffsplice.txt"){
-      exec """
+    def sample_name = branch.name.split('_')[0]
+    output.dir = sample_name
+    produce("eq_class_comp_diffsplice.txt"){
+        exec """
         Rscript $code_base/DE/compare_eq_classes.R $case_name $input $trans_fasta $output ;
-      """, "run_de"
-   }
+        """, "run_de"
+    }
 }
 
 create_ec_count_matrix = {
-   output.dir = branch.name
-   def sample_names=inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
-   sample_names.set(0, branch.name) // case sample, rest are controls
-   sample_names = sample_names.join(',')
-   produce("ec_count_matrix.txt"){
-      exec """
+    def sample_name = branch.name.split('_')[0]
+    def sample_names = inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
+    sample_names.set(0, sample_name) // case sample, rest are controls
+    sample_names = sample_names.join(',')
+    output.dir = sample_name
+    produce("ec_count_matrix.txt"){
+        exec """
         python $code_base/DE/create_ec_count_matrix.py $inputs $sample_names $output1 ;
-      """, "create_ec_count_matrix"
-   }
+        """, "create_ec_count_matrix"
+    }
 }
 
 filter_on_significant_ecs = {
-   output.dir=branch.name
-   produce("de_contigs.fasta"){
-      exec """
+    def sample_name = branch.name.split('_')[0]
+    output.dir = sample_name
+    produce("de_contigs.fasta"){
+        exec """
         python $code_base/util/filter_fasta.py $input.fasta $input.txt --col_id contig > $output1 ;
-      """
-   }
+        """
+    }
 }
 
 align_contigs_against_genome = {
-   output.dir=branch.name
-   produce('aligned_contigs_against_genome.sam'){
-      exec """
+    def sample_name = branch.name.split('_')[0]
+    output.dir = sample_name
+    produce('aligned_contigs_against_genome.sam'){
+        exec """
         $gmap -D $gmap_gn_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output
-      """, "align_contigs_against_genome"
-   }
+        """, "align_contigs_against_genome"
+    }
 }
 
 annotate_contigs = {
-   output.dir=branch.name
-   def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
-   produce("annotated_contigs.vcf", "annotated_contigs_info.tsv", "annotated_contigs.bam"){
-      exec """
+    def sample_name = branch.name.split('_')[0]
+    output.dir = sample_name
+    produce("annotated_contigs.vcf", "annotated_contigs_info.tsv", "annotated_contigs.bam"){
+        exec """
         time python ${code_base}/annotate/annotate_contigs.py \
             $sample_name $input.bam $output.bam $output.tsv $ann_info \
             $tx_annotation --log $output.dir/annotate.log > $output.vcf
-      """
-   }
+        """
+    }
 }
 
 refine_contigs = {
-   output.dir=branch.name
-   produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
-      exec """
+    def sample_name = branch.name.split('_')[0]
+    output.dir = sample_name
+    produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
+        exec """
         time python ${code_base}/annotate/refine_annotations.py \
             $input.tsv $input.vcf $input.bam $tx_annotation \
             $genome_fasta $output.tsv $output.bam --log $output.dir/refine.log > $output.vcf ;
         samtools index $output.bam
-      """
-   }
+        """
+    }
 }
 
 create_supertranscript_reference = {
-   output.dir=branch.name
-   def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
-   produce(sample_name + "_supertranscript.fasta"){
-      exec """
-          time python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
-                $tx_annotation $genome_fasta $output.dir $sample_name --log $output.dir/makest.log
-      """, "create_supertranscript_reference"
-   }
+    def sample_name = branch.name.split('_')[0]
+    output.dir = sample_name
+    produce(sample_name + "_supertranscript.fasta"){
+        exec """
+        time python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
+            $tx_annotation $genome_fasta $output.dir $sample_name --log $output.dir/makest.log
+        """, "create_supertranscript_reference"
+    }
 }
 
 make_super_supertranscript = {
-    def workingDir=System.getProperty("user.dir");
+    def workingDir = System.getProperty("user.dir");
     colpath = inputs.fastq.gz.split()
     colpath = colpath[(0..(colpath.length-1)).step(2)]
     colpath = colpath.collect { it.split('/').last().split('\\.').first().split('_').first() }.join('_')
@@ -167,35 +177,36 @@ make_super_supertranscript = {
     output.dir = colpath
     produce('supersupertranscript.fasta'){
         exec """
-            cat $inputs.fasta | python ${code_base}/util/remove_redundant_records.py - >$output ;
+        cat $inputs.fasta | python ${code_base}/util/remove_redundant_records.py - >$output ;
         """
     }
 }
 
 make_supertranscript_gmap_reference = {
-    output.dir=colpath
+    output.dir = colpath
     produce("st_gmap_ref"){
-       exec """
-          $gmap_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
-       """
+        exec """
+        $gmap_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
+        """
     }
 }
 
 align_contigs_to_supertranscript = {
-   output.dir=colpath+"/alignment"
-   index_dir=colpath
-   //TODO: this needs to play nicely with the given mask for cases
-   //TODO: fix this so sample_dir and sample_name are the same
-   //def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
-   def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
-   def workingDir=System.getProperty("user.dir");
-   def (r1, r2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
-   def sample_name=r1.split('/').last().split('\\.').first()
-   produce(sample_name+"_novel_contigs_st_aligned.sam"){
-      exec """
-         time $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads -n 0 ${sample_dir}/de_contigs.fasta > $output.sam ;
-      """, "align_contigs_to_supertranscript"
-   }
+    output.dir=colpath+"/alignment"
+    index_dir=colpath
+    //TODO: this needs to play nicely with the given mask for cases
+    //TODO: fix this so sample_dir and sample_name are the same
+    //def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
+    def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
+    def workingDir=System.getProperty("user.dir");
+    def (r1, r2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
+    def sample_name=r1.split('/').last().split('\\.').first()
+    produce(sample_name+"_novel_contigs_st_aligned.sam"){
+        exec """
+        time $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads \
+            -n 0 ${sample_dir}/de_contigs.fasta > $output.sam ;
+        """, "align_contigs_to_supertranscript"
+    }
 }
 
 hisat_index = {
@@ -220,7 +231,7 @@ hisat_align = {
         exec """
         hisat_idx=$input.bt2; idx=\${hisat_idx%.rev.1.bt2} ;
         time $hisat --threads $threads -x \$idx -1 $r1 -2 $r2 > $output ;
-    """, "hisat_align"
+        """, "hisat_align"
    }
 }
 
@@ -230,26 +241,22 @@ sort_and_index_bam = {
         exec """
         samtools sort -@ $threads -m ${sort_ram}G $input.sam -o $output ;
         samtools index $output
-    """, "sort_and_index_bam"
+        """, "sort_and_index_bam"
     }
 }
 
 post_process = {
     output.dir = colpath + '/results'
-    //TODO: consolidate sample names
-    def long_sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first()
     def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
-    def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
     def var_filter = var_filter.split(',').join(' ')
-
-    produce(long_sample_name + '_results.tsv'){
+    produce(sample_name + '_results.tsv'){
         exec """
-        python ${code_base}/annotate/post_process.py $long_sample_name \
-            $sample_dir/novel_contigs_info.tsv \
-            $sample_dir/eq_class_comp_diffsplice.txt \
-            $sample_dir/${sample_name}_blocks_supertranscript.bed \
-            $colpath/alignment/${long_sample_name}_novel_contigs_st_aligned.bam \
-            $colpath/alignment/${long_sample_name}_hisatAligned.bam \
+        python ${code_base}/annotate/post_process.py $sample_name \
+            $sample_name/novel_contigs_info.tsv \
+            $sample_name/eq_class_comp_diffsplice.txt \
+            $sample_name/${sample_name}_blocks_supertranscript.bed \
+            $colpath/alignment/${sample_name}_novel_contigs_st_aligned.bam \
+            $colpath/alignment/${sample_name}_hisatAligned.bam \
             --gene_filter $gene_filter \
             --var_filter $var_filter > $output
         """
