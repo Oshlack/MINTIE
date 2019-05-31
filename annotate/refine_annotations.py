@@ -157,10 +157,21 @@ def get_valid_motif_vars(variants, args):
 
     return np.unique(valid_vars)
 
-def check_overlap(ex_trees, chrom, start, end):
+def check_overlap(ex_trees, chrom, start, end, check_size):
+    '''
+    Checks whether variant overlaps an exonic region.
+    For deletions, at least GAP_MIN bp of the deletion
+    must be within the exon body.
+    '''
     olap = False
     try:
         olap = ex_trees[chrom].overlaps(start, end)
+        if olap and check_size:
+            olap_se = ex_trees[chrom].overlap(start, end)
+            es, ee = [(x[0], x[1]) for x in olap_se][0]
+            size = min([ee, end]) - start if start >= es \
+                                          else end - max([es, start])
+            olap = size >= GAP_MIN
     except KeyError:
         logging.info('WARNING: chrom %s not found in provided reference.' % chrom)
     return olap
@@ -174,11 +185,13 @@ def overlaps_exon(sv, ex_trees):
     end = int(pos2[1].split('(')[0])
     end = start + 1 if sv['variant_type'] != 'DEL' else end
 
-    olap = check_overlap(ex_trees, chrom, start, end)
+    check_size = sv['variant_type'] == 'DEL'
+    olap = check_overlap(ex_trees, chrom, start, end, check_size)
     if sv['variant_type'] == 'FUS':
         chrom = pos2[0]
         start = int(pos2[1].split('(')[0])
-        olap = olap or check_overlap(ex_trees, chrom, start, start + 1)
+        olap = olap or check_overlap(ex_trees, chrom, start,
+                                     start + 1, check_size)
 
     return olap
 
@@ -203,7 +216,9 @@ def get_contigs_to_keep(args):
 
     # test for valid splice motifs
     contigs['valid_motif'] = False
-    check_motifs = contigs.variant_type.isin(NOVEL_JUNCS + NOVEL_BLOCKS)
+    check_motifs = contigs.variant_type.isin(NOVEL_JUNCS \
+                                             + NOVEL_BLOCKS \
+                                             + ['DEL'])
     if any(check_motifs.values):
         valid_motif_vars = get_valid_motif_vars(contigs[check_motifs], args)
         contigs.loc[check_motifs, 'valid_motif'] = \
