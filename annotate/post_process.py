@@ -108,7 +108,20 @@ def add_de_info(contigs, de_results):
     contigs = pd.merge(contigs, de_results, on='contig_id')
     contigs = contigs.drop(['genes'], axis=1)
     contigs = contigs[contigs.logFC >= MIN_LOGFC]
-    return contigs
+
+    # aggregate columns by variant ID
+    agg_dict = {}
+    for cname in contigs.columns.values:
+        if cname in ['case_reads', 'controls_total_reads']:
+            agg_dict[cname] = 'sum'
+        elif cname in ['logFC', 'F', 'logCPM', 'n_txs_in_ec']:
+            agg_dict[cname] = 'max'
+        elif cname in ['contigs_in_EC', 'ec_names']:
+            agg_dict[cname] = lambda x: ','.join(x)
+        else:
+            agg_dict[cname] = 'min'
+
+    return contigs.groupby(by='contig_id').agg(agg_dict)
 
 def get_st_alignments(contigs, st_bam):
     bam = pysam.AlignmentFile(st_bam, 'rc')
@@ -135,7 +148,7 @@ def get_crossing_reads(contigs, read_align, st_bed):
     contigs['crossing_reads'] = np.float('nan')
     contigs['junctions'] = np.float('nan')
     for idx,row in contigs.iterrows():
-        st = '%s\|%s' % (row['sample'].split('_')[0], row['contig_id'])
+        st = '%s\|%s' % (row['sample'], row['contig_id'])
         st_blocks = st_bed[st_bed.contig.str.contains(st)]
         if len(st_blocks) > 0:
             st_blocks = make_junctions(st_blocks)
