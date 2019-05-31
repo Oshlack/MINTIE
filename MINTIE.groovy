@@ -1,68 +1,6 @@
-code_base="/group/bioi1/marekc/20170918_cryptic_variant/MINTIE/"
-
-//Trim options
-minQScore=20 //trimmomatic quality cut off
-threads=8
-scores=33
-min_read_length=50;
-genome_mem=31000000000
-sort_ram=4 //ram per core for bam sorting
-
-//Assembly options
-//Ks="79 49 19" //"31 25 19"
-Ks="79 49" //"31 25 19"
-max_read_length=150;
-
-//software
-trimmomatic="trimmomatic"
-soap="/usr/bin/time -v /group/bioi1/nadiad/software/SOAP/SOAPdenovo-Trans-127mer" ;
-trinity="Trinity"
-fasta_dedupe="/group/bioi1/nadiad/software/bbmap/dedupe.sh" ;
-fastq_dedupe="/group/bioi1/marekc/apps/FastUniq/source/fastuniq" ;
-bowtie2="/usr/bin/time -v bowtie2"
-gtf2bed="gtf2bed"
-bedops="bedops"
-gmap="/group/bioi1/marekc/apps/GMAP-GSNAP/src/gmap"
-gmap_build="perl /group/bioi1/marekc/apps/GMAP-GSNAP/util/gmap_build.pl -B=/group/bioi1/marekc/apps/GMAP-GSNAP/src"
-//salmon="/group/bioi1/marekc/apps/Salmon-latest_linux_x86_64/bin/salmon"
-salmon="salmon"
-hisat="/group/bioi1/marekc/apps/hisat-0.1.6-beta/hisat"
-hisat_build="/group/bioi1/marekc/apps/hisat-0.1.6-beta/hisat-build"
-
-//reference
-genome_fasta="/group/bioi1/shared/genomes/hg38/fasta/Homo_sapiens.GRCh38.dna.primary_assembly.fa"
-trans_fasta="/group/bioi1/shared/transcriptomes/hg38/Homo_sapiens.GRCh38.cdna.all.fa"
-ann_superTranscriptome=code_base+"/gen24_hg38.super_transcriptome.fasta"
-gmap_index="/group/bioi1/shared/genomes/hg38/gmapdb"
-gmap_tx_index="/group/bioi1/shared/transcriptomes/hg38/indexes/gmapdb"
-//ann_info="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.info"
-//tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/gencode.v24.annotation.gtf.gz"
-ann_info="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf.info"
-tx_annotation="/group/bioi1/shared/genomes/hg38/gtf/chess2.1.gtf"
-gene_filter="/group/bioi1/marekc/20170918_cryptic_variant/ipredict_samples/prism_gene_list.txt"
-var_filter="FUS DEL INS UN EE NE RI"
-
-controls_dir="controls"
-sample_n_controls=29
-bootstrap_iters=1
-
-//Make a directory for each sample
-make_sample_dir= {
-    output.dir=branch.name
-    from("*.gz"){
-      output.dir=branch.name
-      produce(branch.name+".ignore"){
-         exec """
-            mkdir -p $output.dir ;
-            touch $output
-         """
-       }
-   }
-}
-
 dedupe = {
    from("*.gz"){
-      output.dir=branch.name ;
+      output.dir=branch.name
       produce(branch.name+'.1.fastq.gz',branch.name+'.2.fastq.gz'){
          exec """
              gunzip -c $input1.gz > $branch.name/temp1.fastq ;
@@ -81,6 +19,8 @@ dedupe = {
 
 SOAPassemble = {
      output.dir=branch.name ;
+     def Ks = Ks.split(',').join(' ')
+     def trimmomatic = trimmomatic.split('\\.')[-1] == 'jar' ? 'java -jar ' + trimmomatic : trimmomatic
      produce(branch.name+'_denovo_filt.fasta', branch.name+'.fasta'){
          exec """
              $trimmomatic PE -threads $threads -phred$scores $input1.gz $input2.gz
@@ -124,6 +64,7 @@ run_salmon = {
    def (rf1, rf2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
    def salmon_index="all_fasta_index"
    def base_outdir = "salmon_out"
+   def controls_dir = fastqControlsFormat.split("/")[-2]
 
    if(type=="controls"){
         output.dir=branch.parent.parent.name+"/"+controls_dir+"/"+branch.name+"_salmon_out/aux_info"
@@ -177,7 +118,7 @@ align_contigs_against_genome = {
    output.dir=branch.name
    produce('aligned_contigs_against_genome.sam'){
       exec """
-        $gmap -D $gmap_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output
+        $gmap -D $gmap_gn_index -d hg38 -f samse -t $threads -n 0 $input.fasta > $output
       """, "align_contigs_against_genome"
    }
 }
@@ -299,6 +240,7 @@ post_process = {
     def long_sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first()
     def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
     def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
+    def var_filter = var_filter.split(',').join(' ')
 
     produce(long_sample_name + '_results.tsv'){
         exec """
@@ -321,8 +263,7 @@ if(!binding.variables.containsKey("fastqControlFormat")){
     fastqControlFormat="controls/%_R*.fastq.gz"
 }
 
-run { fastqCaseFormat * [ make_sample_dir +
-                          dedupe +
+run { fastqCaseFormat * [ dedupe +
                           SOAPassemble +
                           create_salmon_index +
                           [run_salmon, fastqControlFormat * [ run_salmon.using(type:"controls") ]] +
