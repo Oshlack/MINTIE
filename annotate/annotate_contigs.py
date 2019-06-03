@@ -40,8 +40,10 @@ MATCH_MIN = 30
 MATCH_PERC_MIN = 0.3
 
 # VCF parameters
-INFO = ["CID", "ECN", "CLEN", "CPOS", "CSTRAND", "CCIGAR", "VSIZE", "CVSIZE", "CVTYPE", "GENES", "PARID", "PVAL", "CVQ"]
+INFO = ["CID", "ECN", "CLEN", "CPOS", "CSTRAND", "CCIGAR", "VSIZE",
+        "CVSIZE", "CVTYPE", "GENES", "PARID", "PVAL", "CVQ"]
 FORMAT = ["GT", "ECC", "AI"]
+ASCII_LETTERS = np.array(list(string.ascii_letters))
 
 # CIGAR specification codes
 CIGAR = {'match': 0,
@@ -109,12 +111,13 @@ def get_next_letter(last_letter):
     Convenience function to get next letter in alphabet
     '''
     try:
-        next_letter_pos = np.where(np.array(list(string.ascii_letters)) == last_letter)[0][0]+1
+        next_letter_pos = np.where(ASCII_LETTERS == last_letter[-1])[0][0]+1
         next_letter = list(string.ascii_letters)[next_letter_pos]
+        next_letter = last_letter[:-1] + next_letter if len(last_letter) > 1 \
+                                                     else next_letter
         return next_letter
     except IndexError:
-        raise IndexError('Cannot increment letter for variant ID (%s).' \
-            % last_letter + 'There may be too many variants on the given contig.')
+        return last_letter + 'a'
 
 def get_next_id(qname):
     if qname not in record:
@@ -122,7 +125,8 @@ def get_next_id(qname):
         record[qname] = [vid]
         return vid
     else:
-        vid = qname + get_next_letter(record[qname][-1][-1])
+        last_letter = re.search('[a-zA-Z]*$', record[qname][-1]).group(0)
+        vid = qname + get_next_letter(last_letter)
         record[qname].append(vid)
         return vid
 
