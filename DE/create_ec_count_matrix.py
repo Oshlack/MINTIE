@@ -1,20 +1,29 @@
-########################################################
-# Author: Marek Cmero
-# Match salmon equivalence class output files from multiple
-# samples and create a matched transcript and EC matrix
-########################################################
-
-import argparse
+'''
+Module      : create_ec_count_matrix
+Description : Perform contig annotation.
+Copyright   : (c) Marek Cmero, Dec 2018
+License     : MIT
+Maintainer  : MAREK.CMERO@MCRI.EDU.AU
+Portability : POSIX
+Match salmon equivalence class output files from multiple
+samples and create a matched transcript and EC matrix
+'''
 import pandas as pd
 import numpy as np
+from argparse import ArgumentParser
 
-parser = argparse.ArgumentParser()
-parser.add_argument('inputs', nargs='*')
-args = parser.parse_args()
+def parse_args():
+    '''
+    Parse command line arguments.
+    Returns Options object with command line argument values as attributes.
+    Will exit the program on a command line error.
+    '''
+    description = 'Create EC counts matrix from Salmon input'
+    parser = ArgumentParser(description=description)
+    parser.add_argument('inputs', nargs='*')
 
-ec_files = args.inputs[:-2]
-sample_names = args.inputs[-2]
-outfile = args.inputs[-1]
+    return parser.parse_args()
+
 
 def load_ecs(ec_file):
     '''
@@ -64,21 +73,30 @@ def construct_dataframe(ec_matrix, tx_lookup):
     return ec_matrix
 
 def get_tx_lookup(ec_file):
-    ec_file = ec_files[0]
     ec_df = pd.read_csv(ec_file, header=None)
     tx_lookup = [x for x in ec_df[0].values if len(x.split('\t')) == 1][2:]
     return np.array(tx_lookup)
 
-print('Loading ECs...')
-sample_ecs = [load_ecs(file) for file in ec_files]
-sample_names = sample_names.split(',')
+def main():
+    args = parse_args()
+    ec_files = args.inputs[:-2]
+    sample_names = args.inputs[-2]
+    outfile = args.inputs[-1]
+    print(ec_files)
 
-print('Building EC matrix...')
-ec_matrix = build_ec_matrix(sample_ecs, sample_names)
+    print('Loading ECs...')
+    sample_ecs = [load_ecs(file) for file in ec_files]
+    sample_names = sample_names.split(',')
 
-print('Constructing dataframe...')
-tx_lookup = get_tx_lookup(ec_files[0])
-ec_matrix = construct_dataframe(ec_matrix, tx_lookup)
+    print('Building EC matrix...')
+    ec_matrix = build_ec_matrix(sample_ecs, sample_names)
 
-print('Writing output...')
-ec_matrix.to_csv(outfile, sep='\t', index=False)
+    print('Constructing dataframe...')
+    tx_lookup = get_tx_lookup(ec_files[0])
+    ec_matrix = construct_dataframe(ec_matrix, tx_lookup)
+
+    print('Writing output...')
+    ec_matrix.to_csv(outfile, sep='\t', index=False)
+
+if __name__ == '__main__':
+    main()
