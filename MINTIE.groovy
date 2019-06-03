@@ -1,6 +1,6 @@
 dedupe = {
    from("*.gz"){
-      def sample_name = branch.name.split('_')[0]
+      def sample_name = branch.name.split('_').first()
       output.dir = sample_name
       produce(sample_name+'.1.fastq.gz',sample_name+'.2.fastq.gz'){
          exec """
@@ -19,7 +19,7 @@ dedupe = {
 }
 
 SOAPassemble = {
-    def sample_name = branch.name.split('_')[0]
+    def sample_name = branch.name.split('_').first()
     def Ks = Ks.split(',').join(' ')
     def trimmomatic = trimmomatic.split('\\.')[-1] == 'jar' ? 'java -jar ' + trimmomatic : trimmomatic
     output.dir = sample_name
@@ -52,7 +52,7 @@ SOAPassemble = {
 }
 
 create_salmon_index = {
-    def sample_name = branch.name.split('_')[0]
+    def sample_name = branch.name.split('_').first()
     def salmon_index = sample_name + "/all_fasta_index"
     output.dir = sample_name + "/all_fasta_index"
     produce('sa.bin','hash.bin','rsd.bin'){
@@ -67,12 +67,12 @@ run_salmon = {
     def (rf1, rf2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
     def salmon_index="all_fasta_index"
     def base_outdir = "salmon_out"
-    def controls_dir = fastqControlsFormat.split("/")[-2]
-    def sample_name = branch.parent.name.split('_')[0]
+    def controls_dir = fastqControlFormat.split("/")[-2]
+    def sample_name = branch.parent.name.split('_').first()
 
     if(type == "controls"){
-        sample_name = branch.parent.parent.name.split('_')[0]
-        def control_name = branch.name.split('_')[0]
+        sample_name = branch.parent.parent.name.split('_').first()
+        def control_name = branch.name.split('_').first()
 
         output.dir = sample_name + "/" + controls_dir + "/" + control_name + "_salmon_out/aux_info"
         base_outdir = control_name + "_salmon_out"
@@ -90,17 +90,17 @@ run_salmon = {
 }
 
 run_de = {
-    def sample_name = branch.name.split('_')[0]
+    def sample_name = branch.name.split('_').first()
     output.dir = sample_name
     produce("eq_class_comp_diffsplice.txt"){
         exec """
-        Rscript $code_base/DE/compare_eq_classes.R $case_name $input $trans_fasta $output ;
+        Rscript $code_base/DE/compare_eq_classes.R $sample_name $input $trans_fasta $output ;
         """, "run_de"
     }
 }
 
 create_ec_count_matrix = {
-    def sample_name = branch.name.split('_')[0]
+    def sample_name = branch.name.split('_').first()
     def sample_names = inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
     sample_names.set(0, sample_name) // case sample, rest are controls
     sample_names = sample_names.join(',')
@@ -113,7 +113,7 @@ create_ec_count_matrix = {
 }
 
 filter_on_significant_ecs = {
-    def sample_name = branch.name.split('_')[0]
+    def sample_name = branch.name.split('_').first()
     output.dir = sample_name
     produce("de_contigs.fasta"){
         exec """
@@ -123,7 +123,7 @@ filter_on_significant_ecs = {
 }
 
 align_contigs_against_genome = {
-    def sample_name = branch.name.split('_')[0]
+    def sample_name = branch.name.split('_').first()
     output.dir = sample_name
     produce('aligned_contigs_against_genome.sam'){
         exec """
@@ -133,7 +133,7 @@ align_contigs_against_genome = {
 }
 
 annotate_contigs = {
-    def sample_name = branch.name.split('_')[0]
+    def sample_name = branch.name.split('_').first()
     output.dir = sample_name
     produce("annotated_contigs.vcf", "annotated_contigs_info.tsv", "annotated_contigs.bam"){
         exec """
@@ -145,7 +145,7 @@ annotate_contigs = {
 }
 
 refine_contigs = {
-    def sample_name = branch.name.split('_')[0]
+    def sample_name = branch.name.split('_').first()
     output.dir = sample_name
     produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
         exec """
@@ -158,7 +158,7 @@ refine_contigs = {
 }
 
 create_supertranscript_reference = {
-    def sample_name = branch.name.split('_')[0]
+    def sample_name = branch.name.split('_').first()
     output.dir = sample_name
     produce(sample_name + "_supertranscript.fasta"){
         exec """
@@ -194,17 +194,13 @@ make_supertranscript_gmap_reference = {
 align_contigs_to_supertranscript = {
     output.dir=colpath+"/alignment"
     index_dir=colpath
-    //TODO: this needs to play nicely with the given mask for cases
-    //TODO: fix this so sample_dir and sample_name are the same
-    //def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
-    def sample_dir  = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_R').first()
-    def workingDir=System.getProperty("user.dir");
-    def (r1, r2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
-    def sample_name=r1.split('/').last().split('\\.').first()
+    def workingDir = System.getProperty("user.dir");
+    def (r1, r2) = inputs.fastq.gz.split().collect { workingDir+"/$it" }
+    def sample_name = r1.split('/').last().split('\\.').first().split('_').first()
     produce(sample_name+"_novel_contigs_st_aligned.sam"){
         exec """
         time $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads \
-            -n 0 ${sample_dir}/de_contigs.fasta > $output.sam ;
+            -n 0 ${sample_name}/de_contigs.fasta > $output.sam ;
         """, "align_contigs_to_supertranscript"
     }
 }
@@ -220,12 +216,12 @@ hisat_index = {
 }
 
 hisat_align = {
-   output.dir=colpath+"/alignment"
-   def workingDir=System.getProperty("user.dir");
-   def (r1, r2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
-   def sample_name=r1.split('/').last().split('\\.').first()
+   output.dir = colpath+"/alignment"
+   def workingDir = System.getProperty("user.dir");
+   def (r1, r2) = inputs.fastq.gz.split().collect { workingDir+"/$it" }
+   def sample_name = r1.split('/').last().split('\\.').first().split('_').first()
    if(type=="controls"){
-        output.dir=colpath+"/alignment/controls/"
+        output.dir = colpath + "/alignment/controls/"
    }
    produce(sample_name + "_hisatAligned.sam"){
         exec """

@@ -24,4 +24,4 @@
 -p gene_filter=
 -p var_filter=FUS,DEL,INS,UN,EE,NE,RI
 -p fastqCaseFormat=cases/%_R*.fastq.gz
--p fastqControlsFormat=controls/%_R*.fastq.gz
+-p fastqControlFormat=controls/%_R*.fastq.gz
