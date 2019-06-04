@@ -7,19 +7,14 @@ A pipeline for detecting differentially expressed cryptic variants in RNA-seq da
 Install the following dependencies:
 
 * [trimmomatic](http://www.usadellab.org/cms/?page=trimmomatic)
-* [BBmap](https://github.com/BioInfoTools/BBMap)
 * [fastuniq](https://sourceforge.net/projects/fastuniq/)
-* [fastx-toolkit](http://hannonlab.cshl.edu/fastx_toolkit/)
-* [bedops](https://bedops.readthedocs.io/en/latest/)
 * [bedtools](http://bedtools.readthedocs.io/en/latest/)
 * [gmap](https://github.com/juliangehring/GMAP-GSNAP)
 * [salmon](https://github.com/COMBINE-lab/salmon)
-* [SOAPdenovo](http://soap.genomics.org.cn/soapdenovo.html)
+* [SOAPdenovo-trans](http://soap.genomics.org.cn/SOAPdenovo-Trans.html)
 * [samtools](http://samtools.sourceforge.net/)
-* [star](https://github.com/alexdobin/STAR)
+* [hisat](https://ccb.jhu.edu/software/hisat2/index.shtml)
 * [bpipe](https://github.com/ssadedin/bpipe) (>=0.9.9.5)
-
-Then set all the paths correctly for `software' in MINTIE.groovy.
 
 Now run:
 
@@ -45,7 +40,9 @@ Make sure your fastq files are in the following format:
 
     <sample>_<fastqinfo>_R1.fastq.gz
 
-Ensure no underscores are present in your sample name, as the first part of the fastq filename will be assumed to be the sample name. 
+*IMPORTANT*: ensure that you sample name is the unique per sample and is in the first position of your fastq file name, prior to the `_` character.
+
+Next, set all relevant paramters/software paths in the `params.txt` file. You can also copy this file and create a custom parameters file (make sure to use `bpipe run @<your param file>` in this case).
 
 Now make a shell script like the following:
 
@@ -56,17 +53,17 @@ cases="cases/<sample>_<fastqinfo>_R1.fastq.gz cases/<sample>_<fastqinfo>_R2.fast
 controls="controls/<sample>_<fastqinfo>_R1.fastq.gz controls/<sample>_<fastqinfo>_R2.fastq.gz
           controls/<sample>_<fastqinfo>_R1.fastq.gz controls/<sample>_<fastqinfo>_R2.fastq.gz"
 
-bpipe run -n 120 ${cv_code}/MINTIE.groovy $cases $controls
+bpipe run @params.txt ${cv_code}/MINTIE.groovy $cases $controls
 ```
 
 Cases are run on a 1 vs. all controls basis. Several cases can be specified and they will be run in parallel. Be careful when running >5 simultaneous cases as bpipe might start throwing errors about too many open files. 
 
-If you are running the pipeline outside of the `${cv_code}` directory, you'll want to copy the bpipe.config file to the directory from which you are running. Make sure you update this with the correct modules and tweak any run parameters for your cluster scenario. Alternatively, you can run everything under the current environment (won't launch cluster jobs), by setting `executor=''`. 
+If you are running the pipeline outside of the `${cv_code}` directory, you'll want to copy the bpipe.config file to the directory from which you are running. Make sure you update this with the correct modules and tweak any run parameters for your cluster scenario. Alternatively, you can run everything under the current environment (won't launch cluster jobs), by setting `executor='local'`. 
 
 Users might like to separate the pipeline into two parts: detection and visualisation. As the visualisation part is more time-consuming and aligns all the controls to the supertranscipt, you may want to analyse the results for significant contigs, then visualise only the samples you care about. Reducing the number of controls that you run the visualisation with is also a really good idea.
 
 ```
-bpipe run -n 120 -u make_super_supertranscript ${cv_code}/MINTIE.groovy $cases $controls
+bpipe run @params.txt -u make_super_supertranscript ${cv_code}/MINTIE.groovy $cases $controls
 ```
 
 Running the above in place of the run step will run everything for cases up to collating and visualising the results. Once you've done this, you can run without the -u make_super_supertranscript to finish up the pipeline.
