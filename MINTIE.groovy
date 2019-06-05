@@ -1,3 +1,6 @@
+code_base = file(bpipe.Config.config.script).parentFile.absolutePath
+load code_base + "/tools.groovy"
+
 dedupe = {
    from("*.gz"){
       def sample_name = branch.name.split('_').first()
@@ -9,7 +12,7 @@ dedupe = {
          echo $sample_name/temp1.fastq > $sample_name/fastq.list ;
          echo $sample_name/temp2.fastq >> $sample_name/fastq.list ;
          echo "Reads before:" ; wc -l $sample_name/temp1.fastq ;
-         $fastq_dedupe -i $sample_name/fastq.list -o $output1.prefix -p $output2.prefix ;
+         $fastuniq -i $sample_name/fastq.list -o $output1.prefix -p $output2.prefix ;
          echo "Reads after:" ; wc -l $output1.prefix ;
          gzip $output1.prefix $output2.prefix ;
          rm $sample_name/fastq.list $sample_name/temp1.fastq $sample_name/temp2.fastq
@@ -21,7 +24,6 @@ dedupe = {
 SOAPassemble = {
     def sample_name = branch.name.split('_').first()
     def Ks = Ks.split(',').join(' ')
-    def trimmomatic = trimmomatic.split('\\.')[-1] == 'jar' ? 'java -jar ' + trimmomatic : trimmomatic
     output.dir = sample_name
     produce(sample_name+'_denovo_filt.fasta', sample_name+'.fasta'){
         exec """
@@ -36,13 +38,13 @@ SOAPassemble = {
         echo -e \"[LIB]\\nq1=../trim1.fastq\\nq2=../trim2.fastq\" >> config.config ;
         if [ -e SOAP.fasta ]; then rm SOAP.fasta ; fi ;
         for k in $Ks ; do
-        $soap pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
-        $soap contig -g outputGraph_\$k ;
-        cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
+            $soapdenovotrans pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
+            $soapdenovotrans contig -g outputGraph_\$k ;
+            cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
         done ;
         cd ../../ ;
-        $fasta_dedupe in=$sample_name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true |
-        fasta_formatter |
+        $dedupe in=$sample_name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true |
+        $fasta_formatter |
         awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }'
         > $output1 ;
         cat $output1 $trans_fasta > $output2 ;
@@ -210,7 +212,7 @@ hisat_index = {
     def idx_prefix = output.dir+"/hisat_index"
     produce("hisat_index.rev.1.bt2") {
         exec """
-        $hisat_build $input.fasta $idx_prefix
+        ${hisat}-build $input.fasta $idx_prefix
         """
     }
 }
