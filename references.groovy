@@ -1,0 +1,6 @@
+gmap_gn_index=code_base+"/ref/gmapdb_genome"
+gmap_tx_index=code_base+"/ref/gmapdb_txome"
+genome_fasta=code_base+"/ref/Homo_sapiens.GRCh38.dna.primary_assembly.fa"
+trans_fasta=code_base+"/ref/Homo_sapiens.GRCh38.cdna.all.fa"
+ann_info=code_base+"/ref/chess2.1.gtf.info"
+tx_annotation=code_base+"/ref/chess2.1.gtf"

@@ -1,5 +1,6 @@
 code_base = file(bpipe.Config.config.script).parentFile.absolutePath
 load code_base + "/tools.groovy"
+load code_base + "/references.groovy"
 
 dedupe = {
    from("*.gz"){
