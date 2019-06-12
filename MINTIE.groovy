@@ -4,7 +4,7 @@ load code_base + "/references.groovy"
 
 dedupe = {
    from("*.gz"){
-      def sample_name = branch.name.split('_').first()
+      def sample_name = branch.name
       output.dir = sample_name
       produce(sample_name+'.1.fastq.gz',sample_name+'.2.fastq.gz'){
          exec """
@@ -23,7 +23,7 @@ dedupe = {
 }
 
 SOAPassemble = {
-    def sample_name = branch.name.split('_').first()
+    def sample_name = branch.name
     def Ks = Ks.split(',').join(' ')
     output.dir = sample_name
     produce(sample_name+'_denovo_filt.fasta', sample_name+'.fasta'){
@@ -55,7 +55,7 @@ SOAPassemble = {
 }
 
 create_salmon_index = {
-    def sample_name = branch.name.split('_').first()
+    def sample_name = branch.name
     def salmon_index = sample_name + "/all_fasta_index"
     output.dir = sample_name + "/all_fasta_index"
     produce('sa.bin','hash.bin','rsd.bin'){
@@ -75,7 +75,7 @@ run_salmon = {
 
     if(type == "controls"){
         sample_name = branch.parent.parent.name.split('_').first()
-        def control_name = branch.name.split('_').first()
+        def control_name = branch.name
 
         output.dir = sample_name + "/" + controls_dir + "/" + control_name + "_salmon_out/aux_info"
         base_outdir = control_name + "_salmon_out"
@@ -93,7 +93,7 @@ run_salmon = {
 }
 
 run_de = {
-    def sample_name = branch.name.split('_').first()
+    def sample_name = branch.name
     output.dir = sample_name
     produce("eq_class_comp_diffsplice.txt"){
         exec """
@@ -103,7 +103,7 @@ run_de = {
 }
 
 create_ec_count_matrix = {
-    def sample_name = branch.name.split('_').first()
+    def sample_name = branch.name
     def sample_names = inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
     sample_names.set(0, sample_name) // case sample, rest are controls
     sample_names = sample_names.join(',')
@@ -116,7 +116,7 @@ create_ec_count_matrix = {
 }
 
 filter_on_significant_ecs = {
-    def sample_name = branch.name.split('_').first()
+    def sample_name = branch.name
     output.dir = sample_name
     produce("de_contigs.fasta"){
         exec """
@@ -126,7 +126,7 @@ filter_on_significant_ecs = {
 }
 
 align_contigs_against_genome = {
-    def sample_name = branch.name.split('_').first()
+    def sample_name = branch.name
     output.dir = sample_name
     produce('aligned_contigs_against_genome.sam'){
         exec """
@@ -136,7 +136,7 @@ align_contigs_against_genome = {
 }
 
 annotate_contigs = {
-    def sample_name = branch.name.split('_').first()
+    def sample_name = branch.name
     output.dir = sample_name
     produce("annotated_contigs.vcf", "annotated_contigs_info.tsv", "annotated_contigs.bam"){
         exec """
@@ -148,7 +148,7 @@ annotate_contigs = {
 }
 
 refine_contigs = {
-    def sample_name = branch.name.split('_').first()
+    def sample_name = branch.name
     output.dir = sample_name
     produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
         exec """
@@ -161,7 +161,7 @@ refine_contigs = {
 }
 
 create_supertranscript_reference = {
-    def sample_name = branch.name.split('_').first()
+    def sample_name = branch.name
     output.dir = sample_name
     produce(sample_name + "_supertranscript.fasta"){
         exec """
@@ -173,14 +173,12 @@ create_supertranscript_reference = {
 
 make_super_supertranscript = {
     def workingDir = System.getProperty("user.dir");
-    colpath = inputs.fastq.gz.split()
-    colpath = colpath[(0..(colpath.length-1)).step(2)]
-    colpath = colpath.collect { it.split('/').last().split('\\.').first().split('_').first() }.join('_')
-    colpath = workingDir + '/' + colpath + '_collated_output'
+    colpath = inputs.collect { it.split('/').last().split('_').first() }.join('_')
+    colpath = workingDir + '/' + colpath + '_collated'
     output.dir = colpath
     produce('supersupertranscript.fasta'){
         exec """
-        cat $inputs.fasta | python ${code_base}/util/remove_redundant_records.py - >$output ;
+        cat $inputs.fasta | python ${code_base}/util/remove_redundant_records.py - > $output ;
         """
     }
 }
@@ -189,17 +187,15 @@ make_supertranscript_gmap_reference = {
     output.dir = colpath
     produce("st_gmap_ref"){
         exec """
-        $gmap_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
+        ${gmap}_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
         """
     }
 }
 
 align_contigs_to_supertranscript = {
-    output.dir=colpath+"/alignment"
-    index_dir=colpath
-    def workingDir = System.getProperty("user.dir");
-    def (r1, r2) = inputs.fastq.gz.split().collect { workingDir+"/$it" }
-    def sample_name = r1.split('/').last().split('\\.').first().split('_').first()
+    output.dir = colpath+"/alignment"
+    index_dir = colpath
+    def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
     produce(sample_name+"_novel_contigs_st_aligned.sam"){
         exec """
         time $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads \
@@ -211,7 +207,7 @@ align_contigs_to_supertranscript = {
 hisat_index = {
     output.dir=colpath+"/genome"
     def idx_prefix = output.dir+"/hisat_index"
-    produce("hisat_index.rev.1.bt2") {
+    produce("hisat_index.1.ht2") {
         exec """
         ${hisat}-build $input.fasta $idx_prefix
         """
@@ -219,19 +215,19 @@ hisat_index = {
 }
 
 hisat_align = {
-   output.dir = colpath+"/alignment"
-   def workingDir = System.getProperty("user.dir");
-   def (r1, r2) = inputs.fastq.gz.split().collect { workingDir+"/$it" }
-   def sample_name = r1.split('/').last().split('\\.').first().split('_').first()
-   if(type=="controls"){
+    output.dir = colpath+"/alignment"
+    def workingDir = System.getProperty("user.dir");
+    def (rf1, rf2) = inputs.fastq.gz.split().collect { workingDir+"/$it" }
+    def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
+    if(type == "controls"){
         output.dir = colpath + "/alignment/controls/"
-   }
-   produce(sample_name + "_hisatAligned.sam"){
+    }
+    produce(sample_name + "_hisatAligned.sam"){
         exec """
-        hisat_idx=$input.bt2; idx=\${hisat_idx%.rev.1.bt2} ;
-        time $hisat --threads $threads -x \$idx -1 $r1 -2 $r2 > $output ;
+        hisat_idx=$input.ht2; idx=\${hisat_idx%.1.ht2} ;
+        time $hisat --threads $threads -x \$idx -1 $rf1 -2 $rf2 > $output ;
         """, "hisat_align"
-   }
+    }
 }
 
 sort_and_index_bam = {
@@ -246,8 +242,9 @@ sort_and_index_bam = {
 
 post_process = {
     output.dir = colpath + '/results'
-    def sample_name = inputs.fastq.gz.split()[0].split('/').last().split('\\.').first().split('_').first()
+    def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
     def var_filter = var_filter.split(',').join(' ')
+    gf_arg = gene_filter == '' ? '' : '--gene_filter ' + gene_filter
     produce(sample_name + '_results.tsv'){
         exec """
         python ${code_base}/annotate/post_process.py $sample_name \
@@ -256,7 +253,7 @@ post_process = {
             $sample_name/${sample_name}_blocks_supertranscript.bed \
             $colpath/alignment/${sample_name}_novel_contigs_st_aligned.bam \
             $colpath/alignment/${sample_name}_hisatAligned.bam \
-            --gene_filter $gene_filter \
+            $gf_arg \
             --var_filter $var_filter > $output
         """
     }
