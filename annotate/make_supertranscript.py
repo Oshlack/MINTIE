@@ -17,7 +17,6 @@ import os
 import bedtool_helper
 import tempfile
 import pickle
-import ipdb
 import block_helper as bh
 from pybedtools import BedTool
 from Bio import SeqIO

@@ -10,7 +10,6 @@ import numpy as np
 import pysam
 import os
 import re
-import ipdb
 import logging
 
 rc_dtype = [('contig', '<U150'),

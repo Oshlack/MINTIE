@@ -23,7 +23,6 @@ import count_junction_reads as cjr
 from Bio import SeqIO
 from argparse import ArgumentParser
 from utils import cached, init_logging, exit_with_error
-import ipdb
 
 pd.set_option("mode.chained_assignment", None)
 

@@ -25,7 +25,6 @@ from argparse import ArgumentParser
 from intervaltree import Interval, IntervalTree
 from cv_vcf import CrypticVariant, VCF
 from utils import cached, init_logging, exit_with_error
-import ipdb
 
 pd.set_option("mode.chained_assignment", None)
 

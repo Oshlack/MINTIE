@@ -13,7 +13,6 @@ import re
 import sys
 import logging
 import pysam
-import ipdb
 import bedtool_helper as bh
 import make_supertranscript as ms
 import annotate_contigs as ac
