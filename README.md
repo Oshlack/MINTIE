@@ -55,7 +55,7 @@ python util/make_exon_reference.py ref/chess2.2.gtf
 The last step is to create a GMAP reference:
 
 ```
-tools/bin/gmap_build -s chrom -k 15 -d hg38 -D ref/gmap_genome ref/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa
+tools/bin/gmap_build -s chrom -k 15 -d gmap_genome -D ref ref/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa
 ```
 
 Finally, check that all references under your `tools.groovy` and `references.groovy` files are correct.
