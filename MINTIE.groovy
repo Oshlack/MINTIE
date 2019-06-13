@@ -95,9 +95,9 @@ run_salmon = {
 run_de = {
     def sample_name = branch.name
     output.dir = sample_name
-    produce("eq_class_comp_diffsplice.txt"){
+    produce("eq_classes_de.txt"){
         exec """
-        Rscript $code_base/DE/compare_eq_classes.R $sample_name $input $trans_fasta $output ;
+        Rscript $code_base/DE/compare_eq_classes.R $sample_name $input $output
         """, "run_de"
     }
 }

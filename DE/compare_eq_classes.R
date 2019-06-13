@@ -1,128 +1,127 @@
-suppressWarnings(suppressMessages(require(edgeR)))
-suppressMessages(require(reshape2))
-suppressMessages(require(dplyr))
-suppressMessages(require(data.table))
-suppressMessages(require(IRanges))
-suppressMessages(require(UpSetR))
-suppressMessages(require(DEXSeq))
-suppressMessages(require(stringr))
-suppressMessages(require(seqinr))
-options(stringsAsFactors = FALSE)
+library(dplyr)
+library(seqinr)
+options(stringsAsFactors = FALSE,
+        error = function(){dump.frames("compare_eq_classes_debug", to.file = TRUE); q()})
 
 # load helper methods
 args <- commandArgs(trailingOnly=FALSE)
-file.arg <- grep("--file=",args,value=TRUE)
-incl.path <- gsub("--file=(.*)compare_eq_classes.R","\\1helper_methods.R", file.arg)
+file.arg <- grep("--file=", args, value=TRUE)
+incl.path <- gsub("--file=(.*)compare_eq_classes.R", "\\1de_methods.R", file.arg)
 source(incl.path, chdir=TRUE)
 
 args <- commandArgs(trailingOnly=TRUE)
 
-if(length(args) < 4) {
+if(length(args) < 3) {
+    print("Invalid arguments.\n\n")
     args <- c("--help")
 }
 
 if("--help" %in% args) {
     cat("
         Load in Salmon equivalence classes from two samples,
-        match them and perform differential splice analysis
-        using equivalence classes as exons.
+        match them and perform differential expression analysis
+        between equivalence class counts between case and control
+        samples.
 
         Usage:
-        Rscript compare_eq_classes.R <case_name> <ec_matrix> <annotation_file> <output> --iters=<n_iters> --sample=<N>\n\n
+        Rscript compare_eq_classes.R <case_name> <ec_matrix> <output> --FDR=<value> --minCPM=<value> --minLogFC=<value>)\n\n
 
-        Default iterations is 1 and default sample number is equivalent to number of controls
-        Note: at least two control samples are required.\n\n")
+        All flags are optonal. The defaults are:
+        FDR = 0.05
+        minCPM = 0.1
+        minLogFC = 5\n\n
+    ")
 
     q(save="no")
 }
 
-FDR_cutoff <- 0.05
-novel_contig_regex <- '^k[0-9]+_[0-9]+'
+MIN_CONTROLS <- 2
+REC_CONTROLS <- 10
 
-# parse arguments
-args <- args[c(grep('--', args, invert=T), grep('--', args))]
+CONTIG_REGEX <- "^k[0-9]+_[0-9]+"
+GENE_REGEX <- "gene_symbol:([a-zA-Z0-9.-]+)"
+
+FDR <- 0.05
+minCPM <- 0.1
+minLogFC <- 5
+
+#############################################################
+# Parse arguments
+#############################################################
+
+args <- commandArgs(trailingOnly=TRUE)
 case_name <- args[1]
 ec_matrix_file <- args[2]
-annotation_file <- args[3]
-outfile <- args[4]
+outfile <- args[3]
 
-n_sample <- grep("--sample=",args, value=TRUE)
-n_iters <- grep("--iters=",args, value=TRUE)
-if (length(n_iters)==0) {
-    n_iters <- 1
-} else {
-    n_iters <- strsplit(n_iters, "=")[[1]][2]
+# optional flags
+set_arg <- function(argname) {
+    flag <- paste0("--", argname, "=")
+    arg <- grep(flag, args, value=T)
+    if(!length(arg) == 0) {
+        value <- as.numeric(strsplit(arg, "=")[[1]][2])
+        if(is.na(value)) {
+            stop(paste("Invalid", argname, "value."))
+        }
+        assign(argname, value, envir = .GlobalEnv)
+    }
 }
-n_iters <- as.numeric(n_iters)
+set_arg("FDR")
+set_arg("minCPM")
+set_arg("minLogFC")
 
 #############################################################
 # load data
 #############################################################
-print('Reading input data...')
-ec_matrix <- fread(ec_matrix_file, sep='\t')
-annotation <- read.fasta(annotation_file, as.string=TRUE)
 
-n_controls <- ncol(ec_matrix)-4 # all cols minus gene/tx/ec and case cols
-if (length(n_sample)==0) {
-    n_sample <- n_controls
-} else {
-    n_sample <- min(strsplit(n_sample, "=")[[1]][2], n_controls)
+print("Reading input data...")
+ec_matrix <- fread(ec_matrix_file, sep="\t")
+n_controls <- ncol(ec_matrix) - 4
+if(n_controls < MIN_CONTROLS) {
+    stop(paste("Insufficient controls. Please run MINTIE with at least", MIN_CONTROLS, "controls."))
+} else if(n_controls < REC_CONTROLS) {
+    print(paste("WARNING: you are running MINTIE with fewer than", REC_CONTROLS, "controls.",
+                "Adding more control samples will improve results."))
 }
-n_sample <- as.numeric(n_sample)
 
 #############################################################
-# annotation + prepare data for DE analysis
-#############################################################
-print('Generating transcript to gene lookup from fasta file...')
-genes <- annotation %>% lapply(function(x){attributes(x)$Annot}) %>% str_match("gene_symbol:([a-zA-Z0-9.-]+)")
-genes_tx <- distinct(data.frame(tx_id=names(annotation), gene=genes[,2]))
-rm(genes, annotation); gc() #cleanup
-
-print('Preparing expression table...')
-# match ECs to genes
-info <- match_tx_to_genes(ec_matrix, genes_tx)
-
-#create reference lookup
-tx_ec_gn <- info[,c('ec_names', 'genes', 'transcript')]
-
-# get genes that are associated with all interesting novel contigs
-tx_ec <- data.table(distinct(tx_ec_gn[,c('ec_names','transcript')]))
-tx_to_ecs <- tx_ec[, paste(transcript, collapse=':'), by=list(ec_names)]
-tx_to_ecs <- tx_to_ecs[grep('ENST', tx_to_ecs$V1, invert = T),] # ECs containing only novel contigs
-colnames(tx_to_ecs)[2] <- 'contigs'
-uniq_ecs <- tx_to_ecs$ec_names
-
-## ambiguous mapping info, useful for final output
-#ec_path <- paste(salmon_outdir, 'eq_classes.txt', sep='/')
-#ambig_info_path <- paste(salmon_outdir, 'ambig_info.tsv', sep='/')
-#uac <- get_ambig_info(ec_path, ambig_info_path, tx_ec_gn)
-
-# cleanup
-rm(ec_matrix); gc()
-
-#############################################################
-# perform DE
+# Prepare data for DE analysis
 #############################################################
 
-print('Performing differential expression analysis...')
-bs_results <- run_edgeR(case_name, info, uniq_ecs, tx_to_ecs, dirname(outfile), cpm_cutoff=0.1)
+print("Extracting ECs associated with only novel contigs...")
+tx_ec <- data.table(distinct(ec_matrix[,c("ec_names", "transcript")]))
+tx_ec$novel <- rownames(tx_ec)%in%grep(CONTIG_REGEX, tx_ec$transcript)
+novel_contig_ecs <- tx_ec[, all(novel), by="ec_names"]
+novel_contig_ecs <- unique(novel_contig_ecs$ec_names[novel_contig_ecs$V1])
+if(length(novel_contig_ecs) == 0) {
+    stop("No novel ECs were found. Pipeline cannot continue.")
+}
+
+# make collapsed EC > contig lookup table
+tx_ec <- tx_ec[tx_ec$ec_names%in%novel_contig_ecs,]
+tx_ec <- tx_ec[, paste(transcript, collapse=":"), by="ec_names"]
+colnames(tx_ec)[2] <- "contigs"
 
 #############################################################
-# compile and write results
+# Perform DE
 #############################################################
 
-print('Compiling and writing results...')
-concat_results <- bs_results
-#concat_results <- left_join(concat_results, uac, by=c('ec_names','genes','transcript'))
-#concat_results <- concat_results[order(concat_results$FDR),]
+print("Performing differential expression analysis...")
+de_results <- run_edgeR(case_name, ec_matrix, tx_ec, dirname(outfile),
+                        cpm_cutoff=minCPM, qval=FDR, min_logfc=minLogFC)
+if(nrow(de_results) == 0) {
+    stop("Invalid output result obtained from differential expression. Please check all input data.")
+}
+
+#############################################################
+# Compile and write results
+#############################################################
+
+print("Compiling and writing results...")
 
 # separate out contigs
-contigs <- sapply(concat_results$contigs, strsplit, split=':')
-concat_results <- concat_results[rep(1:nrow(concat_results), as.numeric(sapply(contigs, length))),]
-concat_results$contig <- as.character(unlist(contigs))
+contigs <- sapply(de_results$contigs, strsplit, split=":")
+de_results <- de_results[rep(1:nrow(de_results), as.numeric(sapply(contigs, length))),]
+de_results$contig <- as.character(unlist(contigs))
 
-if (nrow(concat_results) > 0) {
-    write.table(concat_results, outfile, row.names=F, quote=F, sep='\t')
-} else {
-    print('No significant ECs associated with novel contigs! Pipeline cannot continue.')
-}
+write.table(de_results, outfile, row.names=F, quote=F, sep="\t")

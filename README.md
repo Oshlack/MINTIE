@@ -24,14 +24,10 @@ Make sure you also have [R](https://www.r-project.org/) v3.2+ installed with the
 ```
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
-
 BiocManager::install("edgeR")
-BiocManager::install("GenomicRanges")
 
 install.packages("data.table")
-install.packages("reshape2")
 install.packages("dplyr")
-install.packages("stringr")
 install.packages("seqinr")
 ```
 
