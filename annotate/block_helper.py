@@ -94,13 +94,15 @@ def is_novel_block(block, chr_ref, MIN_CLIP):
 
     left = chr_ref[np.logical_and(block[1] > chr_ref.start, block[1] <= chr_ref.end)]
     right = chr_ref[np.logical_and(block[0] >= chr_ref.start, block[0] < chr_ref.end)]
-    if len(left) > 0 and len(right) > 0 and block_size > MIN_CLIP:
-        return True
+    if len(left) > 0 and len(right) > 0:
+        block_size = min(left.start.values) - max(right.end.values)
+        assert block_size >= 0
+        return block_size >= MIN_CLIP
 
     if len(left) > 0:
-        block_size = left.start.values[0] - block[0]
+        block_size = min(left.start.values) - block[0]
     elif len(right) > 0:
-        block_size = block[1] - right.end.values[0]
+        block_size = block[1] - max(right.end.values)
 
     assert block_size >= 0
     return block_size >= MIN_CLIP
