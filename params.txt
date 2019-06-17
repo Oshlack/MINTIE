@@ -5,6 +5,12 @@
 -p max_read_length=150
 -p minQScore=20
 -p Ks=79,49
+-p min_gap=3
+-p min_clip=20
+-p min_match=30,0.3
+-p min_logfc=5
+-p min_cpm=0.1
+-p fdr=0.05
 -p sort_ram=4
 -p gene_filter=
 -p var_filter=FUS,DEL,INS,UN,EE,NE,RI

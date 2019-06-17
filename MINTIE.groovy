@@ -97,7 +97,7 @@ run_de = {
     output.dir = sample_name
     produce("eq_classes_de.txt"){
         exec """
-        Rscript $code_base/DE/compare_eq_classes.R $sample_name $input $output
+        Rscript $code_base/DE/compare_eq_classes.R $sample_name $input $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc
         """, "run_de"
     }
 }
@@ -141,8 +141,13 @@ annotate_contigs = {
     produce("annotated_contigs.vcf", "annotated_contigs_info.tsv", "annotated_contigs.bam"){
         exec """
         time python ${code_base}/annotate/annotate_contigs.py \
-            $sample_name $input.bam $output.bam $output.tsv $ann_info \
-            $tx_annotation --log $output.dir/annotate.log > $output.vcf
+            $sample_name $input.bam \
+            $ann_info $tx_annotation \
+            $output.bam $output.tsv \
+            --minClip $min_clip \
+            --minGap $min_gap \
+            --minMatch $min_match \
+            --log $output.dir/annotate.log > $output.vcf
         """
     }
 }
@@ -154,7 +159,10 @@ refine_contigs = {
         exec """
         time python ${code_base}/annotate/refine_annotations.py \
             $input.tsv $input.vcf $input.bam $tx_annotation \
-            $genome_fasta $output.tsv $output.bam --log $output.dir/refine.log > $output.vcf ;
+            $genome_fasta $output.tsv $output.bam \
+            --minClip $min_clip \
+            --minGap $min_gap \
+            --log $output.dir/refine.log > $output.vcf ;
         samtools index $output.bam
         """
     }

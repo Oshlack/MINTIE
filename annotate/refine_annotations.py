@@ -17,14 +17,13 @@ import bedtool_helper as bh
 import make_supertranscript as ms
 import annotate_contigs as ac
 import pybedtools as pbt
+import constants
 from pybedtools import BedTool
 from argparse import ArgumentParser
 from utils import init_logging, exit_with_error
 
-EXIT_FILE_IO_ERROR = 1
+PROGRAM_NAME = 'refine_annotations'
 
-MIN_NOVEL_EXON_SIZE = 20
-GAP_MIN = 7
 SPLICE_VARS = ['AS']
 SV_VARS = ['DEL', 'INS', 'UN']
 NOVEL_BLOCKS = ['EE', 'NE']
@@ -71,8 +70,29 @@ def parse_args():
                         metavar='BAM_OUT_FILE',
                         type=str,
                         help='''Contig BAM output file''')
-
+    parser.add_argument('--minClip',
+                        metavar='MIN_CLIP',
+                        type=int,
+                        help='''Minimum novel block or softclip size.''')
+    parser.add_argument('--minGap',
+                        metavar='MIN_GAP',
+                        type=int,
+                        help='''Minimum gap (deletion or insertion) size.''')
     return parser.parse_args()
+
+def set_globals(args):
+    global MIN_CLIP
+    global MIN_GAP
+
+    if args.minClip:
+        MIN_CLIP = args.minClip
+    else:
+        MIN_CLIP = constants.DEFAULT_MIN_CLIP
+
+    if args.minGap:
+        MIN_GAP = args.minGap
+    else:
+        MIN_GAP = constants.DEFAULT_MIN_GAP
 
 def is_valid_motif(left_id, right_id, block_seqs):
     try:
@@ -159,7 +179,7 @@ def get_valid_motif_vars(variants, args):
 def check_overlap(ex_trees, chrom, start, end, check_size):
     '''
     Checks whether variant overlaps an exonic region.
-    For deletions, at least GAP_MIN bp of the deletion
+    For deletions, at least MIN_GAP bp of the deletion
     must be within the exon body.
     '''
     olap = False
@@ -170,7 +190,7 @@ def check_overlap(ex_trees, chrom, start, end, check_size):
             es, ee = [(x[0], x[1]) for x in olap_se][0]
             size = min([ee, end]) - start if start >= es \
                                           else end - max([es, start])
-            olap = size >= GAP_MIN
+            olap = size >= MIN_GAP
     except KeyError:
         logging.info('WARNING: chrom %s not found in provided reference.' % chrom)
     return olap
@@ -197,7 +217,7 @@ def overlaps_exon(sv, ex_trees):
 def get_contigs_to_keep(args):
     '''
     Return contigs matching criteria:
-    - novel block size > MIN_NOVEL_EXON_SIZE
+    - novel block size > MIN_CLIP
     - novel blocks are spliced in some way
     - novel exons have corresponding novel splice
       sites and novel splice donor/acceptor motifs
@@ -207,10 +227,10 @@ def get_contigs_to_keep(args):
         cinfo_file = args.contig_info_file
         contigs = pd.read_csv(cinfo_file, sep='\t')
     except IOError as exception:
-        exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
+        exit_with_error(str(exception), constants.EXIT_FILE_IO_ERROR)
 
     # general tests - var size and splicing
-    contigs['large_varsize'] = contigs.contig_varsize > MIN_NOVEL_EXON_SIZE
+    contigs['large_varsize'] = contigs.contig_varsize > MIN_CLIP
     contigs['is_contig_spliced'] = contigs.contig_cigar.apply(lambda x: bool(re.search('N', x)))
 
     # test for valid splice motifs
@@ -235,7 +255,7 @@ def get_contigs_to_keep(args):
             spliced_exons.append(row['variant_id'])
     contigs['spliced_exon'] = contigs.variant_id.isin(spliced_exons)
 
-    # novel exon contigs (spliced, valid motif and large variant sizew)
+    # novel exon contigs (spliced, valid motif and large variant size)
     is_novel_exon = np.logical_and(contigs.spliced_exon, contigs.valid_motif)
     is_novel_exon = np.logical_and(is_novel_exon, contigs.large_varsize)
     ne_vars = contigs[is_novel_exon].variant_id.values
@@ -243,8 +263,8 @@ def get_contigs_to_keep(args):
     # check whether TSVs meets size requirements
     is_sv = contigs.variant_type.isin(SV_VARS)
     is_fus = contigs.variant_type.isin(FUSIONS)
-    large_clip = np.logical_or(contigs.varsize >= GAP_MIN,
-                               contigs.contig_varsize >= GAP_MIN)
+    large_clip = np.logical_or(contigs.varsize >= MIN_GAP,
+                               contigs.contig_varsize >= MIN_GAP)
     keep_sv = np.logical_and(large_clip, is_sv)
     keep_sv = np.logical_or(keep_sv, is_fus)
 
@@ -262,8 +282,7 @@ def get_contigs_to_keep(args):
 
     # ensure retained introns are spliced in some way (to distinguish from pre-mRNAs)
     retained_intron = contigs.variant_type == 'RI'
-    spliced_ri =  np.logical_and(retained_intron, contigs.is_contig_spliced.values)
-    ri_vars = contigs[np.logical_and(spliced_ri, contigs.large_varsize)].variant_id.values
+    ri_vars = contigs[np.logical_and(retained_intron, contigs.large_varsize)].variant_id.values
 
     # collate contigs to keep
     keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars]))
@@ -285,7 +304,7 @@ def write_output(args, keep_contigs):
             print(line.strip())
         cvf.close()
     except IOError as exception:
-        exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
+        exit_with_error(str(exception), constants.EXIT_FILE_IO_ERROR)
 
     vcf = vcf[vcf[7].apply(lambda x: x.split(';')[0].split('=')[1] in keep_contigs)]
     vcf.to_csv(sys.stdout, sep='\t', index=False, header=False)
@@ -302,6 +321,7 @@ def write_bam(args, keep_contigs):
 def main():
     args = parse_args()
     init_logging(args.log)
+    set_globals(args)
     keep_contigs = get_contigs_to_keep(args)
     write_output(args, keep_contigs)
     write_bam(args, keep_contigs)

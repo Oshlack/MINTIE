@@ -21,43 +21,16 @@ import logging
 import sys
 import string
 import block_helper as bh
+import constants
 from argparse import ArgumentParser
 from intervaltree import Interval, IntervalTree
 from cv_vcf import CrypticVariant, VCF
 from utils import cached, init_logging, exit_with_error
 
 pd.set_option("mode.chained_assignment", None)
-
-EXIT_FILE_IO_ERROR = 1
-EXIT_COMMAND_LINE_ERROR = 2
 PROGRAM_NAME = "annotate_contigs"
 
-# CUT-OFF parameters
-GAP_MIN = 7
-CLIP_MIN = 30
-MATCH_MIN = 30
-MATCH_PERC_MIN = 0.3
-
-# VCF parameters
-INFO = ["CID", "ECN", "CLEN", "CPOS", "CSTRAND", "CCIGAR", "VSIZE",
-        "CVSIZE", "CVTYPE", "GENES", "PARID", "PVAL", "CVQ"]
-FORMAT = ["GT", "ECC", "AI"]
 ASCII_LETTERS = np.array(list(string.ascii_letters))
-
-# CIGAR specification codes
-CIGAR = {'match': 0,
-         'insertion': 1,
-         'deletion': 2,
-         'skipped': 3,
-         'soft-clip': 4,
-         'hard-clip': 5,
-         'silent_deletion': 6}
-GAPS = [CIGAR[c] for c in ['insertion', 'deletion', 'silent_deletion']]
-CLIPS = [CIGAR[c] for c in ['soft-clip', 'hard-clip']]
-# any cigar criteria that is >0 bp on an aligned contig
-AFFECT_CONTIG = [CIGAR[c] for c in ['match', 'insertion', 'soft-clip', 'hard-clip']]
-# any cigar criteria that is >0 bp on the reference genome
-AFFECT_REF = [CIGAR[c] for c in ['match', 'deletion']]
 
 # read processing record
 record = {}
@@ -82,14 +55,6 @@ def parse_args():
                         metavar='BAM_FILE',
                         type=str,
                         help='''SAM or BAM format file containing contig alignments''')
-    parser.add_argument(dest='output_bam',
-                        metavar='OUTPUT_BAM',
-                        type=str,
-                        help='''BAM file to write contigs which pass filtering''')
-    parser.add_argument(dest='contig_info_file',
-                        metavar='CONTIG_INFO_FILE',
-                        type=str,
-                        help='''Contig info output file''')
     parser.add_argument(dest='junc_file',
                         metavar='JUNC_FILE',
                         type=str,
@@ -99,7 +64,53 @@ def parse_args():
                         type=str,
                         metavar='TX_REF_FILE',
                         help='''Transcriptiome GTF reference file.''')
+    parser.add_argument(dest='output_bam',
+                        metavar='OUTPUT_BAM',
+                        type=str,
+                        help='''BAM file to write contigs which pass filtering''')
+    parser.add_argument(dest='contig_info_output',
+                        metavar='CONTIG_INFO_OUT',
+                        type=str,
+                        help='''Contig info output file''')
+    parser.add_argument('--minClip',
+                        metavar='MIN_CLIP',
+                        type=int,
+                        help='''Minimum novel block or softclip size.''')
+    parser.add_argument('--minGap',
+                        metavar='MIN_GAP',
+                        type=int,
+                        help='''Minimum gap (deletion or insertion) size.''')
+    parser.add_argument('--minMatch',
+                        metavar='MIN_MATCH',
+                        type=str,
+                        help='''Comma separated: <minumum bp matching reference>,<minimum percent of contig aligned to reference>.''')
     return parser.parse_args()
+
+def set_globals(args):
+    global MIN_CLIP
+    global MIN_GAP
+    global MIN_MATCH_BP
+    global MIN_MATCH_PERC
+
+    if args.minClip:
+        MIN_CLIP = args.minClip
+    else:
+        MIN_CLIP = constants.DEFAULT_MIN_CLIP
+
+    if args.minGap:
+        MIN_GAP = args.minGap
+    else:
+        MIN_GAP = constants.DEFAULT_MIN_GAP
+
+    if args.minMatch:
+        min_bp, min_perc = args.minMatch.split(',')
+        MIN_MATCH_BP = int(min_bp)
+        MIN_MATCH_PERC = float(min_perc)
+        assert MIN_MATCH_BP > 0
+        assert MIN_MATCH_PERC <= 1 and MIN_MATCH_PERC > 0
+    else:
+        MIN_MATCH_BP = constants.DEFAULT_MIN_MATCH_BP
+        MIN_MATCH_PERC = constants.DEFAULT_MIN_MATCH_PERC
 
 #=====================================================================================================
 # Utility functions
@@ -255,7 +266,7 @@ def get_tx_juncs(read):
 
     chroms = [read.reference_name] * (len(starts)-1)
     tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
-    tx_juncs = [junc for junc in tx_juncs if (junc[2] - junc[1]) > GAP_MIN]
+    tx_juncs = [junc for junc in tx_juncs if (junc[2] - junc[1]) > MIN_GAP]
 
     return tx_juncs
 
@@ -285,7 +296,7 @@ def annotate_gaps(cv, read, ci_file):
     '''
     Annotate deletions and insertions
     '''
-    gap_idxs = [idx for idx, gap in enumerate(read.cigar) if gap[0] in GAPS and gap[1] >= GAP_MIN]
+    gap_idxs = [idx for idx, gap in enumerate(read.cigar) if gap[0] in constants.GAPS and gap[1] >= MIN_GAP]
     for gap_idx in gap_idxs:
         cigar = read.cigar[gap_idx]
         cv.vsize = int(cigar[1])
@@ -295,19 +306,19 @@ def annotate_gaps(cv, read, ci_file):
         cv.pos = int(block[1])
 
         # position of variant on contig
-        cv.cpos = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_CONTIG])
-        cv.cvsize = cv.vsize if read.cigar[gap_idx][0] == CIGAR['insertion'] else 0
+        cv.cpos = sum([v for c,v in read.cigar[:gap_idx] if c in constants.AFFECT_CONTIG])
+        cv.cvsize = cv.vsize if read.cigar[gap_idx][0] == constants.CIGAR['insertion'] else 0
         # ^ only insertions affect contig pos
 
-        if cigar[0] == CIGAR['insertion']:
+        if cigar[0] == constants.CIGAR['insertion']:
             cv.cvtype = 'INS'
-            seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_CONTIG and c != CIGAR['hard-clip']])
+            seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in constants.AFFECT_CONTIG and c != constants.CIGAR['hard-clip']])
             seq_pos2 = seq_pos1 + cv.cvsize
             seq = read.query_sequence[(seq_pos1-1):seq_pos2]
             cv.ref, cv.alt = seq[:1], seq
         else:
             cv.cvtype = 'DEL'
-            seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in AFFECT_REF])
+            seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in constants.AFFECT_REF])
             seq_pos2 = seq_pos1 + cv.vsize
             seq = read.get_reference_sequence()[(seq_pos1-1):seq_pos2]
             cv.ref, cv.alt  = seq, seq[:1]
@@ -317,8 +328,8 @@ def annotate_gaps(cv, read, ci_file):
         print(cv.vcf_output())
 
 def annotate_softclips(cv, read, ci_file):
-    sc_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] == CIGAR['soft-clip'] \
-                                                             and clip[1] >= CLIP_MIN]
+    sc_idxs = [idx for idx, clip in enumerate(read.cigar) if clip[0] == constants.CIGAR['soft-clip'] \
+                                                             and clip[1] >= MIN_CLIP]
     for sc_idx in sc_idxs:
         cigar = read.cigar[sc_idx]
         cv.cvtype, cv.vsize, cv.cvsize = 'UN', int(cigar[1]), int(cigar[1])
@@ -329,7 +340,7 @@ def annotate_softclips(cv, read, ci_file):
         cv.pos = int(block[0]) + 1 if sc_left else int(block[1])
 
         rcigar = read.cigar[::-1] if cv.strand == '-' else read.cigar
-        cv.cpos = sum([v for c,v in rcigar[:sc_idx] if c in AFFECT_CONTIG])
+        cv.cpos = sum([v for c,v in rcigar[:sc_idx] if c in constants.AFFECT_CONTIG])
 
         varseq = read.query_sequence[cv.cpos:(cv.cpos+cv.cvsize)]
         refseq = read.get_reference_sequence()
@@ -368,14 +379,13 @@ def annotate_blocks(cv, read, chr_ref, ci_file):
     Annotate any sequence that is outside of exonic regions
     '''
     cv.parid = '.' # blocks don't have pairs
-    novel_blocks = [(idx, block) for idx, block in cv.blocks if bh.is_novel_block(block, chr_ref)]
+    novel_blocks = [(idx, block) for idx, block in cv.blocks if bh.is_novel_block(block, chr_ref, MIN_CLIP)]
     for block_idx, block in novel_blocks:
-        cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in AFFECT_CONTIG])
-        cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in AFFECT_CONTIG])
+        cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in constants.AFFECT_CONTIG])
+        cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in constants.AFFECT_CONTIG])
 
+        # whether sequence block is overlapping, or on left or right side of contig block
         olapping = chr_ref[np.logical_and(block[0] < chr_ref.start, block[1] > chr_ref.end)]
-
-        # whether sequence block is on left or right side of contig block, respectively
         left = chr_ref[np.logical_and(block[1] > chr_ref.start, block[1] <= chr_ref.end)]
         right = chr_ref[np.logical_and(block[0] >= chr_ref.start, block[0] < chr_ref.end)]
 
@@ -434,7 +444,7 @@ def annotate_fusion(args, read, juncs, bam_idx, ex_ref, ref_trees, outbam):
         logging.info('WARNING: found >2 reads matching hard-clipped read %s; cannot process' % read.query_name)
         return
 
-    ci_file = args.contig_info_file
+    ci_file = args.contig_info_output
     cv1 = CrypticVariant().from_read(r1)
     cv2 = CrypticVariant().from_read(r2)
     cv1.cvtype, cv2.cvtype = 'FUS', 'FUS'
@@ -447,14 +457,14 @@ def annotate_fusion(args, read, juncs, bam_idx, ex_ref, ref_trees, outbam):
         record[read.query_name] = []
         return
 
-    hc_idx1 = [idx for idx, clip in enumerate(r1.cigar) if clip[0] == CIGAR['hard-clip']][0]
+    hc_idx1 = [idx for idx, clip in enumerate(r1.cigar) if clip[0] == constants.CIGAR['hard-clip']][0]
     hc_left1 = hc_idx1 == 0
 
     block_idx1 = 0 if hc_left1 else np.max(np.where(np.array([b[0] for b in cv1.blocks]) < hc_idx1)[0])
     block1 = cv1.blocks[block_idx1][1]
     cv1.pos = int(block1[0]) if hc_left1 else int(block1[1])
 
-    hc_idx2 = [idx for idx, clip in enumerate(r2.cigar) if clip[0] == CIGAR['hard-clip']][0]
+    hc_idx2 = [idx for idx, clip in enumerate(r2.cigar) if clip[0] == constants.CIGAR['hard-clip']][0]
     hc_left2 = hc_idx2 == 0
 
     block_idx2 = 0 if hc_left2 else np.max(np.where(np.array([b[0] for b in cv2.blocks]) < hc_idx2)[0])
@@ -499,14 +509,14 @@ def annotate_juncs(cv, read, locs, novel_juncs, ci_file):
         pos1, pos2 = int(junc[1]), int(junc[2])
         junc_idx = [idx for idx, block in cv.blocks if block[1] == pos1][0]
         junc_type = read.cigar[junc_idx+1][0]
-        if junc_type in GAPS or junc_type == CIGAR['soft-clip']:
+        if junc_type in constants.GAPS or junc_type == constants.CIGAR['soft-clip']:
             continue
 
         cp = CrypticVariant().from_read(read) # partner variant
         cp.genes = cv.genes
         varseq, refseq = '', read.get_reference_sequence()
-        cpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in AFFECT_CONTIG])
-        rpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in AFFECT_REF])
+        cpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in constants.AFFECT_CONTIG])
+        rpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in constants.AFFECT_REF])
         cv.cpos, cp.cpos = cpos, cpos
         cv.pos, cp.pos = pos1-1, pos2+1
 
@@ -538,16 +548,21 @@ def annotate_single_read(args, read, juncs, ex_ref, ref_trees, outbam=None, gene
     '''
     Annotate insertions, deletions and soft-clips on a single read
     '''
-    ci_file = args.contig_info_file
+    ci_file = args.contig_info_output
     genes = get_overlapping_genes(read, ref_trees) if genes == '' else genes
-    fusion = any([op == CIGAR['hard-clip'] and val >= CLIP_MIN for op, val in read.cigar])
+    fusion = any([op == constants.CIGAR['hard-clip'] and val >= MIN_CLIP for op, val in read.cigar])
     if genes == '' and not fusion:
         logging.info('No gene(s) intersecting read %s; skipping' % read.query_name)
         return
 
     # check for contig gaps or soft-clips
-    has_gaps = any([op in GAPS and val >= GAP_MIN for op, val in read.cigar])
-    has_scs = any([op == CIGAR['soft-clip'] and val >= CLIP_MIN for op, val in read.cigar])
+    has_gaps = any([op in constants.GAPS and val >= MIN_GAP for op, val in read.cigar])
+    has_scs = any([op == constants.CIGAR['soft-clip'] and val >= MIN_CLIP for op, val in read.cigar])
+
+    # skip unspliced contigs that aren't fusions, soft-clips or TSVs
+    is_spliced = any([op == constants.CIGAR['skipped'] for op, val in read.cigar])
+    if not is_spliced and not (has_gaps or has_scs or fusion):
+        return
 
     # check junctions
     tx_juncs = get_tx_juncs(read)
@@ -556,7 +571,7 @@ def annotate_single_read(args, read, juncs, ex_ref, ref_trees, outbam=None, gene
 
     # check for novel blocks
     chr_ref = get_chr_ref(read, ex_ref)
-    has_novel_blocks = any([bh.is_novel_block(block, chr_ref) for block in read.get_blocks()])
+    has_novel_blocks = any([bh.is_novel_block(block, chr_ref, MIN_CLIP) for block in read.get_blocks()])
 
     if has_gaps or has_scs or has_novel_juncs or has_novel_blocks:
         cv = CrypticVariant().from_read(read)
@@ -588,7 +603,7 @@ def annotate_contigs(args):
     bam_idx.build()
     outbam_file_unsort = '%s_unsorted.bam' % os.path.splitext(args.output_bam)[0]
     outbam = pysam.AlignmentFile(outbam_file_unsort, 'wb', template=bam)
-    ci_file = args.contig_info_file
+    ci_file = args.contig_info_output
 
     logging.info('Checking contigs for non-reference content...')
     for read in bam.fetch(multiple_iterators=True):
@@ -604,15 +619,15 @@ def annotate_contigs(args):
         # to reference and at least match_perc_min of the read aligns
         rlen = read.reference_length
         qlen = float(read.query_length)
-        if (rlen < MATCH_MIN) or (rlen / qlen) < MATCH_PERC_MIN:
+        if (rlen < MIN_MATCH_BP) or (rlen / qlen) < MIN_MATCH_PERC:
             logging.info('Skipping contig %s: not enough bases match reference' % read.query_name)
             continue
 
-        if all([op == CIGAR['match'] for op, val in read.cigar]):
+        if all([op == constants.CIGAR['match'] for op, val in read.cigar]):
             logging.info('Skipping contig %s: perfect match to reference' % read.query_name)
             continue
 
-        is_hardclipped = any([op == CIGAR['hard-clip'] and val >= CLIP_MIN for op, val in read.cigar])
+        is_hardclipped = any([op == constants.CIGAR['hard-clip'] and val >= MIN_CLIP for op, val in read.cigar])
         if is_hardclipped:
             annotate_fusion(args, read, juncs, bam_idx, ex_ref, ref_trees, outbam)
         else:
@@ -628,9 +643,10 @@ def annotate_contigs(args):
 
 def main():
     args = parse_args()
+    set_globals(args)
     init_logging(args.log)
     print(VCF.get_header(args.sample))
-    CrypticVariant.write_contig_header(args.contig_info_file)
+    CrypticVariant.write_contig_header(args.contig_info_output)
     annotate_contigs(args)
 
 if __name__ == '__main__':
