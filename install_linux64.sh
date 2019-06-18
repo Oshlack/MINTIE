@@ -41,7 +41,7 @@ function soapdenovotrans_install {
     tar -xvzf 1.0.4.tar.gz
     rm 1.0.4.tar.gz
     cd SOAPdenovo-Trans-1.0.4
-    chmod u+x make.sh && ./make.sh && cd ..
+    chmod u+x make.sh && ./make.sh ; cd ..
     ln -s $PWD/SOAPdenovo-Trans-1.0.4/SOAPdenovo-Trans-127mer $PWD/bin/soapdenovotrans
 }
 
@@ -80,7 +80,7 @@ function gmap_install {
     wget --no-check-certificate http://research-pub.gene.com/gmap/src/gmap-gsnap-2019-05-12.tar.gz
     tar -xvzf gmap-gsnap-2019-05-12.tar.gz
     rm gmap-gsnap-2019-05-12.tar.gz
-    cd gmap-2019-05-12 && ./configure --prefix=$PWD/../ && cd ..
+    cd gmap-2019-05-12 && ./configure --prefix=$PWD/../ ; cd ..
     make -C gmap-2019-05-12/
     make prefix=$PWD install -C gmap-2019-05-12/
 }
