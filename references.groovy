@@ -1,6 +1,0 @@
-ref_dir=code_base+"/ref/"
-gmap_genome="gmap_genome"
-genome_fasta=ref_dir+"Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa"
-trans_fasta=ref_dir+"Homo_sapiens.GRCh38.cdna.all.fa"
-ann_info=ref_dir+"chess2.2.info"
-tx_annotation=ref_dir+"chess2.2.gtf"
