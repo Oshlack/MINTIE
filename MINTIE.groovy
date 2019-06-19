@@ -2,7 +2,7 @@ code_base = file(bpipe.Config.config.script).parentFile.absolutePath
 load code_base + "/tools.groovy"
 load code_base + "/references.groovy"
 
-dedupe = {
+fastq_dedupe = {
    from("*.gz"){
       def sample_name = branch.name
       output.dir = sample_name
@@ -17,7 +17,7 @@ dedupe = {
          echo "Reads after:" ; wc -l $output1.prefix ;
          gzip $output1.prefix $output2.prefix ;
          rm $sample_name/fastq.list $sample_name/temp1.fastq $sample_name/temp2.fastq
-      """, "dedupe"
+      """, "fastq_dedupe"
       }
    }
 }
@@ -274,7 +274,7 @@ if(!binding.variables.containsKey("fastqControlFormat")){
     fastqControlFormat="controls/%_R*.fastq.gz"
 }
 
-run { fastqCaseFormat * [ dedupe +
+run { fastqCaseFormat * [ fastq_dedupe +
                           SOAPassemble +
                           create_salmon_index +
                           [run_salmon, fastqControlFormat * [ run_salmon.using(type:"controls") ]] +
