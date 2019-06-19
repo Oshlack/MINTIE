@@ -97,7 +97,7 @@ run_de = {
     output.dir = sample_name
     produce("eq_classes_de.txt"){
         exec """
-        Rscript $code_base/DE/compare_eq_classes.R $sample_name $input $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc
+        ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc
         """, "run_de"
     }
 }
@@ -110,7 +110,7 @@ create_ec_count_matrix = {
     output.dir = sample_name
     produce("ec_count_matrix.txt"){
         exec """
-        python $code_base/DE/create_ec_count_matrix.py $inputs $sample_names $output1 ;
+        $python $code_base/DE/create_ec_count_matrix.py $inputs $sample_names $output1 ;
         """, "create_ec_count_matrix"
     }
 }
@@ -120,7 +120,7 @@ filter_on_significant_ecs = {
     output.dir = sample_name
     produce("de_contigs.fasta"){
         exec """
-        python $code_base/util/filter_fasta.py $input.fasta $input.txt --col_id contig > $output1 ;
+        $python $code_base/util/filter_fasta.py $input.fasta $input.txt --col_id contig > $output1 ;
         """
     }
 }
@@ -130,7 +130,7 @@ align_contigs_against_genome = {
     output.dir = sample_name
     produce('aligned_contigs_against_genome.sam'){
         exec """
-        $gmap -D $ref_dir -d $gmap_genome -f samse -t $threads -n 0 $input.fasta > $output
+        $gmap -D $gmap_refdir -d $gmap_genome -f samse -t $threads -n 0 $input.fasta > $output
         """, "align_contigs_against_genome"
     }
 }
@@ -140,7 +140,7 @@ annotate_contigs = {
     output.dir = sample_name
     produce("annotated_contigs.vcf", "annotated_contigs_info.tsv", "annotated_contigs.bam"){
         exec """
-        time python ${code_base}/annotate/annotate_contigs.py \
+        $python ${code_base}/annotate/annotate_contigs.py \
             $sample_name $input.bam \
             $ann_info $tx_annotation \
             $output.bam $output.tsv \
@@ -157,7 +157,7 @@ refine_contigs = {
     output.dir = sample_name
     produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
         exec """
-        time python ${code_base}/annotate/refine_annotations.py \
+        $python ${code_base}/annotate/refine_annotations.py \
             $input.tsv $input.vcf $input.bam $tx_annotation \
             $genome_fasta $output.tsv $output.bam \
             --minClip $min_clip \
@@ -173,7 +173,7 @@ create_supertranscript_reference = {
     output.dir = sample_name
     produce(sample_name + "_supertranscript.fasta"){
         exec """
-        time python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
+        $python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
             $tx_annotation $genome_fasta $output.dir $sample_name --log $output.dir/makest.log
         """, "create_supertranscript_reference"
     }
@@ -186,7 +186,7 @@ make_super_supertranscript = {
     output.dir = colpath
     produce('supersupertranscript.fasta'){
         exec """
-        cat $inputs.fasta | python ${code_base}/util/remove_redundant_records.py - > $output ;
+        cat $inputs.fasta | $python ${code_base}/util/remove_redundant_records.py - > $output ;
         """
     }
 }
@@ -206,7 +206,7 @@ align_contigs_to_supertranscript = {
     def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
     produce(sample_name+"_novel_contigs_st_aligned.sam"){
         exec """
-        time $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads \
+        $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads \
             -n 0 ${sample_name}/de_contigs.fasta > $output.sam ;
         """, "align_contigs_to_supertranscript"
     }
@@ -233,7 +233,7 @@ hisat_align = {
     produce(sample_name + "_hisatAligned.sam"){
         exec """
         hisat_idx=$input.ht2; idx=\${hisat_idx%.1.ht2} ;
-        time $hisat --threads $threads -x \$idx -1 $rf1 -2 $rf2 > $output ;
+        $hisat --threads $threads -x \$idx -1 $rf1 -2 $rf2 > $output ;
         """, "hisat_align"
     }
 }
@@ -255,7 +255,7 @@ post_process = {
     gf_arg = gene_filter == '' ? '' : '--gene_filter ' + gene_filter
     produce(sample_name + '_results.tsv'){
         exec """
-        python ${code_base}/annotate/post_process.py $sample_name \
+        $python ${code_base}/annotate/post_process.py $sample_name \
             $sample_name/novel_contigs_info.tsv \
             $sample_name/eq_class_comp_diffsplice.txt \
             $sample_name/${sample_name}_blocks_supertranscript.bed \

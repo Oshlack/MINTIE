@@ -112,14 +112,28 @@ for c in $commands ; do
     echo "$c=\"$c_path\"" >> ../tools.groovy
 done
 
-#finally check that R is install
+# check that R is installed
 R_path=`which R 2>/dev/null`
 if [ -z $R_path ] ; then
     echo "R not found!"
     echo "Please go to http://www.r-project.org/ and follow the installation instructions."
-    echo "Note that the IRanges R package must be installed."
+    echo "Note that data.table, dplyr and seqinr must be installed."
 fi
 echo "R=\"$R_path\"" >> ../tools.groovy
+
+# check that python is installed
+# install requirements if so
+python_path=`which python 2>/dev/null`
+if [ -z $python_path ] ; then
+    echo "Python not found!"
+    echo "Please go to https://www.anaconda.com/distribution/#download-section,"
+    echo "download the Python 3.7+ version and follow download instructions."
+    echo "Then install requirements by running \"pip install -r requirements.txt\""
+else
+    echo "Installing python requirements..."
+    pip install -r ../requirements.txt
+fi
+echo "python=\"$python_path\"" >> ../tools.groovy
 
 #loop through commands to check they are all installed
 echo "Checking that all required tools were installed:"
