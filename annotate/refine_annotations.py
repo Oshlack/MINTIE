@@ -157,22 +157,28 @@ def get_valid_motif_vars(variants, args):
     # check whether variants have valid motifs
     # left blocks
     valid_vars = []
-    left_ids = ['%s:%d-%d' % loc for loc in zip(l_blocks[0], l_blocks[1]-3, l_blocks[1]-1)]
-    valid_left = [is_valid_motif(lid, '', bs) for lid in left_ids]
-    valid_vars.extend(l_blocks[valid_left][2].values)
+    if len(l_blocks) > 0:
+        left_ids = ['%s:%d-%d' % loc for loc in zip(l_blocks[0], l_blocks[1]-3, l_blocks[1]-1)]
+        valid_left = [is_valid_motif(lid, '', bs) for lid in left_ids]
+        if any(valid_left):
+            valid_vars.extend(l_blocks[valid_left][2].values)
 
     # right blocks
-    rpos = r_blocks[1] + r_blocks[3].apply(len)-1
-    right_ids = ['%s:%d-%d' % loc for loc in zip(r_blocks[0], rpos, rpos+2)]
-    valid_right = [is_valid_motif('', rid, bs) for rid in right_ids]
-    valid_vars.extend(r_blocks[valid_right][2].values)
+    if len(r_blocks) > 0:
+        rpos = r_blocks[1] + r_blocks[3].apply(len)-1
+        right_ids = ['%s:%d-%d' % loc for loc in zip(r_blocks[0], rpos, rpos+2)]
+        valid_right = [is_valid_motif('', rid, bs) for rid in right_ids]
+        if any(valid_right):
+            valid_vars.extend(r_blocks[valid_right][2].values)
 
     # both blocks (novel exons)
-    rpos = b_blocks[1] + b_blocks[3].apply(len)-1
-    left_ids = ['%s:%d-%d' % loc for loc in zip(b_blocks[0], b_blocks[1]-3, b_blocks[1]-1)]
-    right_ids = ['%s:%d-%d' % loc for loc in zip(b_blocks[0], rpos, rpos+2)]
-    valid_both = [is_valid_motif(lid, rid, bs) for lid, rid in zip(left_ids, right_ids)]
-    valid_vars.extend(b_blocks[valid_both][2].values)
+    if len(b_blocks) > 0:
+        rpos = b_blocks[1] + b_blocks[3].apply(len)-1
+        left_ids = ['%s:%d-%d' % loc for loc in zip(b_blocks[0], b_blocks[1]-3, b_blocks[1]-1)]
+        right_ids = ['%s:%d-%d' % loc for loc in zip(b_blocks[0], rpos, rpos+2)]
+        valid_both = [is_valid_motif(lid, rid, bs) for lid, rid in zip(left_ids, right_ids)]
+        if any(valid_both):
+            valid_vars.extend(b_blocks[valid_both][2].values)
 
     return np.unique(valid_vars)
 
