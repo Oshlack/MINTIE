@@ -14,5 +14,6 @@
 -p sort_ram=4
 -p gene_filter=
 -p var_filter=FUS,DEL,INS,UN,EE,NE,RI
+-p test_mode=false
 -p fastqCaseFormat=cases/%_R*.fastq.gz
 -p fastqControlFormat=controls/%_R*.fastq.gz

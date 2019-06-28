@@ -2,7 +2,7 @@ library(dplyr)
 library(data.table)
 library(edgeR)
 
-run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=0.05, min_logfc=0) {
+run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=0.05, min_logfc=0, test=F) {
     data <- distinct(ec_matrix[, !colnames(ec_matrix)%in%c("transcript", "tx_ids"), with=F])
     data <- data[data$ec_names%in%tx_ec$ec_names,]
     if(nrow(data) == 0) {
@@ -58,12 +58,20 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     dge <- DGEList(counts = counts, group = group)
     dge <- calcNormFactors(dge)
     dge <- estimateGLMCommonDisp(dge, design=des, verbose=T)
-    dge <- estimateGLMTrendedDisp(dge, design=des)
-    dge <- estimateGLMTagwiseDisp(dge, design=des)
 
-    fit <- glmQLFit(dge, design=des)
-    qlf <- glmQLFTest(fit, coef=2)
-    dx_df <- data.frame(topTags(qlf, n=Inf))
+    if (test) {
+        # test mode, set dispersion manually, perform exact test
+        if(is.na(dge$common.dispersion){dge$common.dispersion <- 0.1}
+        et <- exactTest(dge)
+        dx_df <- data.frame(topTags(et, n=Inf))
+    } else {
+        dge <- estimateGLMTrendedDisp(dge, design=des)
+        dge <- estimateGLMTagwiseDisp(dge, design=des)
+        fit <- glmQLFit(dge, design=des)
+        qlf <- glmQLFTest(fit, coef=2)
+        dx_df <- data.frame(topTags(qlf, n=Inf))
+    }
+
     significant <- dx_df$FDR<qval & dx_df$logFC>min_logfc
     if(nrow(dx_df[significant,]) == 0) {
         stop("No significantly differentially expressed ECCs were found. Pipeline cannot continue.")

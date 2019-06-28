@@ -95,9 +95,10 @@ run_salmon = {
 run_de = {
     def sample_name = branch.name
     output.dir = sample_name
+    test_flag = test_mode.toBoolean() ? "--test" : ""
     produce("eq_classes_de.txt"){
         exec """
-        ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc
+        ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc $test_flag
         """, "run_de"
     }
 }
@@ -257,7 +258,7 @@ post_process = {
         exec """
         $python ${code_base}/annotate/post_process.py $sample_name \
             $sample_name/novel_contigs_info.tsv \
-            $sample_name/eq_class_comp_diffsplice.txt \
+            $sample_name/eq_classes_de.txt \
             $sample_name/${sample_name}_blocks_supertranscript.bed \
             $colpath/alignment/${sample_name}_novel_contigs_st_aligned.bam \
             $colpath/alignment/${sample_name}_hisatAligned.bam \

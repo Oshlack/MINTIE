@@ -1,5 +1,6 @@
 library(dplyr)
 library(seqinr)
+library(data.table)
 options(stringsAsFactors = FALSE,
         error = function(){dump.frames("compare_eq_classes_debug", to.file = TRUE); q()})
 
@@ -24,7 +25,7 @@ if("--help" %in% args) {
         samples.
 
         Usage:
-        Rscript compare_eq_classes.R <case_name> <ec_matrix> <output> --FDR=<value> --minCPM=<value> --minLogFC=<value>)\n\n
+        Rscript compare_eq_classes.R <case_name> <ec_matrix> <output> --FDR=<value> --minCPM=<value> --minLogFC=<value> --test)\n\n
 
         All flags are optonal. The defaults are:
         FDR = 0.05
@@ -53,6 +54,7 @@ args <- commandArgs(trailingOnly=TRUE)
 case_name <- args[1]
 ec_matrix_file <- args[2]
 outfile <- args[3]
+test_mode <- length(grep("--test", args)) > 0
 
 # optional flags
 set_arg <- function(argname) {
@@ -77,11 +79,13 @@ set_arg("minLogFC")
 print("Reading input data...")
 ec_matrix <- fread(ec_matrix_file, sep="\t")
 n_controls <- ncol(ec_matrix) - 4
-if(n_controls < MIN_CONTROLS) {
-    stop(paste("Insufficient controls. Please run MINTIE with at least", MIN_CONTROLS, "controls."))
-} else if(n_controls < REC_CONTROLS) {
-    print(paste("WARNING: you are running MINTIE with fewer than", REC_CONTROLS, "controls.",
-                "Adding more control samples will improve results."))
+if(!test_mode) {
+    if(n_controls < MIN_CONTROLS) {
+        stop(paste("Insufficient controls. Please run MINTIE with at least", MIN_CONTROLS, "controls."))
+    } else if(n_controls < REC_CONTROLS) {
+        print(paste("WARNING: you are running MINTIE with fewer than", REC_CONTROLS, "controls.",
+                    "Adding more control samples will improve results."))
+    }
 }
 
 #############################################################
@@ -108,7 +112,7 @@ colnames(tx_ec)[2] <- "contigs"
 
 print("Performing differential expression analysis...")
 de_results <- run_edgeR(case_name, ec_matrix, tx_ec, dirname(outfile),
-                        cpm_cutoff=minCPM, qval=FDR, min_logfc=minLogFC)
+                        cpm_cutoff=minCPM, qval=FDR, min_logfc=minLogFC, test=test_mode)
 if(nrow(de_results) == 0) {
     stop("Invalid output result obtained from differential expression. Please check all input data.")
 }

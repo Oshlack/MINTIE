@@ -82,7 +82,6 @@ def main():
     ec_files = args.inputs[:-2]
     sample_names = args.inputs[-2]
     outfile = args.inputs[-1]
-    print(ec_files)
 
     print('Loading ECs...')
     sample_ecs = [load_ecs(file) for file in ec_files]
