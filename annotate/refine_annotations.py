@@ -281,7 +281,9 @@ def get_contigs_to_keep(args):
     gene_tree, ex_trees, ex_ref = ac.get_gene_lookup(args.tx_ref_file)
     contigs.loc[keep_sv, 'overlaps_exon'] = contigs[keep_sv].apply(overlaps_exon,
                                                                    axis=1, args=(ex_trees,))
-    sv_vars = contigs[np.logical_and(keep_sv, contigs.overlaps_exon)].variant_id.values
+    keep_sv = np.logical_and(keep_sv, contigs.overlaps_exon)
+    keep_sv = np.logical_or(keep_sv, is_fus) # keep fusions even if their break isn't in an exon
+    sv_vars = contigs[keep_sv].variant_id.values
 
     # keep all splice vars
     as_vars = contigs.variant_id.values[contigs.variant_type.isin(SPLICE_VARS)]

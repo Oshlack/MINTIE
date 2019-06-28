@@ -270,14 +270,39 @@ def get_tx_juncs(read):
 
     return tx_juncs
 
-def get_overlapping_genes(read, ref_trees):
+def get_chrom_ref_tree(chrom, ref_trees):
+    '''
+    Get reference tree for given chromosome
+    (return None and log if doesn't exist)
+    '''
     try:
-        ref_tree = ref_trees[read.reference_name]
+        ref_tree = ref_trees[chrom]
     except KeyError:
        logging.info('WARNING: reference chromosome %s (from read %s) was not found in supplied reference' \
                     % (read.reference_name, read.query_name))
-       return ''
+       return None
+    return ref_tree
 
+def do_any_read_blocks_overlap_exons(read, ex_trees, bam_idx):
+    '''
+    Check whether any blocks within any reads
+    overlaps any exon in the given reference
+    '''
+    reads = [r for r in bam_idx.find(read.query_name)]
+    olaps = False
+    for r in reads:
+        chr_ex = get_chrom_ref_tree(r.reference_name, ex_trees)
+        if not chr_ex: continue
+        for s, e in r.get_blocks():
+            olaps = chr_ex.overlaps(s, e)
+            if olaps: break
+        if olaps: break
+    return olaps
+
+def get_overlapping_genes(read, ref_trees):
+    ref_tree = get_chrom_ref_tree(read.reference_name, ref_trees)
+    if not ref_tree:
+        return ''
     blocks = read.get_blocks()
     genes = []
     for block in blocks:
@@ -608,7 +633,11 @@ def annotate_contigs(args):
     logging.info('Checking contigs for non-reference content...')
     for read in bam.fetch(multiple_iterators=True):
         if read.reference_id < 0:
-            logging.info('Skipping unmapped contig %s' % read.query_name)
+            logging.info('Skipping unmapped contig %s.' % read.query_name)
+            continue
+
+        if not do_any_read_blocks_overlap_exons(read, ex_tree, bam_idx):
+            logging.info('Skipping contig %s as it doesn\'t overlap any reference exons.' % read.query_name)
             continue
 
         if read.query_name in record:
