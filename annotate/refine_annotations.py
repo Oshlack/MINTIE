@@ -120,6 +120,7 @@ def get_valid_motif_vars(variants, args):
     while extended exons on the left and right are checked for either valid
     donor or acceptor sites (in either transcriptional direction).
     '''
+    #TODO: refactor function; too long
     # get VCF data of given variants
     vcf = ms.load_vcf_file(args.vcf_file)
     vcf = vcf[vcf[2].apply(lambda x: x in variants.variant_id.values)]
@@ -229,6 +230,7 @@ def get_contigs_to_keep(args):
       sites and novel splice donor/acceptor motifs
     - TSVs occur in exonic regions
     '''
+    # TODO: refactor function
     try:
         cinfo_file = args.contig_info_file
         contigs = pd.read_csv(cinfo_file, sep='\t')
@@ -266,9 +268,17 @@ def get_contigs_to_keep(args):
     is_novel_exon = np.logical_and(is_novel_exon, contigs.large_varsize)
     ne_vars = contigs[is_novel_exon].variant_id.values
 
+    # consider variant associated with fusions (at fusion boundaries) interesting
+    is_fus = contigs.variant_type.isin(FUSIONS)
+    fus_ids = contigs[is_fus].contig_id.values
+    fus_locs = np.union1d(contigs[is_fus].pos1, contigs[is_fus].pos2)
+    non_fus_vars = contigs[np.logical_and(contigs.contig_id.isin(fus_ids), np.invert(is_fus))]
+    at_fus_boundary = np.logical_or(non_fus_vars.pos1.isin(fus_locs),
+                                    non_fus_vars.pos2.isin(fus_locs))
+    fus_vars = non_fus_vars[at_fus_boundary].variant_id.values
+
     # check whether TSVs meets size requirements
     is_sv = contigs.variant_type.isin(SV_VARS)
-    is_fus = contigs.variant_type.isin(FUSIONS)
     large_clip = np.logical_or(contigs.varsize >= MIN_GAP,
                                contigs.contig_varsize >= MIN_GAP)
     keep_sv = np.logical_and(large_clip, is_sv)
@@ -293,7 +303,7 @@ def get_contigs_to_keep(args):
     ri_vars = contigs[np.logical_and(retained_intron, contigs.large_varsize)].variant_id.values
 
     # collate contigs to keep
-    keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars]))
+    keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars, fus_vars]))
     contigs['variant_of_interest'] = contigs.variant_id.isin(keep_vars)
     keep_contigs = contigs[contigs.variant_of_interest].contig_id.values
     contigs = contigs[contigs.contig_id.isin(keep_contigs)]
