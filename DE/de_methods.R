@@ -61,7 +61,7 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
 
     if (test) {
         # test mode, set dispersion manually, perform exact test
-        if(is.na(dge$common.dispersion){dge$common.dispersion <- 0.1}
+        if(is.na(dge$common.dispersion)){dge$common.dispersion <- 0.1}
         et <- exactTest(dge)
         dx_df <- data.frame(topTags(et, n=Inf))
     } else {
