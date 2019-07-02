@@ -36,11 +36,15 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     des <- model.matrix(~group)
     colnames(des)[2] <- "case"
 
+    if(test) {
+        # add dummy record to get around zero library size error in controls
+        counts <- rbind(counts, rep(1, ncol(counts)))
+    }
     # filter
     keep <- as.numeric(cpm(counts)[, group=="case"]) > cpm_cutoff
     counts <- counts[keep,]
     if(nrow(counts) == 0) {
-        stop(paste("All ECCs were below the CPM cutoff of", cpm_cutoff, "."))
+        stop(paste("All ECCs were below the CPM cutoff of", paste0(cpm_cutoff, ".")))
     }
 
     # make counts summary
@@ -64,6 +68,7 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
         if(is.na(dge$common.dispersion)){dge$common.dispersion <- 0.1}
         et <- exactTest(dge)
         dx_df <- data.frame(topTags(et, n=Inf))
+        dx_df <- dx_df[rownames(dx_df)!="",]
     } else {
         dge <- estimateGLMTrendedDisp(dge, design=des)
         dge <- estimateGLMTagwiseDisp(dge, design=des)
