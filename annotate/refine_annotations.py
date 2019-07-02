@@ -25,10 +25,11 @@ from utils import init_logging, exit_with_error
 PROGRAM_NAME = 'refine_annotations'
 
 SPLICE_VARS = ['AS']
-SV_VARS = ['DEL', 'INS', 'UN']
+SV_VARS = ['DEL', 'INS']
 NOVEL_BLOCKS = ['EE', 'NE']
 NOVEL_JUNCS = ['PNJ', 'NEJ']
 FUSIONS = ['FUS']
+UNKNOWN = ['UN']
 
 def parse_args():
     '''
@@ -284,6 +285,10 @@ def get_contigs_to_keep(args):
     keep_sv = np.logical_and(large_clip, is_sv)
     keep_sv = np.logical_or(keep_sv, is_fus)
 
+    # keep unknown (soft-clipped) variants
+    is_un = contigs.variant_type.isin(UNKNOWN)
+    un_vars = contigs[np.logical_and(is_un, large_clip)].variant_id.values
+
     # check whether TSVs are within exons
     contigs['overlaps_exon'] = False
     exonic_var = contigs.variant_type.isin(['PNJ', 'EE', 'AS'])
@@ -303,7 +308,7 @@ def get_contigs_to_keep(args):
     ri_vars = contigs[np.logical_and(retained_intron, contigs.large_varsize)].variant_id.values
 
     # collate contigs to keep
-    keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars, fus_vars]))
+    keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars, fus_vars, un_vars]))
     contigs['variant_of_interest'] = contigs.variant_id.isin(keep_vars)
     keep_contigs = contigs[contigs.variant_of_interest].contig_id.values
     contigs = contigs[contigs.contig_id.isin(keep_contigs)]
