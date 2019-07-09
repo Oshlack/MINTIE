@@ -19,7 +19,7 @@ from Bio import SeqIO
 
 BASES = list('GCAT')
 SEED_INIT = 123
-MAX_BP_FROM_BOUNDARY = 10 #to place variant for indels
+MAX_BP_FROM_BOUNDARY = 20 #to place variant for indels
 
 def get_gene_name(row):
     '''
@@ -295,45 +295,97 @@ def write_fusion(tx1, tx2, all_exons, genome_fasta, params, gene_trees, add=None
 
     return fusion_parts
 
-def write_deletion(tx, all_exons, genome_fasta, indel_range, out_prefix):
+def get_exon_for_deletion(seq, indel_range):
     '''
-    Write transcript with deletion in random exon
+    Select suitable exon to delete sequence from
     '''
-    control_fasta = '%s-control.fasta' % out_prefix
-    case_fasta = '%s-case.fasta' % out_prefix
-
-    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta, control_fasta)
-
-    # pick sequence to delete from
     select = np.random.randint(len(seq))
-    delmin, delmax = indel_range[0], min(indel_range[1], len(seq[select]) - MAX_BP_FROM_BOUNDARY)
+    max_delsize = len(seq[select]) - (MAX_BP_FROM_BOUNDARY * 2)
+    varmin, varmax = indel_range[0], min(indel_range[1], max_delsize)
 
     # ensure exon is big enough to delete from, otherwise pick another exon
-    if delmin > delmax:
+    if varmin > varmax:
         other_exons = [i for i in range(len(seq)) if i != select]
         for select in other_exons:
-            max_possible_size = len(seq[select]) - (MAX_BP_FROM_BOUNDARY * 2)
-            # ^ max possible deletion size including padding from boundary
-            delmax = min(indel_range[1], max_possible_size)
-            if delmin < delmax:
+            max_delsize = len(seq[select]) - (MAX_BP_FROM_BOUNDARY * 2)
+            # ^ max possible variant size including padding from boundary
+            varmax = min(indel_range[1], max_delsize)
+            if varmin < varmax:
                 break
-    assert delmin <= delmax # bad transcript if assert fails
+    assert varmin <= varmax # bad transcript if assert fails
 
-    # get size and position of deletion
-    delseq = seq[select]
-    delsize = np.random.randint(delmin, delmax)
-    delpos = np.random.randint(MAX_BP_FROM_BOUNDARY, (len(delseq) - delsize - MAX_BP_FROM_BOUNDARY))
+    return select, varmin, varmax
 
-    # perform deletion
-    delseq = delseq[:delpos] + delseq[(delpos + delsize):]
-    seq[select] = delseq
+def get_exon_for_insertion(seq):
+    '''
+    Select suitable exon to insert sequence
+    '''
+    select = np.random.randint(len(seq))
 
-    seq = ''.join(seq)
-    name = '%s(DEL)' % tx
+    if len(seq) < (MAX_BP_FROM_BOUNDARY * 2):
+        other_exons = [i for i in range(len(seq)) if i != select]
+        for select in other_exons:
+            if len(seq) > (MAX_BP_FROM_BOUNDARY * 2): break
+    if len(seq) > (MAX_BP_FROM_BOUNDARY * 2):
+        # bad transcript if assert fails
+        from IPython.core.debugger import set_trace
+        set_trace()
+
+    return select
+
+def write_indel(tx, all_exons, genome_fasta, indel_range, out_prefix, vartype='DEL'):
+    '''
+    Write transcript with deletion, insertion or ITD in random exon
+    '''
+    vartypes = ['DEL', 'INS', 'ITD']
+    if vartype not in vartypes:
+        raise ValueError('Invalid variant type to add, expected %s' % vartypes)
+
+    control_fasta = '%s-control.fasta' % out_prefix
+    case_fasta = '%s-case.fasta' % out_prefix
+    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta, control_fasta)
+    varsize, select = None, None
+
+    if vartype == 'DEL':
+        select, varmin, varmax = get_exon_for_deletion(seq, indel_range)
+
+        delseq = seq[select]
+        varsize = np.random.randint(varmin, varmax)
+        delpos = np.random.randint(MAX_BP_FROM_BOUNDARY,
+                                   (len(delseq) - varsize - MAX_BP_FROM_BOUNDARY))
+
+        # perform deletion
+        delseq = delseq[:delpos] + delseq[(delpos + varsize):]
+        seq[select] = delseq
+    elif vartype == 'INS':
+        select = get_exon_for_insertion(seq)
+
+        select_seq = seq[select]
+        maxpos = len(select_seq) - MAX_BP_FROM_BOUNDARY
+        ins_pos = np.random.randint(MAX_BP_FROM_BOUNDARY, maxpos)
+
+        # perform insertion
+        insertion = get_random_seq(indel_range)
+        seq[select] = select_seq[:ins_pos] + insertion + select_seq[ins_pos:]
+
+        varsize = len(insertion)
+    elif vartype == 'ITD':
+        # here we use the same parameters for placing our insertion as with deletions
+        select, varmin, varmax = get_exon_for_deletion(seq, indel_range)
+
+        # make ITD sequence
+        select_seq, varsize = seq[select], np.random.randint(varmin, varmax)
+        maxpos = len(select_seq) - varsize - MAX_BP_FROM_BOUNDARY
+        itd_pos = np.random.randint(MAX_BP_FROM_BOUNDARY, maxpos)
+
+        itd_seq = select_seq[itd_pos:(itd_pos + varsize)]
+        seq[select] = itd_seq[:itd_pos] + itd_seq + itd_seq[(itd_pos + varsize):]
 
     # write output
+    seq = ''.join(seq)
+    name = '%s(%s)' % (tx, vartype)
     with open(case_fasta, 'a') as fout:
         fout.write('>%s\n' % name)
         fout.write(seq + '\n')
 
-    return delsize, select+1
+    return varsize, select+1
