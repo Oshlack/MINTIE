@@ -252,17 +252,16 @@ def get_tx_juncs(read):
     '''
     Get all junctions from the given contig
     '''
-    tx_juncs = []
-    unknown_juncs = []
     starts, ends = zip(*read.get_blocks())
 
     # merge adjacent 'junctions' (i.e. insertions)
-    juncs = IntervalTree()
+    blocks = IntervalTree()
     for s, e in zip(starts, ends):
-        juncs.addi(s, e)
-    juncs.merge_overlaps(strict=False)
-    starts = [junc[0] for junc in juncs]
-    ends = [junc[1] for junc in juncs]
+        blocks.addi(s, e)
+    blocks.merge_overlaps(strict=False)
+
+    starts = np.sort([block[0] for block in blocks])
+    ends = np.sort([block[1] for block in blocks])
 
     chroms = [read.reference_name] * (len(starts)-1)
     tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
