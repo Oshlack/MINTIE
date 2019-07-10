@@ -262,37 +262,21 @@ def overlaps_exon(sv, ex_trees):
                                      start + 1, check_size)
     return olap
 
-def get_contigs_to_keep(args):
-    '''
-    Return contigs matching criteria:
-    - novel block size > MIN_CLIP
-    - novel blocks are spliced in some way
-    - novel exons have corresponding novel splice
-      sites and novel splice donor/acceptor motifs
-    - TSVs occur in exonic regions
-    '''
-    # TODO: refactor function
-    try:
-        cinfo_file = args.contig_info_file
-        contigs = pd.read_csv(cinfo_file, sep='\t')
-    except IOError as exception:
-        exit_with_error(str(exception), constants.EXIT_FILE_IO_ERROR)
-
-    # general tests - var size and splicing
-    contigs['large_varsize'] = contigs.contig_varsize > MIN_CLIP
-    contigs['is_contig_spliced'] = contigs.contig_cigar.apply(lambda x: bool(re.search('N', x)))
-
-    # test for valid splice motifs
-    contigs['valid_motif'] = False
+def check_for_valid_motifs(contigs, args):
+    valid_motif = np.array([False] * len(contigs))
     check_motifs = contigs.variant_type.isin(NOVEL_JUNCS \
                                              + NOVEL_BLOCKS \
                                              + ['DEL'])
     if any(check_motifs.values):
         valid_motif_vars = get_valid_motif_vars(contigs[check_motifs], args)
-        contigs.loc[check_motifs, 'valid_motif'] = \
-            contigs.variant_id.isin(valid_motif_vars)
+        valid_motif[check_motifs] = contigs[check_motifs].variant_id.isin(valid_motif_vars).values
 
-    # check whether exons contain matching novel/partial novel junctions
+    return valid_motif
+
+def match_splice_juncs(contigs):
+    '''
+    Check whether exons contain matching novel/partial novel junctions
+    '''
     spliced_exons = []
     exons = contigs[contigs.variant_type.isin(NOVEL_BLOCKS)]
     novel_juncs = contigs[contigs.variant_type.isin(NOVEL_JUNCS)]
@@ -302,59 +286,114 @@ def get_contigs_to_keep(args):
         matching_juncs = novel_juncs[np.logical_or(back_junc, front_junc)]
         if len(matching_juncs) > 0:
             spliced_exons.append(row['variant_id'])
-    contigs['spliced_exon'] = contigs.variant_id.isin(spliced_exons)
+
+    is_spliced_exon = contigs.variant_id.isin(spliced_exons)
+    return is_spliced_exon
+
+def vars_overlap_exon(contigs, ex_trees):
+    '''
+    Checks whether variants overlap an exonic region
+    '''
+    vars_overlaps_exon = np.array([False] * len(contigs))
+    exonic_var = contigs.variant_type.isin(['PNJ', 'EE', 'AS'])
+    contigs.loc[exonic_var, 'overlaps_exon'] = True
+    check_overlap = np.invert(exonic_var)
+    vars_overlaps_exon[check_overlap] = contigs[check_overlap].apply(overlaps_exon, 
+                                                                     axis=1, args=(ex_trees,))
+    return vars_overlaps_exon
+
+def get_nejs_within_exons(contigs, ex_trees):
+    '''
+    Check novel exon junctions contained within exons (may be deletions)
+    '''
+    nej_var = contigs.variant_type == 'NEJ'
+    within_exon = contigs[nej_var].apply(overlaps_same_exon, axis=1, args=(ex_trees,))
+    bigger_than_mingap = contigs[nej_var].apply(get_varsize, axis=1) >= MIN_GAP
+    nej_del_vars = contigs[nej_var][np.logical_and(within_exon, bigger_than_mingap)].variant_id.values
+    return nej_del_vars
+
+def get_tsv_vars(contigs):
+    '''
+    TSV criteria:
+    - larger than MIN_GAP
+    - overlaps exon
+    - is softclipped (UN) and larger than MIN_CLIP
+    '''
+    # check whether TSVs meets size requirements
+    is_sv = contigs.variant_type.isin(SV_VARS)
+    large_gap = np.logical_or(contigs.varsize >= MIN_GAP,
+                              contigs.contig_varsize >= MIN_GAP)
+    keep_sv = np.logical_and(large_gap, is_sv)
+    keep_sv = np.logical_and(keep_sv, contigs.overlaps_exon)
+    sv_vars = contigs[keep_sv].variant_id.values
+
+    # keep unknown (soft-clipped) variants
+    is_un = contigs.variant_type.isin(UNKNOWN)
+    large_clip = contigs.varsize >= MIN_CLIP
+    un_vars = contigs[np.logical_and(is_un, large_clip)].variant_id.values
+    sv_vars = np.concatenate([un_vars, sv_vars])
+
+    return sv_vars
+
+def get_fusion_vars(contigs):
+    '''
+    Return all fusion variants and associated variants at fusion boundaries
+    '''
+    is_fus = contigs.variant_type.isin(FUSIONS)
+    fus_ids = contigs[is_fus].contig_id.values
+    fus_locs = np.union1d(contigs[is_fus].pos1, contigs[is_fus].pos2)
+    non_fus_vars = contigs[np.logical_and(contigs.contig_id.isin(fus_ids), np.invert(is_fus))]
+
+    # consider variant associated with fusions (at fusion boundaries) interesting
+    at_fus_boundary = np.logical_or(non_fus_vars.pos1.isin(fus_locs),
+                                    non_fus_vars.pos2.isin(fus_locs))
+    fus_boundary_vars = non_fus_vars[at_fus_boundary].variant_id.values
+    fus_vars = contigs[is_fus].variant_id.values
+    fus_vars = np.concatenate([fus_vars, fus_boundary_vars])
+
+    return fus_vars
+
+def get_contigs_to_keep(args):
+    '''
+    Return contigs matching criteria:
+    - novel block size > MIN_CLIP
+    - novel blocks are spliced in some way
+    - novel exons have corresponding novel splice
+      sites and novel splice donor/acceptor motifs
+    - TSVs occur in exonic regions
+    '''
+    try:
+        cinfo_file = args.contig_info_file
+        contigs = pd.read_csv(cinfo_file, sep='\t')
+    except IOError as exception:
+        exit_with_error(str(exception), constants.EXIT_FILE_IO_ERROR)
+
+    gene_tree, ex_trees, ex_ref = ac.get_gene_lookup(args.tx_ref_file)
+    contigs['large_varsize'] = contigs.contig_varsize > MIN_CLIP
+    contigs['is_contig_spliced'] = contigs.contig_cigar.apply(lambda x: bool(re.search('N', x)))
+    contigs['valid_motif'] = check_for_valid_motifs(contigs, args)
+    contigs['spliced_exon'] = match_splice_juncs(contigs)
+    contigs['overlaps_exon'] = vars_overlap_exon(contigs, ex_trees)
 
     # novel exon contigs (spliced, valid motif and large variant size)
     is_novel_exon = np.logical_and(contigs.spliced_exon, contigs.valid_motif)
     is_novel_exon = np.logical_and(is_novel_exon, contigs.large_varsize)
     ne_vars = contigs[is_novel_exon].variant_id.values
 
-    # consider variant associated with fusions (at fusion boundaries) interesting
-    is_fus = contigs.variant_type.isin(FUSIONS)
-    fus_ids = contigs[is_fus].contig_id.values
-    fus_locs = np.union1d(contigs[is_fus].pos1, contigs[is_fus].pos2)
-    non_fus_vars = contigs[np.logical_and(contigs.contig_id.isin(fus_ids), np.invert(is_fus))]
-    at_fus_boundary = np.logical_or(non_fus_vars.pos1.isin(fus_locs),
-                                    non_fus_vars.pos2.isin(fus_locs))
-    fus_vars = non_fus_vars[at_fus_boundary].variant_id.values
-
-    # check whether TSVs meets size requirements
-    is_sv = contigs.variant_type.isin(SV_VARS)
-    large_clip = np.logical_or(contigs.varsize >= MIN_GAP,
-                               contigs.contig_varsize >= MIN_GAP)
-    keep_sv = np.logical_and(large_clip, is_sv)
-    keep_sv = np.logical_or(keep_sv, is_fus)
-
-    # keep unknown (soft-clipped) variants
-    is_un = contigs.variant_type.isin(UNKNOWN)
-    un_vars = contigs[np.logical_and(is_un, large_clip)].variant_id.values
-
-    # check whether TSVs are within exons
-    contigs['overlaps_exon'] = False
-    exonic_var = contigs.variant_type.isin(['PNJ', 'EE', 'AS'])
-    contigs.loc[exonic_var, 'overlaps_exon'] = True
-    gene_tree, ex_trees, ex_ref = ac.get_gene_lookup(args.tx_ref_file)
-    contigs.loc[keep_sv, 'overlaps_exon'] = contigs[keep_sv].apply(overlaps_exon,
-                                                                   axis=1, args=(ex_trees,))
-    keep_sv = np.logical_and(keep_sv, contigs.overlaps_exon)
-    keep_sv = np.logical_or(keep_sv, is_fus) # keep fusions even if their break isn't in an exon
-    sv_vars = contigs[keep_sv].variant_id.values
-
-    # check novel exon junctions that may actually be deletions
-    nej_var = contigs.variant_type == 'NEJ'
-    within_exon = contigs[nej_var].apply(overlaps_same_exon, axis=1, args=(ex_trees,))
-    bigger_than_mingap = contigs[nej_var].apply(get_varsize, axis=1) >= MIN_GAP
-    nej_del_vars = contigs[nej_var][np.logical_and(within_exon, bigger_than_mingap)].variant_id.values
-
     # keep all splice vars
     as_vars = contigs.variant_id.values[contigs.variant_type.isin(SPLICE_VARS)]
 
-    # ensure retained introns are spliced in some way (to distinguish from pre-mRNAs)
-    retained_intron = contigs.variant_type == 'RI'
-    ri_vars = contigs[np.logical_and(retained_intron, contigs.large_varsize)].variant_id.values
+    # check size of retained introns
+    ri_vars = contigs[np.logical_and(contigs.variant_type == 'RI',
+                                     contigs.large_varsize)].variant_id.values
+
+    # get fusions, TSVs and NEJs that might be deletions
+    fus_vars = get_fusion_vars(contigs)
+    sv_vars = get_tsv_vars(contigs)
+    nej_del_vars = get_nejs_within_exons(contigs, ex_trees)
 
     # collate contigs to keep
-    keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars, fus_vars, un_vars, nej_del_vars]))
+    keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars, fus_vars, nej_del_vars]))
     contigs['variant_of_interest'] = contigs.variant_id.isin(keep_vars)
     keep_contigs = contigs[contigs.variant_of_interest].contig_id.values
     contigs = contigs[contigs.contig_id.isin(keep_contigs)]
