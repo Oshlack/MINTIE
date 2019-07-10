@@ -18,6 +18,7 @@ import make_supertranscript as ms
 import annotate_contigs as ac
 import pybedtools as pbt
 import constants
+from intervaltree import IntervalTree
 from pybedtools import BedTool
 from argparse import ArgumentParser
 from utils import init_logging, exit_with_error
@@ -203,23 +204,62 @@ def check_overlap(ex_trees, chrom, start, end, check_size):
         logging.info('WARNING: chrom %s not found in provided reference.' % chrom)
     return olap
 
-def overlaps_exon(sv, ex_trees):
-    pos1 = sv['pos1'].split(':')
-    pos2 = sv['pos2'].split(':')
+def get_pos_parts(loc):
+    loc = loc.split(':')
+    chrom = loc[0]
+    pos = int(loc[1].split('(')[0])
+    strand = '.'
+    try:
+        strand = re.search(r'\(([-+])\)', loc[1]).group(1)
+    except AttributeError:
+        logging.info('WARNING: invalid strand in %s.' % loc)
 
-    chrom = pos1[0]
-    start = int(pos1[1].split('(')[0])
-    end = int(pos2[1].split('(')[0])
+    return chrom, pos, strand
+
+def get_varsize(sv):
+    '''
+    Variant end - start size
+    '''
+    chr1, start, s1 = get_pos_parts(sv['pos1'])
+    chr2, end, s2 = get_pos_parts(sv['pos2'])
+
+    return end - start
+
+def overlaps_same_exon(sv, ex_trees):
+    '''
+    Checks whether variant is contained
+    completely within a single exon
+    '''
+    chr1, start, s1 = get_pos_parts(sv['pos1'])
+    chr2, end, s2 = get_pos_parts(sv['pos2'])
+
+    try:
+        olap1 = ex_trees[chr1].overlap(start, start+1)
+        olap2 = ex_trees[chr1].overlap(end, end+1)
+        return olap1 == olap2
+    except KeyError:
+        logging.info('WARNING: chrom %s not found in provided reference.' % chrom)
+
+    return False
+
+def overlaps_exon(sv, ex_trees):
+    '''
+    Checks whether variant overlaps an exonic region.
+    In variants involving two ends (fusions, junctions etc.)
+    only one end has to overlap and exon to return true
+    '''
+    chr1, start, s1 = get_pos_parts(sv['pos1'])
+    chr2, end, s2 = get_pos_parts(sv['pos2'])
     end = start + 1 if sv['variant_type'] != 'DEL' else end
+    chrom = chr1
 
     check_size = sv['variant_type'] == 'DEL'
     olap = check_overlap(ex_trees, chrom, start, end, check_size)
     if sv['variant_type'] == 'FUS':
-        chrom = pos2[0]
+        chrom = chr2
         start = int(pos2[1].split('(')[0])
         olap = olap or check_overlap(ex_trees, chrom, start,
                                      start + 1, check_size)
-
     return olap
 
 def get_contigs_to_keep(args):
@@ -300,6 +340,12 @@ def get_contigs_to_keep(args):
     keep_sv = np.logical_or(keep_sv, is_fus) # keep fusions even if their break isn't in an exon
     sv_vars = contigs[keep_sv].variant_id.values
 
+    # check novel exon junctions that may actually be deletions
+    nej_var = contigs.variant_type == 'NEJ'
+    within_exon = contigs[nej_var].apply(overlaps_same_exon, axis=1, args=(ex_trees,))
+    bigger_than_mingap = contigs[nej_var].apply(get_varsize, axis=1) >= MIN_GAP
+    nej_del_vars = contigs[nej_var][np.logical_and(within_exon, bigger_than_mingap)].variant_id.values
+
     # keep all splice vars
     as_vars = contigs.variant_id.values[contigs.variant_type.isin(SPLICE_VARS)]
 
@@ -308,7 +354,7 @@ def get_contigs_to_keep(args):
     ri_vars = contigs[np.logical_and(retained_intron, contigs.large_varsize)].variant_id.values
 
     # collate contigs to keep
-    keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars, fus_vars, un_vars]))
+    keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars, fus_vars, un_vars, nej_del_vars]))
     contigs['variant_of_interest'] = contigs.variant_id.isin(keep_vars)
     keep_contigs = contigs[contigs.variant_of_interest].contig_id.values
     contigs = contigs[contigs.contig_id.isin(keep_contigs)]

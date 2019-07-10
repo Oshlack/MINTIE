@@ -14,4 +14,3 @@ def test_get_next_letter(letter, next_letter):
 def test_get_next_id():
     assert ac.get_next_id('k49_123') == 'k49_123a'
     assert ac.get_next_id('k49_123') == 'k49_123b'
-
