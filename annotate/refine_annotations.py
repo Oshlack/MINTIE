@@ -251,14 +251,11 @@ def overlaps_exon(sv, ex_trees):
     chr1, start, s1 = get_pos_parts(sv['pos1'])
     chr2, end, s2 = get_pos_parts(sv['pos2'])
     end = start + 1 if sv['variant_type'] != 'DEL' else end
-    chrom = chr1
 
     check_size = sv['variant_type'] == 'DEL'
-    olap = check_overlap(ex_trees, chrom, start, end, check_size)
+    olap = check_overlap(ex_trees, chr1, start, end, check_size)
     if sv['variant_type'] == 'FUS':
-        chrom = chr2
-        start = int(pos2[1].split('(')[0])
-        olap = olap or check_overlap(ex_trees, chrom, start,
+        olap = olap or check_overlap(ex_trees, chr2, end,
                                      start + 1, check_size)
     return olap
 
