@@ -38,7 +38,7 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
 
     if(test) {
         # add dummy record to get around zero library size error in controls
-        counts <- rbind(counts, rep(1, ncol(counts)))
+        counts <- rbind(counts, rep(10000, ncol(counts)))
     }
     # filter
     keep <- as.numeric(cpm(counts)[, group=="case"]) > cpm_cutoff
