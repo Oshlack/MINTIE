@@ -18,8 +18,9 @@ from pybedtools import BedTool
 from Bio import SeqIO
 
 BASES = list('GCAT')
+BASE_COMPLEMENT = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'N': 'N'}
 SEED_INIT = 123
-MAX_BP_FROM_BOUNDARY = 20 #to place variant for indels
+MAX_BP_FROM_BOUNDARY = 10 #to place variant for indels
 
 def get_gene_name(row):
     '''
@@ -36,7 +37,6 @@ def get_valid_txs(all_exons, min_exons):
     exons, for fusions or splice variants),as well as all
     genes associated with these valids transcripts.
     '''
-
     all_txs = [(tx['transcript_id'], get_gene_name(tx)) for tx in all_exons]
     valid_txs = pd.DataFrame(pd.Series(all_txs).value_counts(), columns=['exon_count'])
     valid_txs = valid_txs[valid_txs.exon_count >= min_exons]
@@ -242,7 +242,8 @@ def write_fusion(tx1, tx2, all_exons, genome_fasta, params, gene_trees, add=None
     if add and add not in exon_types:
         raise ValueError('Invalid exon type to add, expected %s' % exon_types)
 
-    if not all([p in params.keys() for p in ['n_exons', 'ins_range', 'out_prefix', 'block_range']]):
+    if not all([p in params.keys() for p in ['n_exons', 'ins_range',
+                                             'out_prefix', 'block_range']]):
         raise ValueError('Some parameters missing')
 
     n_exons = params['n_exons']
@@ -252,7 +253,8 @@ def write_fusion(tx1, tx2, all_exons, genome_fasta, params, gene_trees, add=None
     case_fasta = '%s-case.fasta' % params['out_prefix']
 
     # get sequence for tx1
-    seq1, strand1, ex1_list = get_tx_seq(tx1, all_exons, genome_fasta, control_fasta, n_exons=n_exons)
+    seq1, strand1, ex1_list = get_tx_seq(tx1, all_exons, genome_fasta,
+                                         control_fasta, n_exons=n_exons)
 
     # add to fusion list
     fusion_parts = [tx1]
@@ -389,3 +391,48 @@ def write_indel(tx, all_exons, genome_fasta, indel_range, out_prefix, vartype='D
         fout.write(seq + '\n')
 
     return varsize, select+1
+
+def reverse_complement(seq):
+    if seq == '':
+        return ''
+    if type(seq) == float and math.isnan(seq):
+        return ''
+    seq = seq[::-1]
+    seq = ''.join([BASE_COMPLEMENT[base.upper()] for base in list(seq)])
+    return(seq)
+
+def write_large_tsv(tx, all_exons, genome_fasta, out_prefix, exons_range, vartype='PTD'):
+    '''
+    Write transcript with deletion, insertion or ITD in random exon
+    '''
+    vartypes = ['PTD', 'INV']
+    if vartype not in vartypes:
+        raise ValueError('Invalid variant type to add, expected %s' % vartypes)
+
+    control_fasta = '%s-control.fasta' % out_prefix
+    case_fasta = '%s-case.fasta' % out_prefix
+    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta, control_fasta)
+
+    min_exons, max_exons = exons_range
+    max_exons = min(max_exons, len(seq))
+    assert min_exons <= max_exons <= len(seq)
+    n_exons = np.random.randint(min_exons, max_exons)
+
+    select = np.random.randint(len(seq) - n_exons)
+    var_seq = seq[select:(select + n_exons)]
+
+    if vartype == 'PTD':
+        seq = seq[:select] + var_seq + var_seq + seq[select+n_exons:]
+    elif vartype == 'INV':
+        var_seq = ''.join(var_seq)
+        var_seq = reverse_complement(var_seq)
+        seq = seq[:select] + [var_seq] + seq[select+n_exons:]
+
+    # write output
+    seq = ''.join(seq)
+    name = '%s(%s)' % (tx, vartype)
+    with open(case_fasta, 'a') as fout:
+        fout.write('>%s\n' % name)
+        fout.write(seq + '\n')
+
+    return n_exons, select
