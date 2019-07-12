@@ -225,6 +225,7 @@ def get_tx_seq(tx, all_exons, genome_fasta, control_fasta, n_exons=0, front=True
     # select sequences and reverse order if antisense
     seq = [tx_seq[ex] for ex in ex_list]
     seq = seq if s == '+' else [s for s in reversed(seq)]
+    ex_list = ex_list if s == '+' else [ex for ex in reversed(ex_list)]
 
     if wt_out:
         write_sequence(tx_seq, s, control_fasta, tx)
@@ -324,14 +325,11 @@ def get_exon_for_insertion(seq):
     '''
     select = np.random.randint(len(seq))
 
-    if len(seq) < (MAX_BP_FROM_BOUNDARY * 2):
+    if len(seq[select]) < (MAX_BP_FROM_BOUNDARY * 2):
         other_exons = [i for i in range(len(seq)) if i != select]
         for select in other_exons:
-            if len(seq) > (MAX_BP_FROM_BOUNDARY * 2): break
-    if len(seq) > (MAX_BP_FROM_BOUNDARY * 2):
-        # bad transcript if assert fails
-        from IPython.core.debugger import set_trace
-        set_trace()
+            if len(seq[select]) >= (MAX_BP_FROM_BOUNDARY * 2): break
+    assert len(seq[select]) < (MAX_BP_FROM_BOUNDARY * 2) # bad transcript if assert fails
 
     return select
 
@@ -381,7 +379,7 @@ def write_indel(tx, all_exons, genome_fasta, indel_range, out_prefix, vartype='D
         itd_pos = np.random.randint(MAX_BP_FROM_BOUNDARY, maxpos)
 
         itd_seq = select_seq[itd_pos:(itd_pos + varsize)]
-        seq[select] = itd_seq[:itd_pos] + itd_seq + itd_seq[(itd_pos + varsize):]
+        seq[select] = select_seq[:itd_pos] + itd_seq + select_seq[itd_pos:]
 
     # write output
     seq = ''.join(seq)
