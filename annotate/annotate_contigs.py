@@ -276,11 +276,29 @@ def get_chrom_ref_tree(chrom, ref_trees):
     '''
     try:
         ref_tree = ref_trees[chrom]
+        return ref_tree
     except KeyError:
-       logging.info('WARNING: reference chromosome %s (from read %s) was not found in supplied reference' \
-                    % (read.reference_name, read.query_name))
-       return None
-    return ref_tree
+        pass
+
+    # try adding 'chr'
+    try:
+        chrom = 'chr%s' % chrom if chrom != 'MT' else 'chrM'
+        ref_tree = ref_trees[chrom]
+        return ref_tree
+    except KeyError:
+        pass
+
+    # OK... one more try. Maybe we need to remove chr?
+    try:
+        chrom = chrom.split('chr')[-1]
+        chrom = 'MT' if chrom == 'M' else chrom
+        ref_tree = ref_trees[chrom]
+        return ref_tree
+    except KeyError:
+        # we did our best...
+        logging.info('WARNING: reference chromosome %s was not found in supplied reference.' \
+                    % crom)
+        return None
 
 def do_any_read_blocks_overlap_exons(read, ex_trees, bam_idx):
     '''

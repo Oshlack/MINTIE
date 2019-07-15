@@ -233,12 +233,11 @@ def overlaps_same_exon(sv, ex_trees):
     chr1, start, s1 = get_pos_parts(sv['pos1'])
     chr2, end, s2 = get_pos_parts(sv['pos2'])
 
-    try:
-        olap1 = ex_trees[chr1].overlap(start, start+1)
-        olap2 = ex_trees[chr1].overlap(end, end+1)
+    ex_tree = ac.get_chrom_ref_tree(chr1, ex_trees)
+    if ex_tree:
+        olap1 = ex_tree.overlap(start, start+1)
+        olap2 = ex_tree.overlap(end, end+1)
         return olap1 == olap2
-    except KeyError:
-        logging.info('WARNING: chrom %s not found in provided reference.' % chrom)
 
     return False
 
