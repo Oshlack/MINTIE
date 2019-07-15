@@ -164,7 +164,7 @@ refine_contigs = {
             --minClip $min_clip \
             --minGap $min_gap \
             --log $output.dir/refine.log > $output.vcf ;
-        samtools index $output.bam
+        $samtools index $output.bam
         """
     }
 }
@@ -243,8 +243,8 @@ sort_and_index_bam = {
     output.dir = new File(input.sam).getParentFile()
     transform('sam') to ('bam') {
         exec """
-        samtools sort -@ $threads -m ${sort_ram}G $input.sam -o $output ;
-        samtools index $output
+        $samtools sort -@ $threads -m ${sort_ram}G $input.sam -o $output ;
+        $samtools index $output
         """, "sort_and_index_bam"
     }
 }
