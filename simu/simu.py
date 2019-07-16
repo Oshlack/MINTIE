@@ -88,6 +88,15 @@ def get_chrom_features(chrom, gr):
 
     return chrom_tree
 
+def get_gene_loc(chrom, gene_trees, gene):
+    '''
+    Return coordinates of gene
+    '''
+    lookup = pd.DataFrame(gene_trees[chrom])
+    record = lookup[lookup.data==gene]
+    loc = '%s:%s-%s' % (chrom, record.begin.values[0], record.end.values[0])
+    return loc
+
 def get_gene_features(gr):
     '''
     Get interval tree for start/ends for
@@ -329,7 +338,7 @@ def get_exon_for_insertion(seq):
         other_exons = [i for i in range(len(seq)) if i != select]
         for select in other_exons:
             if len(seq[select]) >= (MAX_BP_FROM_BOUNDARY * 2): break
-    assert len(seq[select]) < (MAX_BP_FROM_BOUNDARY * 2) # bad transcript if assert fails
+    assert len(seq[select]) >= (MAX_BP_FROM_BOUNDARY * 2) # bad transcript if assert fails
 
     return select
 
@@ -413,7 +422,7 @@ def write_large_tsv(tx, all_exons, genome_fasta, out_prefix, exons_range, vartyp
 
     min_exons, max_exons = exons_range
     max_exons = min(max_exons, len(seq))
-    assert min_exons <= max_exons <= len(seq)
+    assert min_exons < max_exons <= len(seq)
     n_exons = np.random.randint(min_exons, max_exons)
 
     select = np.random.randint(len(seq) - n_exons)
@@ -433,4 +442,4 @@ def write_large_tsv(tx, all_exons, genome_fasta, out_prefix, exons_range, vartyp
         fout.write('>%s\n' % name)
         fout.write(seq + '\n')
 
-    return n_exons, select
+    return n_exons, select+1
