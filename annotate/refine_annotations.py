@@ -192,16 +192,18 @@ def check_overlap(ex_trees, chrom, start, end, check_size):
     must be within the exon body.
     '''
     olap = False
-    try:
-        olap = ex_trees[chrom].overlaps(start, end)
-        if olap and check_size:
-            olap_se = ex_trees[chrom].overlap(start, end)
-            es, ee = [(x[0], x[1]) for x in olap_se][0]
-            size = min([ee, end]) - start if start >= es \
-                                          else end - max([es, start])
-            olap = size >= MIN_GAP
-    except KeyError:
-        logging.info('WARNING: chrom %s not found in provided reference.' % chrom)
+    ex_tree = ac.get_chrom_ref_tree(chrom, ex_trees)
+    if not ex_tree:
+        return olap
+
+    olap = ex_tree.overlaps(start, end)
+    if olap and check_size:
+        olap_se = ex_tree.overlap(start, end)
+        es, ee = [(x[0], x[1]) for x in olap_se][0]
+        size = min([ee, end]) - start if start >= es \
+                                      else end - max([es, start])
+        olap = size >= MIN_GAP
+
     return olap
 
 def get_pos_parts(loc):
