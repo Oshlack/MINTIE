@@ -143,6 +143,30 @@ def get_gene_features(gr):
 
     return ref_trees
 
+def get_intron_seq(ex_list, strand, gr, genome_fasta):
+    '''
+    Get intron sequence of downstream exon
+    '''
+    block = ex_list[-1] if strand == '+' else ex_list[0]
+    loc = re.compile('[:\-\(\)]').split(block)
+    exon_start, exon_end = int(loc[1]), int(loc[2])
+
+    pos = exon_end if strand == '+' else exon_start
+    ex = pd.DataFrame(get_chrom_features(loc[0], gr.merge()))
+
+    if strand == '-':
+        start, end = max(ex[ex.end < pos].end), pos
+    else:
+        start, end = pos, min(ex[ex.begin > pos].begin)
+
+    block_bed = '%s\t%d\t%d\t.\t1\t%s' % (loc[0], start, end, strand)
+    block_bt = BedTool(block_bed, from_string=True)
+    block_seq, bs = get_seq(block_bt, genome_fasta)
+    ext_seq = ''.join([bs for bs in block_seq.values()])
+    bloc = ''.join([k for k in block_seq.keys()])
+
+    return ext_seq, bloc
+
 def get_exon_seq(ex_list, strand, gr, genome_fasta, block_range, extended=True):
     '''
     Extends given exon, or creates a novel downstream
@@ -152,16 +176,19 @@ def get_exon_seq(ex_list, strand, gr, genome_fasta, block_range, extended=True):
     the exon past the overlapping exon.
     '''
     # TODO: make sure exon size doesn't extend to the next exon
+    # TODO: error checking, some exons cannot be extended without
+    # extending past the end of the transcript (in cases of overlaps)
     block_size = np.random.randint(block_range[0], block_range[1])
     gap_size = 0 if extended else np.random.randint(block_range[0], block_range[1])
 
-    block = ex_list[1] if strand == '+' else ex_list[0]
+    block = ex_list[-1] if strand == '+' else ex_list[0]
     loc = re.compile('[:\-\(\)]').split(block)
     exon_start, exon_end = int(loc[1]), int(loc[2])
 
     start = exon_end + gap_size if strand == '+' else exon_start - gap_size - block_size
     end = start + block_size
 
+    # extend exon if overlaps an existing one
     ex = get_chrom_features(loc[0], gr.merge())
     olap = ex.overlap(int(start), int(end))
     if len(olap) > 0:
@@ -412,13 +439,7 @@ def write_indel(tx, all_exons, genome_fasta, indel_range, out_prefix, vartype='D
         itd_seq = select_seq[itd_pos:(itd_pos + varsize)]
         seq[select] = select_seq[:itd_pos] + itd_seq + select_seq[itd_pos:]
 
-    # write output
-    seq = ''.join(seq)
-    name = '%s(%s)' % (tx, vartype)
-    with open(case_fasta, 'a') as fout:
-        fout.write('>%s\n' % name)
-        fout.write(seq + '\n')
-
+    write_output(seq, tx, vartype, case_fasta)
     return varsize, select+1
 
 def reverse_complement(seq):
@@ -457,11 +478,106 @@ def write_large_tsv(tx, all_exons, genome_fasta, out_prefix, exons_range, vartyp
         var_seq = reverse_complement(var_seq)
         seq = seq[:select] + [var_seq] + seq[select+n_exons:]
 
-    # write output
+    write_output(seq, tx, vartype, case_fasta)
+    return n_exons, select+1
+
+def write_novel_exon(tx, all_exons, genome_fasta, out_prefix, block_range, vartype='EE'):
+    '''
+    Write extended exon, novel exon and retained intron variants
+    '''
+    vartypes = ['EE', 'NE', 'RI']
+    if vartype not in vartypes:
+        raise ValueError('Invalid variant type to add, expected %s' % vartypes)
+
+    control_fasta = '%s-control.fasta' % out_prefix
+    case_fasta = '%s-case.fasta' % out_prefix
+    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta, control_fasta)
+
+    s_min = 0 if strand == '+' else 1
+    s_max = len(seq)-1 if strand == '+' else len(seq)
+    select = np.random.randint(s_min, s_max)
+    select_ex = ex_list[:(select+1)] if strand == '+' else ex_list[select:]
+    # ^ need to cut the exon list to get terminal exon to modify for get_exon_seq
+
+    ext_seq = ''
+    if vartype in ['EE', 'NE']:
+        extended = vartype == 'EE'
+        ext_seq, bloc = get_exon_seq(select_ex, strand, all_exons,
+                                     genome_fasta, block_range, extended=extended)
+    elif vartype == 'RI':
+        ext_seq, bloc = get_intron_seq(select_ex, strand, all_exons, genome_fasta)
+
+    seq = seq[:(select+1)] + [ext_seq] + seq[(select+1):]
+
+    write_output(seq, tx, vartype, case_fasta)
+    return len(ext_seq), select+1
+
+def get_pos_parts(loc):
+    loc = loc.split(':')
+    chrom = loc[0]
+    pos = loc[1].split('(')[0].split('-')
+    start, end = [int(p) for p in pos]
+    strand = re.search(r'\(([-+])\)', loc[1]).group(1)
+    return chrom, start, end, strand
+
+def truncate_exon(ex, ss, block_range, ex_lookup, right=True):
+    '''
+    Truncate an exon on the right or left side by block_range size.
+    Ensure that exon is not truncated at an existing boundary.
+    '''
+    max_trunc = min(block_range[1], len(ss) - MAX_BP_FROM_BOUNDARY)
+    trunc = np.random.randint(block_range[0], max_trunc)
+
+    chrom, start, end, strand = get_pos_parts(ex)
+    trunc_pos = end - trunc if right else start + trunc
+
+    locs = np.concatenate([ex_lookup.begin.values, ex_lookup.end.values])
+    while trunc_pos in locs:
+        trunc_pos = trunc_pos - 1 if right else start - 1
+    assert trunc > MAX_BP_FROM_BOUNDARY
+
+    ss = ss[:(len(ss)-trunc)] if right else ss[trunc:]
+    return ss, trunc
+
+def write_trunc_exons(tx, all_exons, genome_fasta, out_prefix, block_range):
+    '''
+    Truncate two adjacent exons to create a novel exon junction
+    '''
+    control_fasta = '%s-control.fasta' % out_prefix
+    case_fasta = '%s-case.fasta' % out_prefix
+    min_exon_len = block_range[0] + MAX_BP_FROM_BOUNDARY + 1
+
+    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta, control_fasta)
+
+    s_min = 0 if strand == '+' else 1
+    s_max = len(seq)-1 if strand == '+' else len(seq)
+    select = np.random.randint(s_min, s_max)
+    next_select = select + 1 if strand == '+' else select - 1
+
+    if len(seq[select]) < min_exon_len or len(seq[next_select]) < min_exon_len:
+        other_exons = [i for i in range(s_min, s_max) if i != select]
+        for select in other_exons:
+            next_select = select + 1 if strand == '+' else select - 1
+            if len(seq[select]) >= min_exon_len and len(seq[next_select]) >= min_exon_len:
+                break
+    assert len(seq[select]) >= min_exon_len and len(seq[next_select]) >= min_exon_len
+
+    chrom = [x.chrom for x in all_exons if x['transcript_id'] == tx][0]
+    ex_lookup = pd.DataFrame(get_chrom_features(chrom, all_exons.merge()))
+
+    r1, r2 = strand == '+', strand == '-'
+    seq[select], trunc1 = truncate_exon(ex_list[select], seq[select], block_range, ex_lookup, right=r1)
+    seq[next_select], trunc2 = truncate_exon(ex_list[next_select], seq[next_select],
+                                             block_range, ex_lookup, right=r2)
+    write_output(seq, tx, 'NEJ', case_fasta)
+
+    selected_exons = '%d, %d' % (select+1, next_select+1)
+    trunc_lens = '%d, %d' % (trunc1, trunc2)
+    return trunc_lens, selected_exons
+
+def write_output(seq, tx, vartype, case_fasta):
     seq = ''.join(seq)
     name = '%s(%s)' % (tx, vartype)
     with open(case_fasta, 'a') as fout:
         fout.write('>%s\n' % name)
         fout.write(seq + '\n')
-
-    return n_exons, select+1
