@@ -22,6 +22,28 @@ BASE_COMPLEMENT = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'N': 'N'}
 SEED_INIT = 123
 MAX_BP_FROM_BOUNDARY = 10 #to place variant for indels
 
+def pick_genes(n, genes_list):
+    '''
+    Randomly select n genes from given gene list,
+    and remove those genes from the genes list.
+    '''
+    pick_genes = np.random.choice(genes_list, n, replace=False)
+    genes_list = [gene for gene in genes_list if gene not in pick_genes]
+    return pick_genes, genes_list
+
+def pick_transcript(gene, all_exons, valid_txs=[]):
+    '''
+    Pick a transcript given from a specified gene.
+    By default always picks the first transcript found.
+    Optionally, the transcript is checked against a
+    valid_txs list.
+    '''
+    exs = [ex for ex in all_exons if get_gene_name(ex) == gene]
+    ex = exs[0]
+    if len(valid_txs) > 0:
+        ex = [ex for ex in exs if ex['transcript_id'] in valid_txs][0]
+    return ex['transcript_id'], ex.chrom
+
 def get_gene_name(row):
     '''
     Prevents KeyError if gene name missing
