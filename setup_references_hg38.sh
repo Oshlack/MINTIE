@@ -48,15 +48,11 @@ function gmap_refdir_setup {
 }
 
 function gmap_genome_setup {
-    gmap_build=gmap_build
+    gmap_build=`which gmap_build 2>/dev/null`
     if [ -z $gmap_build ] ; then
         gmap_build=$PWD/../tools/bin/gmap_build
     fi
-    if [ -z $gmap_build ] ; then
-        echo -n "WARNING: gmap_build could not be found!!!"
-    else
-        $gmap_build -s chrom -k 15 -d gmap_genome -D $gmap_refdir Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa
-    fi
+    $gmap_build -s chrom -k 15 -d gmap_genome -D $gmap_refdir Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa
     if [ -d gmap_genome ]; then
         echo "gmap_genome" > gmap_genome.success
     fi

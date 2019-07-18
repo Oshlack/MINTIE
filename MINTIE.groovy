@@ -156,6 +156,7 @@ annotate_contigs = {
 refine_contigs = {
     def sample_name = branch.name
     output.dir = sample_name
+    motif_check = test_mode.toBoolean() ? "--skipMotifCheck" : ""
     produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
         exec """
         $python ${code_base}/annotate/refine_annotations.py \
@@ -163,8 +164,9 @@ refine_contigs = {
             $genome_fasta $output.tsv $output.bam \
             --minClip $min_clip \
             --minGap $min_gap \
+            $motif_check \
             --log $output.dir/refine.log > $output.vcf ;
-        samtools index $output.bam
+        $samtools index $output.bam
         """
     }
 }
@@ -243,8 +245,8 @@ sort_and_index_bam = {
     output.dir = new File(input.sam).getParentFile()
     transform('sam') to ('bam') {
         exec """
-        samtools sort -@ $threads -m ${sort_ram}G $input.sam -o $output ;
-        samtools index $output
+        $samtools sort -@ $threads -m ${sort_ram}G $input.sam -o $output ;
+        $samtools index $output
         """, "sort_and_index_bam"
     }
 }

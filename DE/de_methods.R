@@ -40,7 +40,7 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     keep <- as.numeric(cpm(counts)[, group=="case"]) > cpm_cutoff
     counts <- counts[keep,]
     if(nrow(counts) == 0) {
-        stop(paste("All ECCs were below the CPM cutoff of", cpm_cutoff, "."))
+        stop(paste("All ECCs were below the CPM cutoff of", paste0(cpm_cutoff, ".")))
     }
 
     # make counts summary
@@ -55,16 +55,20 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     write.table(counts_out, file=paste(outdir, "counts_table.txt", sep="/"), row.names=F, quote=F, sep="\t")
 
     # perform DE
-    dge <- DGEList(counts = counts, group = group)
-    dge <- calcNormFactors(dge)
-    dge <- estimateGLMCommonDisp(dge, design=des, verbose=T)
-
     if (test) {
-        # test mode, set dispersion manually, perform exact test
-        if(is.na(dge$common.dispersion)){dge$common.dispersion <- 0.1}
-        et <- exactTest(dge)
+        # add dummy record to get around zero library size error in controls
+        counts <- rbind(counts, rep(10000, ncol(counts)))
+
+        # add manual dispersion parameter, perform exact test, don't correct for libsize
+        dge <- DGEList(counts = counts, group = group)
+        et <- exactTest(dge, dispersion = 0.1)
+
         dx_df <- data.frame(topTags(et, n=Inf))
+        dx_df <- dx_df[rownames(dx_df)!="",]
     } else {
+        dge <- DGEList(counts = counts, group = group)
+        dge <- calcNormFactors(dge)
+        dge <- estimateGLMCommonDisp(dge, design=des, verbose=T)
         dge <- estimateGLMTrendedDisp(dge, design=des)
         dge <- estimateGLMTagwiseDisp(dge, design=des)
         fit <- glmQLFit(dge, design=des)

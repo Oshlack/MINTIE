@@ -252,17 +252,16 @@ def get_tx_juncs(read):
     '''
     Get all junctions from the given contig
     '''
-    tx_juncs = []
-    unknown_juncs = []
     starts, ends = zip(*read.get_blocks())
 
     # merge adjacent 'junctions' (i.e. insertions)
-    juncs = IntervalTree()
+    blocks = IntervalTree()
     for s, e in zip(starts, ends):
-        juncs.addi(s, e)
-    juncs.merge_overlaps(strict=False)
-    starts = [junc[0] for junc in juncs]
-    ends = [junc[1] for junc in juncs]
+        blocks.addi(s, e)
+    blocks.merge_overlaps(strict=False)
+
+    starts = np.sort([block[0] for block in blocks])
+    ends = np.sort([block[1] for block in blocks])
 
     chroms = [read.reference_name] * (len(starts)-1)
     tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
@@ -277,11 +276,29 @@ def get_chrom_ref_tree(chrom, ref_trees):
     '''
     try:
         ref_tree = ref_trees[chrom]
+        return ref_tree
     except KeyError:
-       logging.info('WARNING: reference chromosome %s (from read %s) was not found in supplied reference' \
-                    % (read.reference_name, read.query_name))
-       return None
-    return ref_tree
+        pass
+
+    # try adding 'chr'
+    try:
+        chrom = 'chr%s' % chrom if chrom != 'MT' else 'chrM'
+        ref_tree = ref_trees[chrom]
+        return ref_tree
+    except KeyError:
+        pass
+
+    # OK... one more try. Maybe we need to remove chr?
+    try:
+        chrom = chrom.split('chr')[-1]
+        chrom = 'MT' if chrom == 'M' else chrom
+        ref_tree = ref_trees[chrom]
+        return ref_tree
+    except KeyError:
+        # we did our best...
+        logging.info('WARNING: reference chromosome %s was not found in supplied reference.' \
+                    % crom)
+        return None
 
 def do_any_read_blocks_overlap_exons(read, ex_trees, bam_idx):
     '''
@@ -543,7 +560,7 @@ def annotate_juncs(cv, read, locs, novel_juncs, ci_file):
         cpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in constants.AFFECT_CONTIG])
         rpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in constants.AFFECT_REF])
         cv.cpos, cp.cpos = cpos, cpos
-        cv.pos, cp.pos = pos1-1, pos2+1
+        cv.pos, cp.pos = pos1, pos2+1
 
         cv.ref, cp.ref = refseq[rpos-1], refseq[rpos]
         cv.alt = '%s[%s:%d[%s' % (cv.ref, cv.chrom, cv.pos, varseq)

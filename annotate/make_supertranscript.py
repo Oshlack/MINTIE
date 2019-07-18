@@ -216,7 +216,7 @@ def load_vcf_file(contig_vcf):
     remove 'chr' prefix from chroms if present
     '''
     cvcf = pd.read_csv(contig_vcf, sep='\t', header=None, comment='#')
-    vcf_chrs = cvcf[0].str.contains('chr')
+    vcf_chrs = cvcf[0].map(str).str.contains('chr')
     if any(vcf_chrs.values):
         cvcf = cvcf[vcf_chrs]
         cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
