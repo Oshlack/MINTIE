@@ -560,7 +560,7 @@ def annotate_juncs(cv, read, locs, novel_juncs, ci_file):
         cpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in constants.AFFECT_CONTIG])
         rpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in constants.AFFECT_REF])
         cv.cpos, cp.cpos = cpos, cpos
-        cv.pos, cp.pos = pos1-1, pos2+1
+        cv.pos, cp.pos = pos1, pos2+1
 
         cv.ref, cp.ref = refseq[rpos-1], refseq[rpos]
         cv.alt = '%s[%s:%d[%s' % (cv.ref, cv.chrom, cv.pos, varseq)
