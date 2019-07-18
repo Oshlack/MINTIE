@@ -567,12 +567,8 @@ def write_trunc_exons(tx, all_exons, genome_fasta, out_prefix, block_range):
     ex_lookup = pd.DataFrame(get_chrom_features(chrom, all_exons.merge()))
 
     r1, r2 = strand == '+', strand == '-'
-<<<<<<< HEAD
     seq[select], trunc1 = truncate_exon(ex_list[select], seq[select], block_range,
                                         ex_lookup, right=r1)
-=======
-    seq[select], trunc1 = truncate_exon(ex_list[select], seq[select], block_range, ex_lookup, right=r1)
->>>>>>> master
     seq[next_select], trunc2 = truncate_exon(ex_list[next_select], seq[next_select],
                                              block_range, ex_lookup, right=r2)
     write_output(seq, tx, 'NEJ', case_fasta)
@@ -581,7 +577,6 @@ def write_trunc_exons(tx, all_exons, genome_fasta, out_prefix, block_range):
     trunc_lens = '%d, %d' % (trunc1, trunc2)
     return trunc_lens, selected_exons
 
-<<<<<<< HEAD
 def get_juncs(tx):
     '''
     Return list of junctions in form
