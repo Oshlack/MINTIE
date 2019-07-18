@@ -305,9 +305,13 @@ def get_nejs_within_exons(contigs, ex_trees):
     Check novel exon junctions contained within exons (may be deletions)
     '''
     nej_var = contigs.variant_type == 'NEJ'
+    if sum(nej_var.values) == 0:
+        return np.empty(0, dtype=object)
+
     within_exon = contigs[nej_var].apply(overlaps_same_exon, axis=1, args=(ex_trees,))
     bigger_than_mingap = contigs[nej_var].apply(get_varsize, axis=1) >= MIN_GAP
     nej_del_vars = contigs[nej_var][np.logical_and(within_exon, bigger_than_mingap)].variant_id.values
+
     return nej_del_vars
 
 def get_tsv_vars(contigs):
