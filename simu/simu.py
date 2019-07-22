@@ -255,9 +255,6 @@ def get_exon_seq(ex_list, strand, gr, genome_fasta, block_range, extended=True):
     or overlaps the given exon, it will extend or place
     the exon past the overlapping exon.
     '''
-    # TODO: make sure exon size doesn't extend to the next exon
-    # TODO: error checking, some exons cannot be extended without
-    # extending past the end of the transcript (in cases of overlaps)
     block_size = np.random.randint(block_range[0], block_range[1])
     gap_size = 0 if extended else np.random.randint(block_range[0], block_range[1])
 
@@ -448,9 +445,9 @@ def get_exon_to_extend(ex_list, all_exons, block_range, vartype):
         chrom, start, end, strand = get_pos_parts(ex_list[select])
         if vartype == 'RI':
             # maxlen becomes length to next exon for retained intron vars
-            pselect = select + 1 if strand == '+' else select - 1
-            pchrom, pstart, pend, pstrand = get_pos_parts(ex_list[pselect])
-            maxlen = pstart - end - 1 if strand == '+' else start - pend - 1
+            nselect = select
+            nchrom, nstart, nend, nstrand = get_pos_parts(ex_list[select + 1])
+            maxlen = nstart - end - 1 if strand == '+' else start - nend - 1
         if strand == '+':
             olaps = ex_ref.overlaps(end + 1, end + maxlen)
         else:
