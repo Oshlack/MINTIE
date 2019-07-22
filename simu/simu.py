@@ -76,7 +76,7 @@ def get_transcripts(gene, all_exons, valid_txs=[]):
     txs = [ex['transcript_id'] for ex in all_exons if get_gene_name(ex) == gene]
     if len(valid_txs) > 0:
         txs = [tx for tx in txs if tx in valid_txs]
-    return txs
+    return np.unique(txs)
 
 def get_gene_name(row):
     '''
@@ -323,17 +323,21 @@ def get_tx_seq(tx, all_exons, genome_fasta, n_exons=0, front=True, control_fasta
 # Exon and transcript selection
 #=====================================================================================================
 
-def pick_valid_exon_tx(gene, all_exons, valid_txs, genome_fasta, block_range, consider_gap):
+def pick_valid_exon_tx(gene, all_exons, valid_txs, genome_fasta, block_range, vartype):
     '''
     Pick a transcript that has a valid exon to use for
     extending/creating a novel exon. Return transcript
     name and the valid exon number.
     '''
+    vartypes = ['EE', 'NE', 'RI']
+    if vartype not in vartypes:
+        raise ValueError('Invalid variant type to add, expected %s' % vartypes)
+
     txs = get_transcripts(gene, all_exons)
     tx = txs[0] # pick first as default
     seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta)
-    select = get_exon_to_extend(ex_list, all_exons, block_range, consider_gap)
 
+    select = get_exon_to_extend(ex_list, all_exons, block_range, vartype)
     if select is not None:
         return tx, select
 
@@ -341,7 +345,7 @@ def pick_valid_exon_tx(gene, all_exons, valid_txs, genome_fasta, block_range, co
     txs = [x for x in txs if x!=tx]
     for tx in txs:
         seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta)
-        select = get_exon_to_extend(ex_list, all_exons, block_range, consider_gap)
+        select = get_exon_to_extend(ex_list, all_exons, block_range, vartype)
         if select is not None:
             break
 
@@ -420,7 +424,7 @@ def get_exon_for_insertion(seq):
 
     return select
 
-def get_exon_to_extend(ex_list, all_exons, block_range, consider_gap):
+def get_exon_to_extend(ex_list, all_exons, block_range, vartype):
     '''
     Select suitable exon for extending or creating novel
     downstream exon. Criteria:
@@ -436,15 +440,17 @@ def get_exon_to_extend(ex_list, all_exons, block_range, consider_gap):
     exons = np.random.choice(exons, len(exons), replace=False)
 
     # max distance from downstream exon
-    # mult by 2 as may be novel exon placed downstream
-    maxlen = block_range[1] * 2 if consider_gap else block_range[1]
+    maxlen = block_range[1] * 2 if vartype == 'NE' else block_range[1]
 
     # make sure there are no overlaps
     select, olaps = None, True
     for select in exons:
-        loc = re.split('[:\(\)]', ex_list[select])[:-1]
-        pos = loc[1].split('-')
-        start, end, strand = int(pos[0]), int(pos[1]), loc[2]
+        chrom, start, end, strand = get_pos_parts(ex_list[select])
+        if vartype == 'RI':
+            # maxlen becomes length to next exon for retained intron vars
+            pselect = select + 1 if strand == '+' else select - 1
+            pchrom, pstart, pend, pstrand = get_pos_parts(ex_list[pselect])
+            maxlen = pstart - end - 1 if strand == '+' else start - pend - 1
         if strand == '+':
             olaps = ex_ref.overlaps(end + 1, end + maxlen)
         else:
@@ -658,19 +664,13 @@ def write_novel_exon(gene, valid_txs, all_exons, genome_fasta,
 
     control_fasta = '%s-control.fasta' % out_prefix
     case_fasta = '%s-case.fasta' % out_prefix
-    consider_gap = vartype == 'NE'
+    maxgap = block_range[1] if vartype == 'NE' else 0
 
     seq, strand, ex_list = None, None, None
-    if vartype in ['EE', 'NE']:
-        tx, select = pick_valid_exon_tx(gene, all_exons, valid_txs,
-                                        genome_fasta, block_range, consider_gap)
-    else:
-        tx = get_transcripts(gene, all_exons, valid_txs=valid_txs)[0]
-        seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta)
-        select = np.random.randint(0, len(seq)-1)
+    tx, select = pick_valid_exon_tx(gene, all_exons, valid_txs,
+                                    genome_fasta, block_range, vartype)
 
     if select is None:
-        set_trace()
         return '', '', {}
 
     # now that we know we have a valid tx we can write the wildtype out
@@ -762,7 +762,6 @@ def write_unannot_splice(gene, all_exons, valid_txs, genome_fasta, out_prefix, j
 
     if junc in junc_ref:
         # all possible splice variants must already exist....
-        set_trace()
         return '', '', {}
 
     # now that we know we have a valid tx we can write the wildtype out
