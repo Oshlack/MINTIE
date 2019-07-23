@@ -503,7 +503,7 @@ def write_wildtype_sequence(seq_dict, strand, output_file, name):
 # Make variant functions
 #=====================================================================================================
 
-def write_fusion(tx1, tx2, all_exons, genome_fasta, params, gene_trees, add=None):
+def write_fusion(txs, genes, all_exons, genome_fasta, params, gene_trees, add=None):
     '''
     Get left and right sequences of given transcripts
     corresponding to the first N exons and last N exons of
@@ -518,6 +518,8 @@ def write_fusion(tx1, tx2, all_exons, genome_fasta, params, gene_trees, add=None
                                              'out_prefix', 'block_range']]):
         raise ValueError('Some parameters missing')
 
+    tx1, tx2 = txs
+    gene1, gene2 = genes
     n_exons = params['n_exons']
     block_range = params['block_range']
     ins_range = params['ins_range']
@@ -527,9 +529,6 @@ def write_fusion(tx1, tx2, all_exons, genome_fasta, params, gene_trees, add=None
     # get sequence for tx1
     seq1, strand1, ex1_list = get_tx_seq(tx1, all_exons, genome_fasta,
                                          n_exons=n_exons, control_fasta=control_fasta)
-
-    # add to fusion list
-    fusion_parts = [tx1]
 
     # extended or novel exon
     ext_seq, bloc = '', ''
@@ -542,7 +541,11 @@ def write_fusion(tx1, tx2, all_exons, genome_fasta, params, gene_trees, add=None
     elif add == 'INS':
         ext_seq = get_random_seq(ins_range)
         bloc = ext_seq
-    fusion_parts.append(bloc)
+
+    # add info to list
+    chr1 = get_tx_chrom(tx1, all_exons)
+    loc1 = get_gene_loc(chr1, gene_trees, gene1)
+    fusion_parts = [loc1, gene1, tx1, bloc]
 
     seq2 = ''
     if tx2:
@@ -551,21 +554,26 @@ def write_fusion(tx1, tx2, all_exons, genome_fasta, params, gene_trees, add=None
                                              n_exons=n_exons, front=False,
                                              control_fasta=control_fasta)
         # add to fusion list
-        fusion_parts.append(tx2)
+        chr2 = get_tx_chrom(tx2, all_exons)
+        loc2 = get_gene_loc(chr2, gene_trees, gene2)
+        fusion_parts.extend([loc2, gene2, tx2])
     else:
         # unpartnered fusion
         block_seq, seed = get_random_block(all_exons, gene_trees, genome_fasta, block_range)
         seq2 = [s for s in block_seq.values()]
         bloc = ''.join([k for k in block_seq.keys()])
-        fusion_parts.append(bloc)
-
-    seq = ''.join(seq1 + [ext_seq] + seq2)
-    name = '%s:%s:%s' % (tx1, bloc, tx2) if tx2 else '%s:%s' % (tx1, bloc)
+        fusion_parts.extend([bloc, 'intergenic', ''])
 
     # write output
+    seq = ''.join(seq1 + [ext_seq] + seq2)
+    name = '%s:%s:%s' % (tx1, bloc, tx2) if tx2 else '%s:%s' % (tx1, bloc)
     with open(case_fasta, 'a') as fout:
         fout.write('>%s\n' % name)
         fout.write(seq + '\n')
+
+    vartype = '%s_fusion' % add if add else 'canonical_fusion'
+    vartype = 'unpartnered_fusion' if not tx2 else vartype
+    fusion_parts.append(vartype)
 
     return fusion_parts
 
