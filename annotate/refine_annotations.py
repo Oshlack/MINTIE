@@ -286,7 +286,8 @@ def match_splice_juncs(contigs):
     '''
     spliced_exons = []
     exons = contigs[contigs.variant_type.isin(NOVEL_BLOCKS)]
-    novel_juncs = contigs[contigs.variant_type.isin(NOVEL_JUNCS)]
+    # some junction gaps may be called as deletions, so include these
+    novel_juncs = contigs[contigs.variant_type.isin(NOVEL_JUNCS + ['DEL'])]
     for idx,row in exons.iterrows():
         back_junc = novel_juncs.pos2 == row['pos1']
         front_junc = novel_juncs.pos1 == row['pos2']

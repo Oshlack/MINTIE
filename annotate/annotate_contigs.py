@@ -471,7 +471,7 @@ def annotate_blocks(cv, read, chr_ref, ci_file):
             # block does not cross any annotation
             qseq, rseq = bh.get_block_sequence(read, block_idx)
             cv.ref, cv.alt = rseq, '[' + qseq + ']'
-            cv.pos, cv.cvtype = block[0], 'NE'
+            cv.pos, cv.cvtype = block[0] + 1, 'NE'
             cv.cpos = cpos1
             cv.vid = get_next_id(read.query_name)
             cv.vsize, cv.cvsize = abs(len(cv.alt)-2 - len(cv.ref)), len(cv.alt)-2
