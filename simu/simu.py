@@ -20,17 +20,18 @@ from Bio import SeqIO
 
 BASES = list('GCAT')
 BASE_COMPLEMENT = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'N': 'N'}
-SEED_INIT = 123
 MAX_BP_FROM_BOUNDARY = 10 #to place variant for indels
+
+seed = 123
 
 #=====================================================================================================
 # Util funcs
 #=====================================================================================================
 
-def increment_seed(seed, amount=1):
-    seed += amount
+def set_and_increment_seed(amount=1):
+    global seed
     np.random.seed(seed)
-    return seed
+    seed += amount
 
 def reverse_complement(seq):
     if seq == '':
@@ -364,7 +365,7 @@ def get_random_block(all_exons, gene_trees, genome_fasta, block_range):
     block_start = np.random.randint(chr_range[0], chr_range[1]-block_size)
     block_end = block_start + block_size
 
-    seed = SEED_INIT
+    set_and_increment_seed()
     seq = 'N'
     while 'N' in seq:
         # only select sequence if there's no Ns
@@ -373,7 +374,7 @@ def get_random_block(all_exons, gene_trees, genome_fasta, block_range):
             block_end = block_start + block_size
 
             if chrom_features.overlaps(block_start, block_end):
-                seed = increment_seed(seed)
+                set_and_increment_seed()
 
         strand = np.random.choice(['+','-'])
         block_bed = '%s\t%d\t%d\t.\t1\t%s' % (chrom, block_start, block_end, strand)
@@ -382,9 +383,9 @@ def get_random_block(all_exons, gene_trees, genome_fasta, block_range):
         seq = ''.join([bs for bs in block_seq.values()])
 
         if 'N' in seq:
-            seed = increment_seed(seed)
+            set_and_increment_seed()
 
-    return block_seq, seed
+    return block_seq
 
 def get_exon_for_deletion(seq, indel_range):
     '''
@@ -559,7 +560,7 @@ def write_fusion(txs, genes, all_exons, genome_fasta, params, gene_trees, add=No
         fusion_parts.extend([loc2, gene2, tx2])
     else:
         # unpartnered fusion
-        block_seq, seed = get_random_block(all_exons, gene_trees, genome_fasta, block_range)
+        block_seq = get_random_block(all_exons, gene_trees, genome_fasta, block_range)
         seq2 = [s for s in block_seq.values()]
         bloc = ''.join([k for k in block_seq.keys()])
         fusion_parts.extend([bloc, 'intergenic', ''])
