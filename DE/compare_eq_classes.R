@@ -39,7 +39,8 @@ if("--help" %in% args) {
 MIN_CONTROLS <- 2
 REC_CONTROLS <- 10
 
-CONTIG_REGEX <- "^k[0-9]+_[0-9]+"
+SOAP_REGEX <- "^k[0-9]+_[0-9]+"
+SPADES_REGEX = '^NODE_[0-9]+_length_[0-9]+_cov_[0-9.]*'
 GENE_REGEX <- "gene_symbol:([a-zA-Z0-9.-]+)"
 
 FDR <- 0.05
@@ -92,9 +93,13 @@ if(!test_mode) {
 # Prepare data for DE analysis
 #############################################################
 
+# obtain contig regex, dependent on assembler
+contig_regex <- ifelse(any(grepl(SOAP_REGEX, ec_matrix$transcript)),
+                       SOAP_REGEX, SPADES_REGEX)
+
 print("Extracting ECs associated with only novel contigs...")
 tx_ec <- data.table(distinct(ec_matrix[,c("ec_names", "transcript")]))
-tx_ec$novel <- rownames(tx_ec)%in%grep(CONTIG_REGEX, tx_ec$transcript)
+tx_ec$novel <- rownames(tx_ec)%in%grep(contig_regex, tx_ec$transcript)
 novel_contig_ecs <- tx_ec[, all(novel), by="ec_names"]
 novel_contig_ecs <- unique(novel_contig_ecs$ec_names[novel_contig_ecs$V1])
 if(length(novel_contig_ecs) == 0) {

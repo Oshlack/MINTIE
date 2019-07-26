@@ -1,5 +1,7 @@
 -p threads=8
 -p genome_mem=31000000000
+-p assembly_mem=128
+-p assembler=soap
 -p scores=33
 -p min_read_length=50
 -p max_read_length=150

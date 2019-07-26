@@ -22,35 +22,49 @@ fastq_dedupe = {
    }
 }
 
-SOAPassemble = {
-    def sample_name = branch.name
-    def Ks = Ks.split(',').join(' ')
-    output.dir = sample_name
-    produce(sample_name+'_denovo_filt.fasta', sample_name+'.fasta'){
+trim = {
+    output.dir = branch.name
+    produce('trim1.fastq', 'trim2.fastq') {
         exec """
         $trimmomatic PE -threads $threads -phred$scores $input1.gz $input2.gz
-            $sample_name/trim1.fastq /dev/null $sample_name/trim2.fastq /dev/null
+            $output1 /dev/null $output2 /dev/null
             LEADING:$minQScore TRAILING:$minQScore MINLEN:$min_read_length ;
+        """
+    }
+}
 
-        if [ ! -d $output.dir/SOAPassembly ]; then mkdir $output.dir/SOAPassembly ; fi ;
-        cd $sample_name/SOAPassembly ;
+assemble = {
+    def sample_name = branch.name
+    def Ks_for_soap = Ks.split(',').join(' ')
+    output.dir = sample_name
+    produce(sample_name+'_denovo_filt.fasta', sample_name+'.fasta'){
+        if (assembler.toLowerCase() == 'spades') {
+            exec """
+            $rnaspades -1 $input1 -2 $input2 -k $Ks -t $threads -m $assembly_mem -o $sample_name/SPAdes_assembly ;
+            ln -s SPAdes_assembly/contigs.fasta $output1 ;
+            cat $output1 $trans_fasta > $output2
+            """
+        } else {
+            exec """
+            if [ ! -d $output.dir/SOAPassembly ]; then mkdir $output.dir/SOAPassembly ; fi ;
+            cd $sample_name/SOAPassembly ;
 
-        echo \"max_rd_len=$max_read_length\" > config.config ;
-        echo -e \"[LIB]\\nq1=../trim1.fastq\\nq2=../trim2.fastq\" >> config.config ;
-        if [ -e SOAP.fasta ]; then rm SOAP.fasta ; fi ;
-        for k in $Ks ; do
-            $soapdenovotrans pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
-            $soapdenovotrans contig -g outputGraph_\$k ;
-            cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
-        done ;
-        cd ../../ ;
-        $dedupe in=$sample_name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true |
-        $fasta_formatter |
-        awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }'
-        > $output1 ;
-        cat $output1 $trans_fasta > $output2 ;
-        rm $sample_name/trim1.fastq $sample_name/trim2.fastq ;
-        ""","SOAPassemble"
+            echo \"max_rd_len=$max_read_length\" > config.config ;
+            echo -e \"[LIB]\\nq1=../../$input1\\nq2=../../$input1\" >> config.config ;
+            if [ -e SOAP.fasta ]; then rm SOAP.fasta ; fi ;
+            for k in $Ks_for_soap ; do
+                $soapdenovotrans pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
+                $soapdenovotrans contig -g outputGraph_\$k ;
+                cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
+            done ;
+            cd ../../ ;
+            $dedupe in=$sample_name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true |
+            $fasta_formatter |
+            awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }'
+            > $output1 ;
+            cat $output1 $trans_fasta > $output2 ;
+            ""","assemble"
+        }
     }
 }
 
@@ -278,7 +292,8 @@ if(!binding.variables.containsKey("fastqControlFormat")){
 }
 
 run { fastqCaseFormat * [ fastq_dedupe +
-                          SOAPassemble +
+                          trim +
+                          assemble +
                           create_salmon_index +
                           [run_salmon, fastqControlFormat * [ run_salmon.using(type:"controls") ]] +
                           create_ec_count_matrix +

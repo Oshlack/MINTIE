@@ -11,7 +11,7 @@ mkdir -p tools/bin
 cd tools
 
 #a list of which programs need to be installed
-commands="bpipe fastuniq dedupe trimmomatic fasta_formatter samtools bedtools soapdenovotrans salmon hisat gmap"
+commands="bpipe fastuniq dedupe trimmomatic fasta_formatter samtools bedtools soapdenovotrans rnaspades salmon hisat gmap"
 
 #installation methods
 function bpipe_install {
@@ -43,6 +43,13 @@ function soapdenovotrans_install {
     cd SOAPdenovo-Trans-1.0.4
     chmod u+x make.sh && ./make.sh ; cd ..
     ln -s $PWD/SOAPdenovo-Trans-1.0.4/SOAPdenovo-Trans-127mer $PWD/bin/soapdenovotrans
+}
+
+function rnaspades_install {
+    wget --no-check-certificate http://cab.spbu.ru/files/release3.12.0/SPAdes-3.12.0-Linux.tar.gz
+    tar -xvzf SPAdes-3.12.0-Linux.tar.gz
+    rm SPAdes-3.12.0-Linux.tar.gz
+    ln -s $PWD/SPAdes-3.12.0-Linux/bin/rnaspades.py $PWD/bin/rnaspades
 }
 
 function fasta_formatter_install {
