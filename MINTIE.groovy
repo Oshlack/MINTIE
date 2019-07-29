@@ -1,35 +1,68 @@
+/*
+  __  __ ___ _   _ _____ ___ _____
+ |  \/  |_ _| \ | |_   _|_ _| ____|
+ | |\/| || ||  \| | | |  | ||  _|
+ | |  | || || |\  | | |  | || |___
+ |_|  |_|___|_| \_| |_| |___|_____|
+
+Method for Inferring Novel Transcripts and Isoforms using Equivalences classes
+
+Author: Marek Cmero
+*/
+
 code_base = file(bpipe.Config.config.script).parentFile.absolutePath
 load code_base + "/tools.groovy"
 load code_base + "/references.groovy"
 
+// initialise defaults if not provided
+if(!binding.variables.containsKey("fastqCaseFormat")){
+    fastqCaseFormat="cases/%_R*.fastq.gz"
+}
+if(!binding.variables.containsKey("fastqControlFormat")){
+    fastqControlFormat="controls/%_R*.fastq.gz"
+}
+
+if(!binding.variables.containsKey("assemblyFasta")){
+    assemblyFasta=""
+}
+
 fastq_dedupe = {
-   from("*.gz"){
-      def sample_name = branch.name
-      output.dir = sample_name
-      produce(sample_name+'.1.fastq.gz',sample_name+'.2.fastq.gz'){
-         exec """
-         gunzip -c $input1.gz > $sample_name/temp1.fastq ;
-         gunzip -c $input2.gz > $sample_name/temp2.fastq ;
-         echo $sample_name/temp1.fastq > $sample_name/fastq.list ;
-         echo $sample_name/temp2.fastq >> $sample_name/fastq.list ;
-         echo "Reads before:" ; wc -l $sample_name/temp1.fastq ;
-         $fastuniq -i $sample_name/fastq.list -o $output1.prefix -p $output2.prefix ;
-         echo "Reads after:" ; wc -l $output1.prefix ;
-         gzip $output1.prefix $output2.prefix ;
-         rm $sample_name/fastq.list $sample_name/temp1.fastq $sample_name/temp2.fastq
-      """, "fastq_dedupe"
-      }
-   }
+    from("*.gz"){
+        def sample_name = branch.name
+        output.dir = sample_name
+        produce(sample_name+'.1.fastq.gz',sample_name+'.2.fastq.gz'){
+            exec """
+            gunzip -c $input1.gz > $sample_name/temp1.fastq ;
+            gunzip -c $input2.gz > $sample_name/temp2.fastq ;
+            echo $sample_name/temp1.fastq > $sample_name/fastq.list ;
+            echo $sample_name/temp2.fastq >> $sample_name/fastq.list ;
+            echo "Reads before:" ; wc -l $sample_name/temp1.fastq ;
+            $fastuniq -i $sample_name/fastq.list -o $output1.prefix -p $output2.prefix ;
+            echo "Reads after:" ; wc -l $output1.prefix ;
+            gzip $output1.prefix $output2.prefix ;
+            rm $sample_name/fastq.list $sample_name/temp1.fastq $sample_name/temp2.fastq
+            """, "fastq_dedupe"
+        }
+    }
 }
 
 trim = {
     output.dir = branch.name
-    produce('trim1.fastq', 'trim2.fastq') {
-        exec """
-        $trimmomatic PE -threads $threads -phred$scores $input1.gz $input2.gz
-            $output1 /dev/null $output2 /dev/null
-            LEADING:$minQScore TRAILING:$minQScore MINLEN:$min_read_length ;
-        """
+    produce('trim1.fastq.gz', 'trim2.fastq.gz') {
+        if (assemblyFasta != '') {
+            // no need to trim if assembly provided
+            exec """
+            touch $output1 ; touch $output2
+            """
+        } else {
+            exec """
+            $trimmomatic PE -threads $threads -phred$scores $input1.gz $input2.gz
+                $output.dir/trim1.fastq /dev/null $output.dir/trim2.fastq /dev/null
+                LEADING:$minQScore TRAILING:$minQScore MINLEN:$min_read_length ;
+            gzip $output.dir/trim1.fastq ;
+            gzip $output.dir/trim2.fastq
+            """
+        }
     }
 }
 
@@ -38,7 +71,12 @@ assemble = {
     def Ks_for_soap = Ks.split(',').join(' ')
     output.dir = sample_name
     produce(sample_name+'_denovo_filt.fasta', sample_name+'.fasta'){
-        if (assembler.toLowerCase() == 'spades') {
+        if (assemblyFasta != '') {
+            exec """
+            ln -s $assemblyFasta $output1 ;
+            cat $assemblyFasta $trans_fasta > $output2
+            """
+        } else if (assembler.toLowerCase() == 'spades') {
             exec """
             $rnaspades -1 $input1 -2 $input2 -k $Ks -t $threads -m $assembly_mem -o $sample_name/SPAdes_assembly ;
             ln -s SPAdes_assembly/contigs.fasta $output1 ;
@@ -72,7 +110,7 @@ create_salmon_index = {
     def sample_name = branch.name
     def salmon_index = sample_name + "/all_fasta_index"
     output.dir = sample_name + "/all_fasta_index"
-    produce('sa.bin','hash.bin','rsd.bin'){
+    produce('sa.bin', 'hash.bin', 'rsd.bin'){
         exec """
          $salmon index -t $input2 -i $salmon_index ;
          """
@@ -282,13 +320,6 @@ post_process = {
             --var_filter $var_filter > $output
         """
     }
-}
-
-if(!binding.variables.containsKey("fastqCaseFormat")){
-    fastqCaseFormat="cases/%_R*.fastq.gz"
-}
-if(!binding.variables.containsKey("fastqControlFormat")){
-    fastqControlFormat="controls/%_R*.fastq.gz"
 }
 
 run { fastqCaseFormat * [ fastq_dedupe +
