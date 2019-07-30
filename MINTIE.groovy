@@ -56,11 +56,10 @@ trim = {
             """
         } else {
             exec """
-            $trimmomatic PE -threads $threads -phred$scores $input1.gz $input2.gz
-                $output.dir/trim1.fastq /dev/null $output.dir/trim2.fastq /dev/null
+            $trimmomatic PE -threads $threads -phred$scores $input1 $input2
+                $output1.prefix /dev/null $output2.prefix /dev/null
                 LEADING:$minQScore TRAILING:$minQScore MINLEN:$min_read_length ;
-            gzip $output.dir/trim1.fastq ;
-            gzip $output.dir/trim2.fastq
+            gzip $output1.prefix $output2.prefix ;
             """
         }
     }
@@ -119,11 +118,11 @@ create_salmon_index = {
 
 run_salmon = {
     def workingDir = System.getProperty("user.dir");
-    def (rf1, rf2)=inputs.fastq.gz.split().collect { workingDir+"/$it" }
+    def (rf1, rf2) = inputs.split().collect { workingDir+"/$it" }
     def salmon_index="all_fasta_index"
     def base_outdir = "salmon_out"
     def controls_dir = fastqControlFormat.split("/")[-2]
-    def sample_name = branch.parent.name.split('_').first()
+    def sample_name = branch.parent.parent.name.split('_').first()
 
     if(type == "controls"){
         sample_name = branch.parent.parent.name.split('_').first()
@@ -150,7 +149,7 @@ run_de = {
     test_flag = test_mode.toBoolean() ? "--test" : ""
     produce("eq_classes_de.txt"){
         exec """
-        ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc $test_flag
+        ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $trans_fasta $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc $test_flag
         """, "run_de"
     }
 }
@@ -280,7 +279,7 @@ hisat_index = {
 hisat_align = {
     output.dir = colpath+"/alignment"
     def workingDir = System.getProperty("user.dir");
-    def (rf1, rf2) = inputs.fastq.gz.split().collect { workingDir+"/$it" }
+    def (rf1, rf2) = inputs.split().collect { workingDir+"/$it" }
     def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
     if(type == "controls"){
         output.dir = colpath + "/alignment/controls/"
@@ -326,13 +325,15 @@ run { fastqCaseFormat * [ fastq_dedupe +
                           trim +
                           assemble +
                           create_salmon_index +
-                          [run_salmon, fastqControlFormat * [ run_salmon.using(type:"controls") ]] +
+                          [ fastqCaseFormat * [ run_salmon ],
+                            fastqControlFormat * [ run_salmon.using(type:"controls") ] ] +
                           create_ec_count_matrix +
                           run_de +
                           filter_on_significant_ecs +
                           align_contigs_against_genome +
                           sort_and_index_bam +
-                          annotate_contigs + refine_contigs +
+                          annotate_contigs +
+                          refine_contigs +
                           create_supertranscript_reference ] +
         make_super_supertranscript +
         make_supertranscript_gmap_reference +

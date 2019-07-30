@@ -25,7 +25,7 @@ if("--help" %in% args) {
         samples.
 
         Usage:
-        Rscript compare_eq_classes.R <case_name> <ec_matrix> <output> --FDR=<value> --minCPM=<value> --minLogFC=<value> --test)\n\n
+        Rscript compare_eq_classes.R <case_name> <ec_matrix> <tx_ref_fasta> <output> --FDR=<value> --minCPM=<value> --minLogFC=<value> --test)\n\n
 
         All flags are optonal. The defaults are:
         FDR = 0.05
@@ -39,8 +39,6 @@ if("--help" %in% args) {
 MIN_CONTROLS <- 2
 REC_CONTROLS <- 10
 
-SOAP_REGEX <- "^k[0-9]+_[0-9]+"
-SPADES_REGEX = '^NODE_[0-9]+_length_[0-9]+_cov_[0-9.]*'
 GENE_REGEX <- "gene_symbol:([a-zA-Z0-9.-]+)"
 
 FDR <- 0.05
@@ -54,7 +52,8 @@ minLogFC <- 5
 args <- commandArgs(trailingOnly=TRUE)
 case_name <- args[1]
 ec_matrix_file <- args[2]
-outfile <- args[3]
+tx_ref_fasta <- args[3]
+outfile <- args[4]
 test_mode <- length(grep("--test", args)) > 0
 
 # optional flags
@@ -89,17 +88,17 @@ if(!test_mode) {
     }
 }
 
+# get reference transcript IDs
+seq <- read.fasta(file = tx_ref_fasta)
+txs <- as.character(sapply(names(seq), function(x){strsplit(x, ' ')[[1]][1]}))
+
 #############################################################
 # Prepare data for DE analysis
 #############################################################
 
-# obtain contig regex, dependent on assembler
-contig_regex <- ifelse(any(grepl(SOAP_REGEX, ec_matrix$transcript)),
-                       SOAP_REGEX, SPADES_REGEX)
-
 print("Extracting ECs associated with only novel contigs...")
 tx_ec <- data.table(distinct(ec_matrix[,c("ec_names", "transcript")]))
-tx_ec$novel <- rownames(tx_ec)%in%grep(contig_regex, tx_ec$transcript)
+tx_ec$novel <- !tx_ec$transcript%in%txs
 novel_contig_ecs <- tx_ec[, all(novel), by="ec_names"]
 novel_contig_ecs <- unique(novel_contig_ecs$ec_names[novel_contig_ecs$V1])
 if(length(novel_contig_ecs) == 0) {
