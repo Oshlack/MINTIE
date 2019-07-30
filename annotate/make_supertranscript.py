@@ -329,13 +329,19 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
     # alternate block colour tracks in cases of fusion
     if len(genes) > 1 and '' not in genes:
         blocks = blocks.reset_index()
-        g1 = blocks.name.str.contains(genes[0]).values
-        g2 = blocks.name.str.contains(genes[1]).values
 
-        if genes[0].split('|')[0] == genes[1].split('|')[0]:
+        gnames = blocks.name.apply(lambda x: x.split('|')[0])
+        gns, idxs = np.unique(gnames.values, return_index=True)
+
+        if len(gns) == 1:
             half_idx = int((len(blocks)/2))
             g1 = blocks.index < half_idx
             g2 = blocks.index >= half_idx
+        else:
+            # get unique genes in the order they appear
+            gene1, gene2 = gns[:2] if idxs[0] < idxs[1] else gns[1::-1]
+            g1 = gnames == gene1
+            g2 = gnames == gene2
 
         c1 = bh.get_block_colours(blocks[g1], names[g1])
         c2 = bh.get_block_colours(blocks[g2], names[g2], alt=True)
