@@ -11,7 +11,7 @@ mkdir -p tools/bin
 cd tools
 
 #a list of which programs need to be installed
-commands="bpipe fastuniq dedupe trimmomatic fasta_formatter samtools bedtools soapdenovotrans rnaspades salmon hisat gmap"
+commands="bpipe fastuniq dedupe trimmomatic fasta_formatter samtools bedtools soapdenovotrans salmon hisat gmap"
 
 #installation methods
 function bpipe_install {
@@ -50,6 +50,28 @@ function rnaspades_install {
     tar -xvzf SPAdes-3.12.0-Linux.tar.gz
     rm SPAdes-3.12.0-Linux.tar.gz
     ln -s $PWD/SPAdes-3.12.0-Linux/bin/rnaspades.py $PWD/bin/rnaspades
+}
+
+function Trinity_install {
+    wget --no-check-certificate https://github.com/trinityrnaseq/trinityrnaseq/archive/Trinity-v2.8.5.tar.gz
+    tar -xvzf Trinity-v2.8.5.tar.gz
+    rm Trinity-v2.8.5.tar.gz
+    make -C trinityrnaseq-Trinity-v2.8.5
+    make plugins -C trinityrnaseq-Trinity-v2.8.5
+    ln -s $PWD/trinityrnaseq-Trinity-v2.8.5/Trinity $PWD/bin
+}
+
+function jellyfish_install {
+    wget --no-check-certificate https://github.com/gmarcais/Jellyfish/releases/download/v2.3.0/jellyfish-linux
+    chmod u+x jellyfish-linux
+    mv jellyfish-linux $PWD/bin/jellyfish
+}
+
+function bowtie2_install {
+    wget --no-check-certificate https://sourceforge.net/projects/bowtie-bio/files/bowtie2/2.3.5.1/bowtie2-2.3.5.1-linux-x86_64.zip
+    unzip bowtie2-2.3.5.1-linux-x86_64.zip
+    rm bowtie2-2.3.5.1-linux-x86_64.zip
+    ln -s $PWD/bowtie2-2.3.5.1-linux-x86_64/bowtie* $PWD/bin
 }
 
 function fasta_formatter_install {

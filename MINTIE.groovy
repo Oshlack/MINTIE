@@ -75,6 +75,13 @@ assemble = {
             ln -s $assemblyFasta $output1 ;
             cat $assemblyFasta $trans_fasta > $output2
             """
+        } else if (assembler.toLowerCase() == 'trinity') {
+            exec """
+            $Trinity --seqType fq --max_memory ${assembly_mem}G --output $sample_name/trinity_assembly \
+                --left $input1 --right $input2 --CPU $threads ;
+            ln -s trinity_assembly/Trinity.fasta $output1 ;
+            cat $output1 $trans_fasta > $output2
+            """
         } else if (assembler.toLowerCase() == 'spades') {
             exec """
             $rnaspades -1 $input1 -2 $input2 -k $Ks -t $threads -m $assembly_mem -o $sample_name/SPAdes_assembly ;
