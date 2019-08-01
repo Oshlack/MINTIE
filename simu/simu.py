@@ -64,7 +64,7 @@ def pick_genes(n, genes_list):
     return pick_genes, genes_list
 
 def get_tx_chrom(tx, all_exons):
-    chrom = [ex.chrom for ex in all_exons if ex['transcript_id'] == tx][0]
+    chrom = all_exons.filter(lambda x: x['transcript_id'] == tx)[0].chrom
     return chrom
 
 def get_transcripts(gene, all_exons, valid_txs=[]):
@@ -74,9 +74,11 @@ def get_transcripts(gene, all_exons, valid_txs=[]):
     Optionally, the transcript is checked against a
     valid_txs list.
     '''
-    txs = [ex['transcript_id'] for ex in all_exons if get_gene_name(ex) == gene]
+    txs = all_exons.filter(lambda x: get_gene_name(x) == gene).saveas()
     if len(valid_txs) > 0:
-        txs = [tx for tx in txs if tx in valid_txs]
+        txs = [tx['transcript_id'] for tx in txs if tx['transcript_id'] in valid_txs]
+    else:
+        txs = [tx['transcript_id'] for tx in txs]
     return np.unique(txs)
 
 def get_gene_name(row):
@@ -145,7 +147,7 @@ def build_junc_ref(junc_file):
     return dictionary containing all splice
     junction start and end sites
     '''
-    genref = pd.read_csv(junc_file, sep='\t')
+    genref = pd.read_csv(junc_file, sep='\t', low_memory=False)
     junc_info = genref.apply(lambda tx: get_juncs(tx), axis=1)
 
     juncs = ['%s:%s-%s' % (c, s, e) for jv in junc_info.values for c, s, e in jv]
@@ -188,7 +190,7 @@ def get_gene_features(gr):
         ref_tree = IntervalTree()
         for s,e,g in zip(chr_ref['start'].values, chr_ref['end'].values, chr_ref['gene'].values):
             ref_tree.addi(s-1, e, g)
-    ref_trees[chrom] = ref_tree
+        ref_trees[chrom] = ref_tree
 
     return ref_trees
 
@@ -288,7 +290,7 @@ def get_exon_seq(ex_list, strand, gr, genome_fasta, block_range, extended=True):
 
     return ext_seq, bloc
 
-def get_tx_seq(tx, all_exons, genome_fasta, n_exons=0, front=True, control_fasta=''):
+def get_tx_seq(tx, all_exons, genome_fasta, n_exons=0, front=True):
     '''
     Get fusion sequence of given transcript, returning
     sequence of first N exons for transcript 1 (front=True)
@@ -312,10 +314,7 @@ def get_tx_seq(tx, all_exons, genome_fasta, n_exons=0, front=True, control_fasta
     seq = seq if s == '+' else [s for s in reversed(seq)]
     ex_list = ex_list if s == '+' else [ex for ex in reversed(ex_list)]
 
-    if control_fasta != '':
-        write_wildtype_sequence(tx_seq, s, control_fasta, tx)
-
-    return seq, s, ex_list
+    return seq, s, ex_list, tx_seq
 
 #=====================================================================================================
 # Exon and transcript selection
@@ -333,7 +332,7 @@ def pick_valid_exon_tx(gene, all_exons, valid_txs, genome_fasta, block_range, va
 
     txs = get_transcripts(gene, all_exons)
     tx = txs[0] # pick first as default
-    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta)
+    seq, strand, ex_list, tx_seq = get_tx_seq(tx, all_exons, genome_fasta)
 
     select = get_exon_to_extend(ex_list, all_exons, block_range, vartype)
     if select is not None:
@@ -342,26 +341,23 @@ def pick_valid_exon_tx(gene, all_exons, valid_txs, genome_fasta, block_range, va
     # no valid exons in first transcript selected, we have to go deeper...
     txs = [x for x in txs if x!=tx]
     for tx in txs:
-        seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta)
+        seq, strand, ex_list, tx_seq = get_tx_seq(tx, all_exons, genome_fasta)
         select = get_exon_to_extend(ex_list, all_exons, block_range, vartype)
         if select is not None:
             break
 
     return tx, select
 
-def get_random_block(all_exons, gene_trees, genome_fasta, block_range):
+def get_random_block(chrom, gene_trees, genome_fasta, block_range):
     '''
     Get random block sequence for feature
     not overlapping any other genomic features
     '''
     chr_sizes = pybedtools.chromsizes('hg38')
-    chroms = np.unique([x.chrom for x in all_exons])
+    chr_features = gene_trees[chrom]
+    chr_range = chr_sizes[('chr%s' % chrom)]
 
     block_size = np.random.randint(block_range[0], block_range[1])
-    chrom = np.random.choice(chroms)
-    chrom_features = gene_trees[chrom]
-
-    chr_range = chr_sizes[('chr%s' % chrom)]
     block_start = np.random.randint(chr_range[0], chr_range[1]-block_size)
     block_end = block_start + block_size
 
@@ -369,11 +365,12 @@ def get_random_block(all_exons, gene_trees, genome_fasta, block_range):
     seq = 'N'
     while 'N' in seq:
         # only select sequence if there's no Ns
-        while chrom_features.overlaps(block_start, block_end):
+        while chr_features.overlaps(block_start, block_end):
             block_start = np.random.randint(chr_range[0], chr_range[1]-block_size)
             block_end = block_start + block_size
 
-            if chrom_features.overlaps(block_start, block_end):
+            if chr_features.overlaps(block_start, block_end):
+                print('%d,-%d no good, repicking...' % (block_start, block_end))
                 set_and_increment_seed()
 
         strand = np.random.choice(['+','-'])
@@ -504,7 +501,8 @@ def write_wildtype_sequence(seq_dict, strand, output_file, name):
 # Make variant functions
 #=====================================================================================================
 
-def write_fusion(txs, genes, all_exons, genome_fasta, params, gene_trees, add=None):
+def write_fusion(txs, genes, gene_ref, genome_fasta, params,
+                 gene_trees, all_exons=None, add=None):
     '''
     Get left and right sequences of given transcripts
     corresponding to the first N exons and last N exons of
@@ -528,8 +526,8 @@ def write_fusion(txs, genes, all_exons, genome_fasta, params, gene_trees, add=No
     case_fasta = '%s-case.fasta' % params['out_prefix']
 
     # get sequence for tx1
-    seq1, strand1, ex1_list = get_tx_seq(tx1, all_exons, genome_fasta,
-                                         n_exons=n_exons, control_fasta=control_fasta)
+    seq1, strand1, ex1_list, tx1_seq = get_tx_seq(tx1, gene_ref, genome_fasta,
+                                                  n_exons=n_exons)
 
     # extended or novel exon
     ext_seq, bloc = '', ''
@@ -544,23 +542,22 @@ def write_fusion(txs, genes, all_exons, genome_fasta, params, gene_trees, add=No
         bloc = ext_seq
 
     # add info to list
-    chr1 = get_tx_chrom(tx1, all_exons)
+    chr1 = get_tx_chrom(tx1, gene_ref)
     loc1 = get_gene_loc(chr1, gene_trees, gene1)
     fusion_parts = [loc1, gene1, tx1, bloc]
 
-    seq2 = ''
+    seq2, tx_seq2 = '', {}
     if tx2:
         # get sequence for tx1
-        seq2, strand2, ex2_list = get_tx_seq(tx2, all_exons, genome_fasta,
-                                             n_exons=n_exons, front=False,
-                                             control_fasta=control_fasta)
+        seq2, strand2, ex2_list, tx2_seq = get_tx_seq(tx2, gene_ref, genome_fasta,
+                                             n_exons=n_exons, front=False)
         # add to fusion list
-        chr2 = get_tx_chrom(tx2, all_exons)
+        chr2 = get_tx_chrom(tx2, gene_ref)
         loc2 = get_gene_loc(chr2, gene_trees, gene2)
         fusion_parts.extend([loc2, gene2, tx2])
     else:
         # unpartnered fusion
-        block_seq = get_random_block(all_exons, gene_trees, genome_fasta, block_range)
+        block_seq = get_random_block(chr1, gene_trees, genome_fasta, block_range)
         seq2 = [s for s in block_seq.values()]
         bloc = ''.join([k for k in block_seq.keys()])
         fusion_parts.extend([bloc, 'intergenic', ''])
@@ -572,13 +569,19 @@ def write_fusion(txs, genes, all_exons, genome_fasta, params, gene_trees, add=No
         fout.write('>%s\n' % name)
         fout.write(seq + '\n')
 
+    # write wildtype to case and control fastas
+    for fasta in [case_fasta, control_fasta]:
+        write_wildtype_sequence(tx1_seq, strand1, fasta, tx1)
+        if tx_seq2:
+            write_wildtype_sequence(tx2_seq, strand2, fasta, tx2)
+
     vartype = '%s_fusion' % add if add else 'canonical_fusion'
     vartype = 'unpartnered_fusion' if not tx2 else vartype
     fusion_parts.append(vartype)
 
     return fusion_parts
 
-def write_indel(tx, all_exons, genome_fasta, indel_range, out_prefix, vartype='DEL'):
+def write_indel(tx, gene_ref, genome_fasta, indel_range, out_prefix, vartype='DEL'):
     '''
     Write transcript with deletion, insertion or ITD in random exon
     '''
@@ -588,7 +591,7 @@ def write_indel(tx, all_exons, genome_fasta, indel_range, out_prefix, vartype='D
 
     control_fasta = '%s-control.fasta' % out_prefix
     case_fasta = '%s-case.fasta' % out_prefix
-    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta, control_fasta=control_fasta)
+    seq, strand, ex_list, tx_seq = get_tx_seq(tx, gene_ref, genome_fasta)
     varsize, select = None, None
 
     if vartype == 'DEL':
@@ -626,10 +629,14 @@ def write_indel(tx, all_exons, genome_fasta, indel_range, out_prefix, vartype='D
         itd_seq = select_seq[itd_pos:(itd_pos + varsize)]
         seq[select] = select_seq[:itd_pos] + itd_seq + select_seq[itd_pos:]
 
+    # write variant and wildtype outputs
     write_output(seq, tx, vartype, case_fasta)
+    for fasta in [case_fasta, control_fasta]:
+        write_wildtype_sequence(tx_seq, strand, fasta, tx)
+
     return varsize, select+1
 
-def write_large_tsv(tx, all_exons, genome_fasta, out_prefix, exons_range, vartype='PTD'):
+def write_large_tsv(tx, gene_ref, genome_fasta, out_prefix, exons_range, vartype='PTD'):
     '''
     Write transcript with deletion, insertion or ITD in random exon
     '''
@@ -639,7 +646,7 @@ def write_large_tsv(tx, all_exons, genome_fasta, out_prefix, exons_range, vartyp
 
     control_fasta = '%s-control.fasta' % out_prefix
     case_fasta = '%s-case.fasta' % out_prefix
-    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta, control_fasta=control_fasta)
+    seq, strand, ex_list, tx_seq = get_tx_seq(tx, gene_ref, genome_fasta)
 
     min_exons, max_exons = exons_range
     max_exons = min(max_exons, len(seq))
@@ -656,7 +663,11 @@ def write_large_tsv(tx, all_exons, genome_fasta, out_prefix, exons_range, vartyp
         var_seq = reverse_complement(var_seq)
         seq = seq[:select] + [var_seq] + seq[select+n_exons:]
 
+    # write variant and wildtype outputs
     write_output(seq, tx, vartype, case_fasta)
+    for fasta in [case_fasta, control_fasta]:
+        write_wildtype_sequence(tx_seq, strand, fasta, tx)
+
     return n_exons, select+1
 
 def write_novel_exon(gene, valid_txs, all_exons, genome_fasta,
@@ -672,15 +683,14 @@ def write_novel_exon(gene, valid_txs, all_exons, genome_fasta,
     case_fasta = '%s-case.fasta' % out_prefix
     maxgap = block_range[1] if vartype == 'NE' else 0
 
-    seq, strand, ex_list = None, None, None
+    seq, strand, ex_list, tx_seq = None, None, None, None
     tx, select = pick_valid_exon_tx(gene, all_exons, valid_txs,
                                     genome_fasta, block_range, vartype)
 
     if select is None:
         return '', '', {}
 
-    # now that we know we have a valid tx we can write the wildtype out
-    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta, control_fasta=control_fasta)
+    seq, strand, ex_list, tx_seq = get_tx_seq(tx, all_exons, genome_fasta)
     select_ex = ex_list[:(select+1)] if strand == '+' else ex_list[select:]
     # ^ need to cut the exon list to get terminal exon to modify for get_exon_seq
 
@@ -693,11 +703,14 @@ def write_novel_exon(gene, valid_txs, all_exons, genome_fasta,
         ext_seq, bloc = get_intron_seq(select_ex, strand, all_exons, genome_fasta)
 
     seq = seq[:(select+1)] + [ext_seq] + seq[(select+1):]
-
-    write_output(seq, tx, vartype, case_fasta)
     chrom = get_tx_chrom(tx, all_exons)
     loc = get_gene_loc(chrom, gene_trees, gene)
     stats = {'varsize': len(ext_seq), 'exon': select+1}
+
+    # write variant and wildtype outputs
+    write_output(seq, tx, vartype, case_fasta)
+    for fasta in [case_fasta, control_fasta]:
+        write_wildtype_sequence(tx_seq, strand, fasta, tx)
 
     return tx, loc, stats
 
@@ -709,7 +722,7 @@ def write_trunc_exons(tx, all_exons, genome_fasta, out_prefix, block_range):
     case_fasta = '%s-case.fasta' % out_prefix
     min_exon_len = block_range[0] + MAX_BP_FROM_BOUNDARY + 1
 
-    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta, control_fasta=control_fasta)
+    seq, strand, ex_list, tx_seq = get_tx_seq(tx, all_exons, genome_fasta)
 
     s_min = 0 if strand == '+' else 1
     s_max = len(seq)-1 if strand == '+' else len(seq)
@@ -732,13 +745,19 @@ def write_trunc_exons(tx, all_exons, genome_fasta, out_prefix, block_range):
                                         ex_lookup, right=r1)
     seq[next_select], trunc2 = truncate_exon(ex_list[next_select], seq[next_select],
                                              block_range, ex_lookup, right=r2)
-    write_output(seq, tx, 'NEJ', case_fasta)
 
     selected_exons = '%d, %d' % (select+1, next_select+1)
     trunc_lens = '%d, %d' % (trunc1, trunc2)
+
+    # write variant and wildtype outputs
+    write_output(seq, tx, 'NEJ', case_fasta)
+    for fasta in [case_fasta, control_fasta]:
+        write_wildtype_sequence(tx_seq, strand, fasta, tx)
+
     return trunc_lens, selected_exons
 
-def write_unannot_splice(gene, all_exons, valid_txs, genome_fasta, out_prefix, junc_ref, gene_trees):
+def write_unannot_splice(gene, gene_ref, valid_txs, genome_fasta,
+                         out_prefix, junc_ref, gene_trees):
     '''
     Connect exons in random order, checking if they correspond to an
     existing splice junction. If not, return a transcript with this
@@ -748,11 +767,12 @@ def write_unannot_splice(gene, all_exons, valid_txs, genome_fasta, out_prefix, j
     control_fasta = '%s-control.fasta' % out_prefix
     case_fasta = '%s-case.fasta' % out_prefix
 
-    txs = get_transcripts(gene, all_exons, valid_txs=valid_txs)
-    select1, select2, size, strand, chrom = None, None, None, None, None
+    txs = get_transcripts(gene, gene_ref, valid_txs=valid_txs)
+    select1, select2, size, chrom = None, None, None, None
+    seq, strand, ex_list, tx_seq = None, None, None, None
     for tx in txs:
-        seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta)
-        chrom = get_tx_chrom(tx, all_exons)
+        seq, strand, ex_list, tx_seq = get_tx_seq(tx, gene_ref, genome_fasta)
+        chrom = get_tx_chrom(tx, gene_ref)
 
         exons = range(len(seq))
         possible_juncs = [ex for ex in itertools.combinations(exons, 2)]
@@ -770,15 +790,16 @@ def write_unannot_splice(gene, all_exons, valid_txs, genome_fasta, out_prefix, j
         # all possible splice variants must already exist....
         return '', '', {}
 
-    # now that we know we have a valid tx we can write the wildtype out
-    seq, strand, ex_list = get_tx_seq(tx, all_exons, genome_fasta, control_fasta=control_fasta)
-
     if select2 < select1:
         select1, select2 = select2, select1
     seq = seq[:(select1+1)] + seq[select2:]
 
-    write_output(seq, tx, 'US', case_fasta)
     loc = get_gene_loc(chrom, gene_trees, gene)
     stats = {'varsize': size, 'exon': '%d-%d' % (select1+1, select2+1)}
+
+    # write variant and wildtype outputs
+    write_output(seq, tx, 'NEJ', case_fasta)
+    for fasta in [case_fasta, control_fasta]:
+        write_wildtype_sequence(tx_seq, strand, fasta, tx)
 
     return tx, loc, stats
