@@ -361,26 +361,22 @@ def get_random_block(chrom, gene_trees, genome_fasta, block_range):
     block_start = np.random.randint(chr_range[0], chr_range[1]-block_size)
     block_end = block_start + block_size
 
-    set_and_increment_seed()
-    seq = 'N'
-    while 'N' in seq:
-        # only select sequence if there's no Ns
-        while chr_features.overlaps(block_start, block_end):
-            block_start = np.random.randint(chr_range[0], chr_range[1]-block_size)
-            block_end = block_start + block_size
+    strand = np.random.choice(['+','-'])
+    block_bed = '%s\t%d\t%d\t.\t1\t%s' % (chrom, block_start, block_end, strand)
+    block_bt = BedTool(block_bed, from_string=True)
+    block_seq, bs = get_seq(block_bt, genome_fasta)
+    seq = ''.join([bs for bs in block_seq.values()])
 
-            if chr_features.overlaps(block_start, block_end):
-                print('%d,-%d no good, repicking...' % (block_start, block_end))
-                set_and_increment_seed()
+    while chr_features.overlaps(block_start, block_end) or 'N' in seq:
+        # block is invalid and must be reselected
+        set_and_increment_seed()
+        block_start = np.random.randint(chr_range[0], chr_range[1]-block_size)
+        block_end = block_start + block_size
 
-        strand = np.random.choice(['+','-'])
         block_bed = '%s\t%d\t%d\t.\t1\t%s' % (chrom, block_start, block_end, strand)
         block_bt = BedTool(block_bed, from_string=True)
         block_seq, bs = get_seq(block_bt, genome_fasta)
         seq = ''.join([bs for bs in block_seq.values()])
-
-        if 'N' in seq:
-            set_and_increment_seed()
 
     return block_seq
 
@@ -735,7 +731,8 @@ def write_trunc_exons(tx, all_exons, genome_fasta, out_prefix, block_range):
             next_select = select + 1 if strand == '+' else select - 1
             if len(seq[select]) >= min_exon_len and len(seq[next_select]) >= min_exon_len:
                 break
-    assert len(seq[select]) >= min_exon_len and len(seq[next_select]) >= min_exon_len
+    if not (len(seq[select]) >= min_exon_len and len(seq[next_select]) >= min_exon_len):
+        return '',''
 
     chrom = [x.chrom for x in all_exons if x['transcript_id'] == tx][0]
     ex_lookup = pd.DataFrame(get_chrom_features(chrom, all_exons.merge()))
