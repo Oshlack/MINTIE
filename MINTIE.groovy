@@ -60,7 +60,7 @@ trim = {
                 $output1.prefix /dev/null $output2.prefix /dev/null
                 LEADING:$minQScore TRAILING:$minQScore MINLEN:$min_read_length ;
             gzip $output1.prefix $output2.prefix ;
-            """
+            """, "trim"
         }
     }
 }

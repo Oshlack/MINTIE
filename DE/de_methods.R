@@ -2,7 +2,7 @@ library(dplyr)
 library(data.table)
 library(edgeR)
 
-run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=0.05, min_logfc=0, test=F) {
+run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=0.05, min_logfc=0, test=FALSE) {
     data <- distinct(ec_matrix[, !colnames(ec_matrix)%in%c("transcript", "tx_ids"), with=F])
     data <- data[data$ec_names%in%tx_ec$ec_names,]
     if(nrow(data) == 0) {
@@ -57,7 +57,7 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     # perform DE
     if (test) {
         # add dummy record to get around zero library size error in controls
-        counts <- rbind(counts, rep(10000, ncol(counts)))
+        counts <- rbind(counts, c(0, rep(sum(counts[,1], ncol(counts)-1))))
 
         # add manual dispersion parameter, perform exact test, don't correct for libsize
         dge <- DGEList(counts = counts, group = group)
