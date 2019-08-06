@@ -1,7 +1,7 @@
 '''
 Module      : simu
-Description : Functions to help in running Jupyter notebook simulations
-Copyright   : (c) Marek Cmero, Mar 2019
+Description : Functions to help in running simulations
+Copyright   : (c) Marek Cmero, 2019
 License     : TBD
 Maintainer  : MAREK.CMERO@MCRI.EDU.AU
 Portability : POSIX
