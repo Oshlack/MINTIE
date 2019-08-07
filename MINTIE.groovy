@@ -81,13 +81,13 @@ assemble = {
                 --left $input1 --right $input2 --CPU $threads ;
             ln -s trinity_assembly/Trinity.fasta $output1 ;
             cat $output1 $trans_fasta > $output2
-            """
+            """, "assemble"
         } else if (assembler.toLowerCase() == 'spades') {
             exec """
             $rnaspades -1 $input1 -2 $input2 -k $Ks -t $threads -m $assembly_mem -o $sample_name/SPAdes_assembly ;
             ln -s SPAdes_assembly/contigs.fasta $output1 ;
             cat $output1 $trans_fasta > $output2
-            """
+            """, "assemble"
         } else {
             exec """
             if [ ! -d $output.dir/SOAPassembly ]; then mkdir $output.dir/SOAPassembly ; fi ;
@@ -107,7 +107,7 @@ assemble = {
             awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }'
             > $output1 ;
             cat $output1 $trans_fasta > $output2 ;
-            ""","assemble"
+            """, "assemble"
         }
     }
 }
