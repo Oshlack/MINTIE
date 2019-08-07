@@ -21,6 +21,7 @@ from pybedtools import BedTool
 PROGRAM_NAME = 'RUN_SIMU'
 def exit_with_error(message, exit_status):
     '''
+    function from https://github.com/bionitio-team/bionitio-python
     Print an error message to stderr, prefixed by the program name and 'ERROR'.
     Then exit program with supplied exit status.
     Arguments:
@@ -34,6 +35,7 @@ def exit_with_error(message, exit_status):
 
 def init_logging(log_filename):
     '''
+    function from https://github.com/bionitio-team/bionitio-python
     If the log_filename is defined, then
     initialise the logging facility, and write log statement
     indicating the program has started, and also write out the
@@ -55,6 +57,7 @@ def init_logging(log_filename):
 
 def parse_args():
     '''
+    function from https://github.com/bionitio-team/bionitio-python
     Parse command line arguments.
     Returns Options object with command line argument values as attributes.
     Will exit the program on a command line error.
@@ -82,9 +85,8 @@ def preproc(case_fasta, control_fasta, out_prefix):
     outdir = '/'.join(out_prefix.split('/')[:-1])
     subprocess.call(['mkdir', '-p', outdir])
 
-def simulate_fusions(simp, params, available_genes, all_exons, gene_trees, valid_txs, genome_fasta):
+def simulate_fusions(simp, params, available_genes, all_exons, gene_trees, valid_txs, paths):
     fuscols = ['loc1', 'gene1', 'tx1', 'insert', 'loc2', 'gene2', 'tx2', 'fusion_type']
-
     n_vars = int(simp['n_cfus']) \
              + int(simp['n_ee_fus']) \
              + int(simp['n_ne_fus']) \
@@ -109,17 +111,21 @@ def simulate_fusions(simp, params, available_genes, all_exons, gene_trees, valid
         vartype = 'unpartnered' if row['gene2'] == '' else vartype
 
         gene1, gene2 = row['gene1'], row['gene2'] if row['gene2'] != '' else None
+        fusname = '%s:%s' if gene2 else '%s'
+        logging.info('Generating %s:%s %s fusion' % (fusname, vartype))
+
         gene_ref = all_exons.filter(lambda x: simu.get_gene_name(x) in [gene1, gene2]).saveas()
         tx1 = simu.get_transcripts(gene1, gene_ref, valid_txs=valid_txs)[0]
         tx2 = simu.get_transcripts(gene2, gene_ref, valid_txs=valid_txs)[0] if gene2 else None
 
         add = row['add'] if row['add'] != '' else None
-        fus_parts = simu.write_fusion((tx1, tx2), (gene1, gene2), gene_ref, genome_fasta, \
+        fus_parts = simu.write_fusion((tx1, tx2), (gene1, gene2), gene_ref, paths['genome_fasta'], \
                                       params, gene_trees, all_exons=all_exons, add=add)
         fus_info.append(fus_parts)
 
     fus_info = pd.DataFrame(fus_info, columns=fuscols)
-    return fus_info, available_genes
+    fus_info.to_csv('%s_fusions_simulated.tsv' % paths['out_prefix'], index=False, sep='\t')
+    return available_genes
 
 def simulate_tsvs_and_splicevars(simp, params, available_genes, all_exons,
                                  gene_trees, junc_ref, valid_txs, paths):
@@ -143,6 +149,7 @@ def simulate_tsvs_and_splicevars(simp, params, available_genes, all_exons,
 
     for idx, row in var_df.iterrows():
         vartype, gene = row['vartype'], row['gene']
+        logging.info('Generating %s in gene %s' % (vartype, gene))
 
         gene_ref = all_exons.filter(lambda x: simu.get_gene_name(x) == gene).saveas()
         tx = simu.get_transcripts(gene, gene_ref, valid_txs=valid_txs)[0]
@@ -156,16 +163,23 @@ def simulate_tsvs_and_splicevars(simp, params, available_genes, all_exons,
         elif vartype == 'NEJ':
             varsize, exon = simu.write_trunc_exons(tx, all_exons, genome_fasta, out_prefix, block_range)
             while varsize == '':
+                logging.info('Gene contains no valid transcripts, reselecting...')
+
                 genes, available_genes = simu.pick_genes(1, available_genes)
                 gene = genes[0]
+                logging.info('Generating %s in gene %s' % (vartype, gene))
+
                 tx = simu.get_transcripts(gene, all_exons, valid_txs=valid_txs)[0]
                 varsize, exon = simu.write_trunc_exons(tx, all_exons, genome_fasta, out_prefix, block_range)
         elif vartype == 'US':
             tx, loc, stats = simu.write_unannot_splice(gene, gene_ref, valid_txs, genome_fasta,
                                                       out_prefix, junc_ref, gene_trees)
             while tx == '':
+                logging.info('Gene contains no valid transcripts, reselecting...')
+
                 genes, available_genes = simu.pick_genes(1, available_genes)
                 gene = genes[0]
+                logging.info('Generating %s in gene %s' % (vartype, gene))
                 tx, loc, stats = simu.write_unannot_splice(gene, all_exons, valid_txs, genome_fasta,
                                                            out_prefix, junc_ref, gene_trees)
             varsize, exon = stats['varsize'], stats['exon']
@@ -175,9 +189,11 @@ def simulate_tsvs_and_splicevars(simp, params, available_genes, all_exons,
                                            genome_fasta, out_prefix,
                                            block_range, gene_trees, vartype=vartype)
             while tx == '':
-                # no valid genes, repick
+                logging.info('Gene contains no valid transcripts, reselecting...')
+
                 genes, available_genes = simu.pick_genes(1, available_genes)
                 gene = genes[0]
+                logging.info('Generating %s in gene %s' % (vartype, gene))
                 tx, loc, stats = simu.write_novel_exon(gene, valid_txs, all_exons,
                                                        genome_fasta, out_prefix,
                                                        block_range, gene_trees, vartype=vartype)
@@ -188,7 +204,50 @@ def simulate_tsvs_and_splicevars(simp, params, available_genes, all_exons,
         var_info.append([loc, tx, gene, varsize, exon, vartype])
 
     var_info = pd.DataFrame(var_info, columns=varcols)
-    return var_info, available_genes
+    var_info.to_csv('%s_tsvs_splice_simulated.tsv' % paths['out_prefix'], index=False, sep='\t')
+    return available_genes
+
+
+def write_background_genes(bg_genes, simp, paths, valid_txs, all_exons):
+    control_fasta = '%s-control.fasta' % paths['out_prefix']
+    case_fasta = '%s-case.fasta' % paths['out_prefix']
+
+    for gene in bg_genes:
+        logging.info('Writing out %s' % gene)
+        tx = simu.get_transcripts(gene, all_exons, valid_txs=valid_txs)[0]
+        exons = all_exons.filter(lambda x: x['transcript_id'] == tx).saveas()
+        tx_seq, strand = simu.get_seq(exons, paths['genome_fasta'])
+
+        simu.write_wildtype_sequence(tx_seq, strand, control_fasta, tx)
+        simu.write_wildtype_sequence(tx_seq, strand, case_fasta, tx)
+        simu.write_wildtype_sequence(tx_seq, strand, case_fasta, tx) # write case twice (two alleles)
+
+def simulate_reads(fasta, readp, paths, control=False):
+    fold = str(int(readp['fold']) * 2) if control else readp['fold']
+    sample = 'control' if control else 'case'
+    logging.info('Generating simulated reads for %s' % sample)
+    try:
+        seed = int(readp['art_seed_%s'] % sample)
+        assert seed > 0
+    except KeyError:
+        seed = np.random.randint(99999)
+    logging.info('ART-Illumina random seed is %d' % seed)
+    subprocess.call([paths['art_illumina'],
+                    '-ss', 'HS25',
+                    '-i', fasta,
+                    '-p',
+                    '-l', readp['read_len'],
+                    '-f', fold,
+                    '-m', readp['frag_size'],
+                    '-s', readp['frag_sd'],
+                    '-rs', str(seed),
+                    '-o', '%s-%s_R' % (paths['out_prefix'], sample)])
+
+def gzip_files(sample, out_prefix):
+    for r in range(2):
+        outf = open('%s-%s_R%d.fastq.gz' % (out_prefix, sample, (r+1)), 'w')
+        subprocess.call(['gzip', '-c', '%s-%s_R%d.fq' % (out_prefix, sample, (r+1))], stdout=outf)
+        outf.close()
 
 def simulate(args):
     config = configparser.ConfigParser()
@@ -202,7 +261,7 @@ def simulate(args):
     case_fasta = '%s-case.fasta' % paths['out_prefix']
     preproc(case_fasta, control_fasta, paths['out_prefix'])
 
-    # build GTF reference
+    logging.info('Building references...')
     gr = BedTool(paths['gtf_ref'])
     junc_ref = simu.build_junc_ref(paths['junc_ref'])
 
@@ -213,7 +272,7 @@ def simulate(args):
     all_exons = gr.filter(lambda x: x[2] == 'exon').saveas()
     all_genes = np.unique([simu.get_gene_name(ex) for ex in all_exons if simu.get_gene_name(ex)!=''])
 
-    # get valid txs
+    logging.info('Extracting valid transcripts')
     valid_txs, valid_genes = simu.get_valid_txs(all_exons, int(simp['min_exons']))
     valid_txs = np.unique([tx for tx, gn in valid_txs])
     available_genes = [gene for gene in all_genes if gene in valid_genes]
@@ -239,45 +298,24 @@ def simulate(args):
     except KeyError:
         pass
 
-	# simulate fusions
-    fus_info, available_genes = simulate_fusions(simp, params, available_genes, all_exons,
-                                                 gene_trees, valid_txs, paths['genome_fasta'])
-    fus_info.to_csv('%s_fusions_simulated.tsv' % paths['out_prefix'], index=False, sep='\t')
+    logging.info('Simulating fusions')
+    available_genes = simulate_fusions(simp, params, available_genes, all_exons,
+                                       gene_trees, valid_txs, paths)
 
-	# simulate TSVs and splice variants
-    var_info, available_genes = simulate_tsvs_and_splicevars(simp, params, available_genes, all_exons,
-                                                             gene_trees, junc_ref, valid_txs, paths)
-    var_info.to_csv('%s_tsvs_splice_simulated.tsv' % paths['out_prefix'], index=False, sep='\t')
+    logging.info('Simulating TSVs and splice variants')
+    available_genes = simulate_tsvs_and_splicevars(simp, params, available_genes, all_exons,
+                                                   gene_trees, junc_ref, valid_txs, paths)
 
-    # write background genes
-    if n_background_genes > 0:
-        bg_set, available_genes = simu.pick_genes(int(simp['n_background_genes']), available_genes)
-        for gene in bg_set:
-            tx = simu.get_transcripts(gene, all_exons, valid_txs=valid_txs)[0]
-            exons = all_exons.filter(lambda x: x['transcript_id'] == tx).saveas()
-            tx_seq, strand = simu.get_seq(exons, genome_fasta)
-            simu.write_wildtype_sequence(tx_seq, strand, control_fasta, tx)
-            simu.write_wildtype_sequence(tx_seq, strand, case_fasta, tx)
+    logging.info('Writing background genes')
+    bg_genes, available_genes = simu.pick_genes(int(simp['n_background_genes']), available_genes)
+    write_background_genes(bg_genes, simp, paths, valid_txs, all_exons)
 
-    # generate reads with art illumina
-    seeds = np.random.randint(0, 99999, 2)
+    simulate_reads(case_fasta, readp, paths)
+    simulate_reads(control_fasta, readp, paths, control=True)
 
-    # generate case sample
-    subprocess.call([paths['art_illumina'], '-ss', 'HS25', '-i', case_fasta,
-                     '-p', '-l', str(readp['read_len']), '-f', str(readp['fold']), '-m', str(readp['frag_size']),
-                     '-s', str(readp['frag_sd']), '-rs', str(seeds[0]), '-o', '%s-case_R' % paths['out_prefix']])
-
-    # generate control
-    subprocess.call([art_illumina, '-ss', 'HS25', '-i', control_fasta,
-                 '-p', '-l', str(readp['read_len']), '-f', str(int(readp['fold']) * 2), '-m', str(readp['frag_size']),
-                 '-s', str(readp['frag_sd']), '-rs', str(seeds[1]), '-o', '%s-control_R' % paths['out_prefix']])
-
-    # gzip files
-    for sample in ['case', 'control']:
-        for r in range(2):
-            outf = open('%s-%s_R%d.fastq.gz' % (paths['out_prefix'], sample, (r+1)), 'w')
-            subprocess.call(['gzip', '-c', '%s-%s_R%d.fq' % (paths['out_prefix'], sample, (r+1))], stdout=outf)
-            outf.close()
+    logging.info('Gzipping files')
+    gzip_files('case', paths['out_prefix'])
+    gzip_files('control', paths['out_prefix'])
 
 def main():
     args = parse_args()
