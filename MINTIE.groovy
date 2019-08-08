@@ -129,10 +129,10 @@ run_salmon = {
     def salmon_index="all_fasta_index"
     def base_outdir = "salmon_out"
     def controls_dir = fastqControlFormat.split("/")[-2]
-    def sample_name = branch.parent.parent.name.split('_').first()
+    def sample_name = branch.name
 
     if(type == "controls"){
-        sample_name = branch.parent.parent.name.split('_').first()
+        sample_name = branch.parent.parent.name
         def control_name = branch.name
 
         output.dir = sample_name + "/" + controls_dir + "/" + control_name + "_salmon_out/aux_info"
