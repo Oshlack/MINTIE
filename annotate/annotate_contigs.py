@@ -297,7 +297,7 @@ def get_chrom_ref_tree(chrom, ref_trees):
     except KeyError:
         # we did our best...
         logging.info('WARNING: reference chromosome %s was not found in supplied reference.' \
-                    % crom)
+                    % chrom)
         return None
 
 def do_any_read_blocks_overlap_exons(read, ex_trees, bam_idx):

@@ -229,14 +229,14 @@ refine_contigs = {
     }
 }
 
-create_supertranscript_reference = {
+make_supertranscript_reference = {
     def sample_name = branch.name
     output.dir = sample_name
     produce(sample_name + "_supertranscript.fasta"){
         exec """
         $python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
             $tx_annotation $genome_fasta $output.dir $sample_name --log $output.dir/makest.log
-        """, "create_supertranscript_reference"
+        """, "make_supertranscript_reference"
     }
 }
 
@@ -341,7 +341,7 @@ run { fastqCaseFormat * [ fastq_dedupe +
                           sort_and_index_bam +
                           annotate_contigs +
                           refine_contigs +
-                          create_supertranscript_reference ] +
+                          make_supertranscript_reference ] +
         make_super_supertranscript +
         make_supertranscript_gmap_reference +
         hisat_index +
