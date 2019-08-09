@@ -175,7 +175,8 @@ def get_gene_lookup(tx_ref_file):
         chr_ref = gn_ref[gn_ref.chrom == chrom].drop_duplicates()
         ref_tree = IntervalTree()
         for s,e,g in zip(chr_ref['start'].values, chr_ref['end'].values, chr_ref['gene'].values):
-            ref_tree.addi(s-1, e, g)
+            if g != '':
+                ref_tree.addi(s-1, e, g)
         ref_trees[chrom] = ref_tree
 
     # merged exon boundaries for block annotation
