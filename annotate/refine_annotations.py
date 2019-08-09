@@ -372,6 +372,24 @@ def get_fusion_vars(contigs):
 
     return fus_vars
 
+def overlaps_gene(row, gene_tree):
+    '''
+    Return True if variant in contig row
+    overlaps any gene in the reference
+    '''
+    olaps = False
+    chr1, pos1, strand1 = get_pos_parts(row['pos1'])
+    chr2, pos2, strand2 = get_pos_parts(row['pos2'])
+    if chr1 == chr2:
+        gtree = ac.get_chrom_ref_tree(chr1, gene_tree)
+        olaps = gtree.overlaps(pos1, pos2)
+    else:
+        gtree = ac.get_chrom_ref_tree(chr1, gene_tree)
+        olaps = gtree.overlaps(pos1, pos1 + 1)
+        gtree = ac.get_chrom_ref_tree(chr2, gene_tree)
+        olaps = olaps or gtree.overlaps(pos2, pos2 + 1)
+    return olaps
+
 def get_contigs_to_keep(args):
     '''
     Return contigs matching criteria:
@@ -392,15 +410,21 @@ def get_contigs_to_keep(args):
     contigs['is_contig_spliced'] = contigs.contig_cigar.apply(lambda x: bool(re.search('N', x)))
     contigs['spliced_exon'] = match_splice_juncs(contigs)
     contigs['overlaps_exon'] = vars_overlap_exon(contigs, ex_trees)
+    contigs['overlaps_gene'] = contigs.apply(overlaps_gene, axis=1, args=(gene_tree,))
     if not args.skipMotifCheck:
         contigs['valid_motif'] = check_for_valid_motifs(contigs, args)
 
+    # keep exons falling outside the gene
+    is_intergenic_exon = np.logical_and.reduce((contigs.spliced_exon,
+                                                contigs.variant_type == 'NE',
+                                                contigs.large_varsize,
+                                                np.invert(contigs.overlaps_gene)))
     # novel exon contigs (spliced, valid motif and large variant size)
     is_novel_exon = contigs.spliced_exon
     if not args.skipMotifCheck:
         is_novel_exon = np.logical_and(is_novel_exon, contigs.valid_motif)
     is_novel_exon = np.logical_and(is_novel_exon, contigs.large_varsize)
-    ne_vars = contigs[is_novel_exon].variant_id.values
+    ne_vars = contigs[np.logical_or(is_novel_exon, is_intergenic_exon)].variant_id.values
 
     # keep all splice vars
     as_vars = contigs.variant_id.values[contigs.variant_type.isin(SPLICE_VARS)]
