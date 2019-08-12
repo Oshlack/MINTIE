@@ -121,6 +121,14 @@ def add_de_info(contigs, de_results):
     group_vars = [c for c in contigs.columns if c not in agg_dict.keys()]
     return contigs.groupby(by=group_vars, as_index=False).agg(agg_dict)
 
+def get_short_gene_name(overlapping_genes):
+    '''
+    Extract first gene of list of overlapping
+    genes at each fusion 'end'
+    '''
+    sgn = [og.split('|')[0] for og in overlapping_genes.split(':')]
+    return '|'.join([g for g in sgn if g != ''])
+
 def get_st_alignments(contigs, st_bam):
     bam = pysam.AlignmentFile(st_bam, 'rc')
     index = pysam.IndexedReads(bam)
@@ -132,7 +140,13 @@ def get_st_alignments(contigs, st_bam):
         aligned_conts = ','.join(np.unique(aligned_conts)) if len(aligned_conts) > 0 else ''
         st_alignment.append(aligned_conts)
 
-    contigs['ST_alignment'] = st_alignment
+    # get short gene name (first gene of every overlapping set of genes, include fusion genes)
+    short_gnames = contigs.overlapping_genes.apply(get_short_gene_name)
+    contig_ids, samples = contigs.contig_id, contigs['sample']
+    con_names = ['|'.join([s, cid, sg]) for cid, s, sg in zip(contig_ids, samples, short_gnames)]
+
+    contigs['expected_ST_alignment'] = con_names
+    contigs['real_ST_alignment'] = st_alignment
     return contigs
 
 def make_junctions(st_blocks):
