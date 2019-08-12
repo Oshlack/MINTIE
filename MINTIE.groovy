@@ -314,6 +314,7 @@ post_process = {
     def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
     def var_filter = var_filter.split(',').join(' ')
     gf_arg = gene_filter == '' ? '' : '--gene_filter ' + gene_filter
+    vf_arg = var_filter == '' ? '' : '--var_filter ' + var_filter
     produce(sample_name + '_results.tsv'){
         exec """
         $python ${code_base}/annotate/post_process.py $sample_name \
@@ -323,7 +324,7 @@ post_process = {
             $colpath/alignment/${sample_name}_novel_contigs_st_aligned.bam \
             $colpath/alignment/${sample_name}_hisatAligned.bam \
             $gf_arg \
-            --var_filter $var_filter > $output
+            $vf_arg > $output
         """
     }
 }

@@ -34,7 +34,7 @@ SPLIT_LEN = 10 # split variants longer than this many base-pairs into two separa
 MIN_LOGFC = 5
 
 # score variables
-VAR_WEIGHT = {'FUS': 1, 'INS': 1, 'DEL': 1, 'UN': 0.7, 'NE': 0.5, 'RI': 0.25, 'EE': 0.2, 'AS': 0.1}
+VAR_WEIGHT = {'FUS': 1, 'INS': 1, 'DEL': 1, 'UN': 0.7, 'NE': 0.5, 'NEJ': 0.5, 'RI': 0.25, 'PNJ': 0.2, 'EE': 0.2, 'AS': 0.1}
 EXP_WEIGHT = 0.6 # weight of expression related components; rest of weight is variant type
 
 def parse_args():
@@ -111,22 +111,27 @@ def add_de_info(contigs, de_results):
     for cname in contigs.columns.values:
         if cname in ['case_reads', 'controls_total_reads']:
             agg_dict[cname] = 'sum'
-        elif cname in ['logFC', 'F', 'logCPM', 'n_txs_in_ec']:
+        elif cname in ['logFC', 'F', 'logCPM', 'n_contigs_in_ec']:
             agg_dict[cname] = 'max'
+        elif cname in ['PValue', 'FDR']:
+            agg_dict[cname] = 'min'
         elif cname in ['contigs_in_EC', 'ec_names']:
             agg_dict[cname] = lambda x: ','.join(x)
-        else:
-            agg_dict[cname] = 'min'
 
-    return contigs.groupby(by='contig_id').agg(agg_dict)
+    group_vars = [c for c in contigs.columns if c not in agg_dict.keys()]
+    return contigs.groupby(by=group_vars, as_index=False).agg(agg_dict)
 
 def get_st_alignments(contigs, st_bam):
     bam = pysam.AlignmentFile(st_bam, 'rc')
+    index = pysam.IndexedReads(bam)
+    index.build()
+
     st_alignment = []
     for contig in contigs.contig_id.values:
-        aligned_conts = [read.reference_name for read in bam.fetch() if read.query_name == contig]
-        aligned_conts = ','.join(np.unique(aligned_conts))
+        aligned_conts = [read.reference_name for read in index.find(contig) if read.reference_name]
+        aligned_conts = ','.join(np.unique(aligned_conts)) if len(aligned_conts) > 0 else ''
         st_alignment.append(aligned_conts)
+
     contigs['ST_alignment'] = st_alignment
     return contigs
 
@@ -203,17 +208,24 @@ def main():
 
     if args.var_filter:
         contigs = contigs[contigs.variant_type.apply(lambda v: v in args.var_filter).values]
-        st_bed = st_bed[st_bed['name'].apply(lambda v: v in args.var_filter).values]
+        st_bed = st_bed[st_bed['name'].isin(args.var_filter)]
+    else:
+        st_bed = st_bed[st_bed['name'].isin(VAR_WEIGHT.keys())]
 
     contigs['sample'] = args.sample
     if len(gene_filter) > 0:
         contigs = filter_by_gene(contigs, gene_filter)
 
+    logging.info('Adding DE info...')
     contigs = add_de_info(contigs, de_results)
+    logging.info('Matching contigs to ST alignments...')
     contigs = get_st_alignments(contigs, args.cont_align)
+    logging.info('Counting reads crossing variant boundaries...')
     contigs = get_crossing_reads(contigs, args.read_align, st_bed)
+    logging.info('Calculating scores...')
     contigs = add_score(contigs)
 
+    logging.info('Outputting to CSV')
     contigs.to_csv(sys.stdout, index=False, sep='\t', na_rep='NA')
 
 if __name__ == '__main__':
