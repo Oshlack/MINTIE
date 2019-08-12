@@ -153,7 +153,7 @@ run_salmon = {
 run_de = {
     def sample_name = branch.name
     output.dir = sample_name
-    test_flag = test_mode.toBoolean() ? "--test" : ""
+    def test_flag = test_mode.toBoolean() ? "--test" : ""
     produce("eq_classes_de.txt"){
         exec """
         ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $trans_fasta $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc $test_flag
@@ -214,7 +214,7 @@ annotate_contigs = {
 refine_contigs = {
     def sample_name = branch.name
     output.dir = sample_name
-    motif_check = test_mode.toBoolean() ? "--skipMotifCheck" : ""
+    def motif_check = test_mode.toBoolean() ? "--skipMotifCheck" : ""
     produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
         exec """
         $python ${code_base}/annotate/refine_annotations.py \
@@ -313,8 +313,8 @@ post_process = {
     output.dir = colpath + '/results'
     def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
     def var_filter = var_filter.split(',').join(' ')
-    gf_arg = gene_filter == '' ? '' : '--gene_filter ' + gene_filter
-    vf_arg = var_filter == '' ? '' : '--var_filter ' + var_filter
+    def gf_arg = gene_filter == '' ? '' : '--gene_filter ' + gene_filter
+    def vf_arg = var_filter == '' ? '' : '--var_filter ' + var_filter
     produce(sample_name + '_results.tsv'){
         exec """
         $python ${code_base}/annotate/post_process.py $sample_name \
