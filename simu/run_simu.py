@@ -111,8 +111,8 @@ def simulate_fusions(simp, params, available_genes, all_exons, gene_trees, valid
         vartype = 'unpartnered' if row['gene2'] == '' else vartype
 
         gene1, gene2 = row['gene1'], row['gene2'] if row['gene2'] != '' else None
-        fusname = '%s:%s' if gene2 else '%s'
-        logging.info('Generating %s:%s %s fusion' % (fusname, vartype))
+        fusname = '%s:%s' % (gene1, gene2) if gene2 else gene1
+        logging.info('Generating %s %s fusion' % (fusname, vartype))
 
         gene_ref = all_exons.filter(lambda x: simu.get_gene_name(x) in [gene1, gene2]).saveas()
         tx1 = simu.get_transcripts(gene1, gene_ref, valid_txs=valid_txs)[0]
@@ -232,21 +232,25 @@ def simulate_reads(fasta, readp, paths, control=False):
     except KeyError:
         seed = np.random.randint(99999)
     logging.info('ART-Illumina random seed is %d' % seed)
-    subprocess.call([paths['art_illumina'],
-                    '-ss', 'HS25',
-                    '-i', fasta,
-                    '-p',
-                    '-l', readp['read_len'],
-                    '-f', fold,
-                    '-m', readp['frag_size'],
-                    '-s', readp['frag_sd'],
-                    '-rs', str(seed),
-                    '-o', '%s-%s_R' % (paths['out_prefix'], sample)])
+    cmd = [paths['art_illumina'],
+            '-ss', 'HS25',
+            '-i', fasta,
+            '-p',
+            '-l', readp['read_len'],
+            '-f', fold,
+            '-m', readp['frag_size'],
+            '-s', readp['frag_sd'],
+            '-rs', str(seed),
+            '-o', '%s-%s_R' % (paths['out_prefix'], sample)]
+    logging.info('Running command: ' + ' '.join(cmd))
+    subprocess.call(cmd)
 
 def gzip_files(sample, out_prefix):
     for r in range(2):
         outf = open('%s-%s_R%d.fastq.gz' % (out_prefix, sample, (r+1)), 'w')
-        subprocess.call(['gzip', '-c', '%s-%s_R%d.fq' % (out_prefix, sample, (r+1))], stdout=outf)
+        cmd = ['gzip', '-c', '%s-%s_R%d.fq' % (out_prefix, sample, (r+1))]
+        logging.info('Running command: ' + ' '.join(cmd))
+        subprocess.call(cmd, stdout=outf)
         outf.close()
 
 def simulate(args):

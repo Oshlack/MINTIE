@@ -477,7 +477,7 @@ def truncate_exon(ex, ss, block_range, ex_lookup, right=True):
 
 def write_output(seq, tx, vartype, case_fasta):
     seq = ''.join(seq)
-    name = '%s(%s)' % (tx, vartype)
+    name = '%s|%s' % (tx, vartype)
     with open(case_fasta, 'a') as fout:
         fout.write('>%s\n' % name)
         fout.write(seq + '\n')
@@ -560,7 +560,8 @@ def write_fusion(txs, genes, gene_ref, genome_fasta, params,
 
     # write output
     seq = ''.join(seq1 + [ext_seq] + seq2)
-    name = '%s:%s:%s' % (tx1, bloc, tx2) if tx2 else '%s:%s' % (tx1, bloc)
+    bloc = bloc.replace(':', '|').replace('(+)', 's').replace('(-)', 'as')
+    name = '%s|%s|%s' % (tx1, bloc, tx2) if tx2 else '%s|%s' % (tx1, bloc)
     with open(case_fasta, 'a') as fout:
         fout.write('>%s\n' % name)
         fout.write(seq + '\n')
