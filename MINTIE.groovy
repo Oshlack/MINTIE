@@ -241,8 +241,9 @@ make_supertranscript_reference = {
 }
 
 make_super_supertranscript = {
+    def files = inputs.collect{ it as String }.collect{ it as File }
+    def colpath = files.collect{ it.getName().split('_').first() }.join('_')
     def workingDir = System.getProperty("user.dir");
-    colpath = inputs.collect { it.split('/').last().split('_').first() }.join('_')
     colpath = workingDir + '/' + colpath + '_collated'
     output.dir = colpath
     produce('supersupertranscript.fasta'){
@@ -263,7 +264,7 @@ make_supertranscript_gmap_reference = {
 
 align_contigs_to_supertranscript = {
     output.dir = colpath+"/alignment"
-    index_dir = colpath
+    def index_dir = colpath
     def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
     produce(sample_name+"_novel_contigs_st_aligned.sam"){
         exec """
