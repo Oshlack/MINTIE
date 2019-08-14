@@ -94,7 +94,7 @@ assemble = {
             cd $sample_name/SOAPassembly ;
 
             echo \"max_rd_len=$max_read_length\" > config.config ;
-            echo -e \"[LIB]\\nq1=../../$input1\\nq2=../../$input1\" >> config.config ;
+            echo -e \"[LIB]\\nq1=../../$input1\\nq2=../../$input2\" >> config.config ;
             if [ -e SOAP.fasta ]; then rm SOAP.fasta ; fi ;
             for k in $Ks_for_soap ; do
                 $soapdenovotrans pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
