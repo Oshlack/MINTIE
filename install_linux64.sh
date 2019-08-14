@@ -37,12 +37,11 @@ function trimmomatic_install {
 }
 
 function soapdenovotrans_install {
-    wget --no-check-certificate https://github.com/aquaskyline/SOAPdenovo-Trans/archive/1.0.4.tar.gz
-    tar -xvzf 1.0.4.tar.gz
-    rm 1.0.4.tar.gz
-    cd SOAPdenovo-Trans-1.0.4
-    chmod u+x make.sh && ./make.sh ; cd ..
-    ln -s $PWD/SOAPdenovo-Trans-1.0.4/SOAPdenovo-Trans-127mer $PWD/bin/soapdenovotrans
+    wget --no-check-certificate https://sourceforge.net/projects/soapdenovotrans/files/SOAPdenovo-Trans/bin/v1.03/SOAPdenovo-Trans-bin-v1.03.tar.gz
+    mkdir -p SOAPdenovo-Trans-bin-v1.03
+    tar -xvzf SOAPdenovo-Trans-bin-v1.03.tar.gz -C SOAPdenovo-Trans-bin-v1.03
+    rm SOAPdenovo-Trans-bin-v1.03.tar.gz
+    ln -s $PWD/SOAPdenovo-Trans-bin-v1.03/SOAPdenovo-Trans-127mer $PWD/bin/soapdenovotrans
 }
 
 function rnaspades_install {
