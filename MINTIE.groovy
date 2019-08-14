@@ -246,7 +246,7 @@ make_super_supertranscript = {
     def workingDir = System.getProperty("user.dir");
     colpath = workingDir + '/' + colpath + '_collated'
     output.dir = colpath
-    produce('supersupertranscript.fasta'){
+    produce("supersupertranscript.fasta"){
         exec """
         cat $inputs.fasta | $python ${code_base}/util/remove_redundant_records.py - > $output ;
         """
@@ -254,7 +254,7 @@ make_super_supertranscript = {
 }
 
 make_supertranscript_gmap_reference = {
-    output.dir = colpath
+    output.dir = new File(input).getParentFile().getName()
     produce("st_gmap_ref"){
         exec """
         ${gmap}_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
@@ -263,10 +263,11 @@ make_supertranscript_gmap_reference = {
 }
 
 align_contigs_to_supertranscript = {
-    output.dir = colpath+"/alignment"
-    def index_dir = colpath
+    def colpath = new File(input.fasta).getParentFile().getName()
     def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
-    produce(sample_name+"_novel_contigs_st_aligned.sam"){
+    def index_dir = colpath
+    output.dir = colpath + "/alignment"
+    produce(sample_name + "_novel_contigs_st_aligned.sam"){
         exec """
         $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads \
             -n 0 ${sample_name}/de_contigs.fasta > $output.sam ;
@@ -275,8 +276,9 @@ align_contigs_to_supertranscript = {
 }
 
 hisat_index = {
-    output.dir=colpath+"/genome"
-    def idx_prefix = output.dir+"/hisat_index"
+    def colpath = new File(input).getParentFile().getName()
+    output.dir = colpath + "/genome"
+    def idx_prefix = output.dir + "/hisat_index"
     produce("hisat_index.1.ht2") {
         exec """
         ${hisat}-build $input.fasta $idx_prefix
@@ -285,10 +287,11 @@ hisat_index = {
 }
 
 hisat_align = {
-    output.dir = colpath+"/alignment"
     def workingDir = System.getProperty("user.dir");
     def (rf1, rf2) = inputs.split().collect { workingDir+"/$it" }
     def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
+    def colpath = new File(input.fasta).getParentFile().getName()
+    output.dir = colpath + "/alignment"
     if(type == "controls"){
         output.dir = colpath + "/alignment/controls/"
     }
@@ -311,11 +314,12 @@ sort_and_index_bam = {
 }
 
 post_process = {
-    output.dir = colpath + '/results'
+    def colpath = new File(input.fasta).getParentFile().getName()
     def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
     def var_filter = var_filter.split(',').join(' ')
     def gf_arg = gene_filter == '' ? '' : '--gene_filter ' + gene_filter
     def vf_arg = var_filter == '' ? '' : '--var_filter ' + var_filter
+    output.dir = colpath + "/results"
     produce(sample_name + '_results.tsv'){
         exec """
         $python ${code_base}/annotate/post_process.py $sample_name \
