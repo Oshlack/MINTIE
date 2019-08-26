@@ -145,7 +145,10 @@ R_path=`which R 2>/dev/null`
 if [ -z $R_path ] ; then
     echo "R not found!"
     echo "Please go to http://www.r-project.org/ and follow the installation instructions."
-    echo "Note that data.table, dplyr and seqinr must be installed."
+    echo "Then install requirements by running \"Rscript install_R_dependencies.R\""
+else
+    echo "Installing R requirements..."
+    Rscript ../install_R_dependencies.R
 fi
 echo "R=\"$R_path\"" >> ../tools.groovy
 

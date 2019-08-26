@@ -307,7 +307,7 @@ sort_and_index_bam = {
     output.dir = new File(input.sam).getParentFile()
     transform('sam') to ('bam') {
         exec """
-        $samtools sort -@ $threads -m ${sort_ram}G $input.sam -o $output ;
+        $samtools sort -@ $threads -m ${sort_ram} $input.sam -o $output ;
         $samtools index $output
         """, "sort_and_index_bam"
     }

@@ -1,6 +1,20 @@
+if (!require("edgeR")) {
+    r_version = paste(R.Version()$major, strsplit(R.Version()$minor, '\\.')[[1]][1], sep='.')
+    if(as.numeric(r_version) < 3.5) {
+        source("https://bioconductor.org/biocLite.R")
+        biocLite("edgeR")
+    } else {
+        if (!requireNamespace("BiocManager", quietly = TRUE)) {
+            install.packages("BiocManager")
+        }
+        BiocManager::install("edgeR")
+    }
+}
+
 library(dplyr)
 library(seqinr)
 library(data.table)
+
 options(stringsAsFactors = FALSE,
         error = function(){dump.frames("compare_eq_classes_debug", to.file = TRUE); q()})
 

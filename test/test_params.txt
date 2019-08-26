@@ -13,7 +13,7 @@
 -p min_logfc=2
 -p min_cpm=0.1
 -p fdr=0.05
--p sort_ram=2
+-p sort_ram=800M
 -p gene_filter=
 -p var_filter=
 -p test_mode=true
