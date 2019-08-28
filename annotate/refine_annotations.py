@@ -243,7 +243,7 @@ def overlaps_same_exon(sv, ex_trees):
     if ex_tree:
         olap1 = ex_tree.overlap(start, start+1)
         olap2 = ex_tree.overlap(end, end+1)
-        return olap1 == olap2
+        return len(olap1) > 0 and len(olap2) > 0 and olap1 == olap2
 
     return False
 
