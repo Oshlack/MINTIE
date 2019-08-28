@@ -1,3 +1,7 @@
+
+[![Build Status](https://api.travis-ci.org/Oshlack/MINTIE.png)](https://travis-ci.org/Oshlack/MINTIE)
+
+
 <p align="left">
 <img src=https://github.com/Oshlack/MINTIE/blob/master/img/mintie_logo.png height=120/>  
 </p>
