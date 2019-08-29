@@ -83,7 +83,8 @@ def parse_args():
     parser.add_argument('--minMatch',
                         metavar='MIN_MATCH',
                         type=str,
-                        help='''Comma separated: <minumum bp matching reference>,<minimum percent of contig aligned to reference>.''')
+                        help='''Comma separated: <minumum bp matching reference>,
+                        <minimum percent of contig aligned to reference>.''')
     return parser.parse_args()
 
 def set_globals(args):

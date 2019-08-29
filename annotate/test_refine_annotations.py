@@ -45,7 +45,8 @@ def test_check_overlap_del(coord, expected):
                                             ((90, 150), False),
                                             ((150, 250), False),
                                             ((301, 399), True),
-                                            ((150, 350), False)])
+                                            ((150, 350), False),
+                                            ((50, 60), False)])
 def test_overlaps_same_exon(coord, expected):
     s, e = coord
     pos1 = 'chr1:%s(+)' % s
