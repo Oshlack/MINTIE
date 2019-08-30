@@ -232,7 +232,7 @@ refine_contigs = {
 make_supertranscript_reference = {
     def sample_name = branch.name
     output.dir = sample_name
-    produce(sample_name + "_supertranscript.fasta"){
+    produce(sample_name + "_supertranscript.fasta", sample_name + "_blocks_supertranscript.bed", sample_name + "_genes_supertranscript.bed"){
         exec """
         $python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
             $tx_annotation $genome_fasta $output.dir $sample_name --log $output.dir/makest.log
@@ -241,20 +241,24 @@ make_supertranscript_reference = {
 }
 
 make_super_supertranscript = {
-    def files = inputs.collect{ it as String }.collect{ it as File }
+    def files = inputs.fasta.collect{ it as String }.collect{ it as File }
     def colpath = files.collect{ it.getName().split('_').first() }.join('_')
     def workingDir = System.getProperty("user.dir");
+    input_beds = inputs.bed.collect{ it as String }
+    block_beds = input_beds.findAll{ it.contains('_blocks_') }.join(' ')
+    gene_beds = input_beds.findAll{ it.contains('_genes_') }.join(' ')
     colpath = workingDir + '/' + colpath + '_collated'
     output.dir = colpath
-    produce("supersupertranscript.fasta"){
+    produce("supersupertranscript.fasta", "supersupertranscript_blocks.bed", "supersupertranscript_genes.bed"){
         exec """
-        cat $inputs.fasta | $python ${code_base}/util/remove_redundant_records.py - > $output ;
+        cat $inputs.fasta | $python ${code_base}/util/remove_redundant_records.py - > $output.fasta ;
+        cat $block_beds > $output2 ; cat $gene_beds > $output3
         """
     }
 }
 
 make_supertranscript_gmap_reference = {
-    output.dir = new File(input).getParentFile().getName()
+    output.dir = new File(input.fasta).getParentFile().getName()
     produce("st_gmap_ref"){
         exec """
         ${gmap}_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
