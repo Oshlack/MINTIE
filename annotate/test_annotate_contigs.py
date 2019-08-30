@@ -41,3 +41,17 @@ def test_get_tx_juncs():
                 [(100, 200), (200, 300),
                  (305, 400), (500, 600)])
     assert ac.get_tx_juncs(read) == [('chr1', 400, 500)]
+
+@pytest.mark.parametrize('chrom,expected', [('chr1', 'intervals_a'),
+                                            ('chr2', 'intervals_b'),
+                                            ('chrM', 'intervals_c'),
+                                            ('MT', 'intervals_c'),
+                                            ('chr3', 'intervals_d'),
+                                            ('3', 'intervals_d'),
+                                            ('1', 'intervals_a')])
+def test_get_chrom_ref_tree(chrom, expected):
+    ref_trees = {'chr1': 'intervals_a',
+                 'chr2': 'intervals_b',
+                 'chrM': 'intervals_c',
+                 '3': 'intervals_d'}
+    assert ac.get_chrom_ref_tree(chrom, ref_trees) == expected
