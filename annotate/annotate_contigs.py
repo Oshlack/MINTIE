@@ -141,10 +141,10 @@ def get_next_id(qname):
         record[qname].append(vid)
         return vid
 
-def get_gene(attribute):
-    re_gene = re.search('gene_name "([\w\-\.\/]+)"', attribute)
-    gene = re_gene.group(1) if re_gene else ''
-    return gene
+def get_attribute(attributes, attribute_id):
+    re_attr = re.search('%s "([\w\-\.\/]+)"' % attribute_id, attributes)
+    attr = re_attr.group(1) if re_attr else ''
+    return attr
 
 @cached('gene_lookup_cache.pickle')
 def get_gene_lookup(tx_ref_file):
@@ -161,12 +161,13 @@ def get_gene_lookup(tx_ref_file):
     logging.info('Generating lookup for genes...')
     #TODO: standardise with make_supertranscript for gtf handling
     tx_ref = pd.read_csv(tx_ref_file, comment='#', sep='\t', header=None)
-    tx_ref['gene'] = tx_ref[8].apply(lambda x: get_gene(x))
+    tx_ref['gene_id'] = tx_ref[8].apply(lambda x: get_attribute(x, 'gene_id'))
+    tx_ref['gene'] = tx_ref[8].apply(lambda x: get_attribute(x, 'gene_name'))
     aggregator = {3: lambda x: min(x),
                   4: lambda x: max(x)}
-    gn_ref = tx_ref.groupby([0, 'gene'], as_index=False, sort=False).agg(aggregator)
-    gn_ref = gn_ref[[0, 3, 4, 'gene']]
-    gn_ref.columns = ['chrom', 'start', 'end', 'gene']
+    gn_ref = tx_ref.groupby([0, 'gene_id', 'gene'], as_index=False, sort=False).agg(aggregator)
+    gn_ref = gn_ref[[0, 3, 4, 'gene_id', 'gene']]
+    gn_ref.columns = ['chrom', 'start', 'end', 'gene_id', 'gene']
     gn_ref = gn_ref.drop_duplicates()
 
     # start/end coordinates for gene matching
