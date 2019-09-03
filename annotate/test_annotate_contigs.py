@@ -72,8 +72,7 @@ def test_get_chrom_ref_tree(chrom, expected):
                                            ('chr1:250-290:B', False),
                                            ('chrX:100-200:C', False)])
 def test_do_any_read_blocks_overlap_exons(read, expected):
-    ex_trees = {}
-    ref_tree = IntervalTree()
+    ex_trees, ref_tree = {}, IntervalTree()
     coords = [(100, 200),
               (300, 400)]
     for s,e in coords:
@@ -85,3 +84,24 @@ def test_do_any_read_blocks_overlap_exons(read, expected):
     read = Read(chrom, [(start, end)], name)
 
     assert ac.do_any_read_blocks_overlap_exons(read, ex_trees, read) == expected
+
+
+@pytest.mark.parametrize('read,expected', [('chr1:90-105:A', 'GeneA'),
+                                           ('chr1:250-290:A', ''),
+                                           ('chr1:350-389:B', 'GeneB'),
+                                           ('chr1:350-450:B', 'GeneB|GeneC'),
+                                           ('chrX:100-200:C', '')])
+def test_get_overlapping_genes(read, expected):
+    gn_trees, ref_tree = {}, IntervalTree()
+    coords = [(100, 200, 'GeneA'),
+              (300, 400, 'GeneB'),
+              (390, 500, 'GeneC')]
+    for s,e,g in coords:
+        ref_tree.addi(s, e, g)
+    gn_trees['chr1'] = ref_tree
+
+    chrom, coords, name = read.split(':')
+    start, end = int(coords.split('-')[0]), int(coords.split('-')[1])
+    read = Read(chrom, [(start, end)], name)
+
+    assert ac.get_overlapping_genes(read, gn_trees) == expected
