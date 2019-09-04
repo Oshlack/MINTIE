@@ -1,6 +1,8 @@
 import pytest
+import numpy as np
 import pandas as pd
 import annotate_contigs as ac
+import cv_vcf
 from intervaltree import Interval, IntervalTree
 
 # dummy global args
@@ -15,12 +17,20 @@ class Read:
         self.reference_name = reference_name
         self.blocks = blocks
         self.query_name = query_name
+        self.seqlen = sum([e - s for s,e in blocks])
+        self.query_sequence = ''.join(np.random.choice(list('ACTG'), self.seqlen))
+        self.ref_sequence = self.query_sequence
+        self.cigar = [(0, self.seqlen)]
+        self.cigarstring = '%dM' % self.seqlen
+        self.is_reverse = False
         Read.reads.append(self)
     def get_blocks(self):
         return self.blocks
     def find(self, query_name):
         query_reads = [read for read in Read.reads if read.query_name == query_name]
         return query_reads
+    def get_reference_sequence(self):
+        return self.ref_sequence
 
 @pytest.mark.parametrize('letter,next_letter', [('a', 'b'),
                                                 ('g', 'h'),
@@ -105,3 +115,13 @@ def test_get_overlapping_genes(read, expected):
     read = Read(chrom, [(start, end)], name)
 
     assert ac.get_overlapping_genes(read, gn_trees) == expected
+
+def test_annotate_block_right():
+    read = Read('chr1', [(100, 200)], 'A')
+    olapping = pd.DataFrame({'start': [100], 'end': [150]})
+    block_idx, cpos = 0, 0
+    block = read.get_blocks()[block_idx]
+    cv = cv_vcf.CrypticVariant().from_read(read)
+    cv = ac.annotate_block_right(cv, read, cpos, olapping, block, block_idx)
+
+    assert cv.pos == 151 and len(cv.ref) == 50 and len(cv.alt) == 51
