@@ -27,9 +27,7 @@ from intervaltree import Interval, IntervalTree
 from cv_vcf import CrypticVariant, VCF
 from utils import cached, init_logging, exit_with_error
 
-pd.set_option("mode.chained_assignment", None)
 PROGRAM_NAME = "annotate_contigs"
-
 ASCII_LETTERS = np.array(list(string.ascii_letters))
 
 # read processing record
@@ -142,7 +140,7 @@ def get_next_id(qname):
         return vid
 
 def get_attribute(attributes, attribute_id):
-    re_attr = re.search('%s "([\w\-\.\/]+)"' % attribute_id, attributes)
+    re_attr = re.search(r'%s "([\w\-\.\/]+)"' % attribute_id, attributes)
     attr = re_attr.group(1) if re_attr else ''
     return attr
 
@@ -357,7 +355,8 @@ def annotate_gaps(cv, read, ci_file):
 
         if cigar[0] == constants.CIGAR['insertion']:
             cv.cvtype = 'INS'
-            seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in constants.AFFECT_CONTIG and c != constants.CIGAR['hard-clip']])
+            seq_pos1 = sum([v for c,v in read.cigar[:gap_idx] if c in constants.AFFECT_CONTIG \
+                                                                 and c != constants.CIGAR['hard-clip']])
             seq_pos2 = seq_pos1 + cv.cvsize
             seq = read.query_sequence[(seq_pos1-1):seq_pos2]
             cv.ref, cv.alt = seq[:1], seq

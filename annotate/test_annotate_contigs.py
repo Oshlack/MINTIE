@@ -95,7 +95,6 @@ def test_do_any_read_blocks_overlap_exons(read, expected):
 
     assert ac.do_any_read_blocks_overlap_exons(read, ex_trees, read) == expected
 
-
 @pytest.mark.parametrize('read,expected', [('chr1:90-105:A', 'GeneA'),
                                            ('chr1:250-290:A', ''),
                                            ('chr1:350-389:B', 'GeneB'),
@@ -125,3 +124,13 @@ def test_annotate_block_right():
     cv = ac.annotate_block_right(cv, read, cpos, olapping, block, block_idx)
 
     assert cv.pos == 151 and len(cv.ref) == 50 and len(cv.alt) == 51
+
+def test_annotate_block_left():
+    read = Read('chr1', [(50, 150)], 'A')
+    olapping = pd.DataFrame({'start': [100], 'end': [150]})
+    block_idx, cpos = 0, 0
+    block = read.get_blocks()[block_idx]
+    cv = cv_vcf.CrypticVariant().from_read(read)
+    cv = ac.annotate_block_left(cv, read, cpos, olapping, block, block_idx)
+
+    assert cv.pos == 51 and len(cv.ref) == 50 and len(cv.alt) == 51
