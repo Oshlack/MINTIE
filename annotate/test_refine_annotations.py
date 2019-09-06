@@ -63,3 +63,19 @@ def test_overlaps_same_exon(coord, expected):
 def test_overlaps_gene(coord, expected):
     row = {'pos1': coord[0], 'pos2': coord[1]}
     assert ra.overlaps_gene(row, ex_trees) == expected
+
+@pytest.mark.parametrize('seq,expected', [('AG,GT', True),
+                                          ('AC,CT', True),
+                                          ('CA,GT', False),
+                                          (',', False),
+                                          ('AG,', True),
+                                          ('AC,', True),
+                                          (',GT', True),
+                                          (',CT', True),
+                                          ('CA,', False),
+                                          (',AC', False)])
+def test_is_valid_motif(seq, expected):
+    block_seqs = seq.split(',')
+    left_idx = '' if block_seqs[0] == '' else 0
+    right_idx = '' if block_seqs[1] == '' else 1
+    assert ra.is_valid_motif(left_idx, right_idx, block_seqs) == expected
