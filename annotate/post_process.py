@@ -30,13 +30,6 @@ EXIT_FILE_IO_ERROR = 1
 BED_COLS = ['contig', 'start', 'end', 'name', 'score', 'strand', 'tStart', 'tEnd', 'itemRgb']
 SPLIT_LEN = 10 # split variants longer than this many base-pairs into two separate junctions to count reads for
 
-# DE filters
-MIN_LOGFC = 5
-
-# score variables
-VAR_WEIGHT = {'FUS': 1, 'INS': 1, 'DEL': 1, 'UN': 0.7, 'NE': 0.5, 'NEJ': 0.5, 'RI': 0.25, 'PNJ': 0.2, 'EE': 0.2, 'AS': 0.1}
-EXP_WEIGHT = 0.6 # weight of expression related components; rest of weight is variant type
-
 def parse_args():
     '''
     Parse command line arguments.
@@ -177,12 +170,10 @@ def get_crossing_reads(contigs, read_align, st_bed):
 def add_score(contigs):
     '''
     add a score per variant based on:
-    - expression metrics
         - p-value
         - logFC
         - reads in case EC(s)
         - reads in control EC(s)
-    - variant type (based on pre-defined weights)
     '''
     top_pval = np.max(np.negative(np.log(contigs.PValue)))
     pval_score = np.negative(np.log(contigs.PValue)) / top_pval
@@ -194,12 +185,7 @@ def add_score(contigs):
     con_read_score = 1 - (contigs.controls_total_reads / np.max(contigs.controls_total_reads))
 
     exp_score = 1/4 * np.array([pval_score, logFC_score, con_read_score, case_read_score])
-    exp_score = np.sum(exp_score, axis=0) * EXP_WEIGHT
-
-    tsv_score = np.array([VAR_WEIGHT[var] for var in contigs.variant_type]) * (1 - EXP_WEIGHT)
-
-    scores = exp_score + tsv_score
-    contigs['score'] = scores
+    contigs['score'] = np.sum(exp_score, axis=0)
     contigs = contigs.sort_values(by='score', ascending=False)
 
     return contigs
@@ -223,8 +209,6 @@ def main():
     if args.var_filter:
         contigs = contigs[contigs.variant_type.apply(lambda v: v in args.var_filter).values]
         st_bed = st_bed[st_bed['name'].isin(args.var_filter)]
-    else:
-        st_bed = st_bed[st_bed['name'].isin(VAR_WEIGHT.keys())]
 
     contigs['sample'] = args.sample
     if len(gene_filter) > 0:
