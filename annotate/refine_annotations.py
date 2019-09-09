@@ -256,7 +256,7 @@ def overlaps_exon(sv, ex_trees):
     chr1, start, s1 = get_pos_parts(sv['pos1'])
     chr2, end, s2 = get_pos_parts(sv['pos2'])
 
-    # check starts/ends separatey for all vars but deletions and juncs
+    # check starts/ends separately for all vars but deletions and juncs
     span_vars = ['DEL'] + NOVEL_JUNCS
     end = end if sv['variant_type'] in span_vars else start + 1
 

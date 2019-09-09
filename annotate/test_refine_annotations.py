@@ -88,6 +88,18 @@ def test_overlaps_same_exon(coord, expected):
     sv = pd.Series({'pos1': pos1, 'pos2': pos2})
     assert ra.overlaps_same_exon(sv, ex_trees) == expected
 
+
+@pytest.mark.parametrize('coord,expected', [(('chr1:100(+)', 'chr1:105', 'DEL'), False),
+                                            (('chr1:100(+)', 'chr1:110', 'DEL'), True),
+                                            (('chr1:100(+)', 'chr1:119', 'NEJ'), False),
+                                            (('chr1:100(+)', 'chr1:121', 'NEJ'), True),
+                                            (('chr1:100(+)', 'chr1:101', 'INS'), True),
+                                            (('chr1:150(+)', 'chr2:250', 'FUS'), True)])
+def test_overlaps_exon(coord, expected):
+    pos1, pos2, vartype = coord
+    sv = {'pos1': pos1, 'pos2': pos2, 'variant_type': vartype}
+    assert ra.overlaps_exon(sv, ex_trees) == expected
+
 @pytest.mark.parametrize('coord,expected', [(('chr1:100(+)', 'chr1:200(+)'), True),
                                             (('chr1:101(+)', 'chr2:400(+)'), True),
                                             (('chr1:450(+)', 'chr2:501(+)'), True),
