@@ -32,6 +32,22 @@ for s,e in coords:
     ref_tree.addi(s, e)
 ex_trees['chr2']= ref_tree
 
+@pytest.mark.parametrize('seq,expected', [('AG,GT', True),
+                                          ('AC,CT', True),
+                                          ('CA,GT', False),
+                                          (',', False),
+                                          ('AG,', True),
+                                          ('AC,', True),
+                                          (',GT', True),
+                                          (',CT', True),
+                                          ('CA,', False),
+                                          (',AC', False)])
+def test_is_valid_motif(seq, expected):
+    block_seqs = seq.split(',')
+    left_idx = '' if block_seqs[0] == '' else 0
+    right_idx = '' if block_seqs[1] == '' else 1
+    assert ra.is_valid_motif(left_idx, right_idx, block_seqs) == expected
+
 @pytest.mark.parametrize('coord,expected', [((150, 160), True),
                                             ((90, 101), False),
                                             ((198, 205), False),
@@ -40,6 +56,24 @@ ex_trees['chr2']= ref_tree
 def test_check_overlap_del(coord, expected):
     s, e = coord
     assert ra.check_overlap(ex_trees, 'chr1', s, e, size = args.minGap) == expected
+
+@pytest.mark.parametrize('coord,expected', [((150, 160), True),
+                                            ((90, 101), True),
+                                            ((198, 205), True),
+                                            ((193, 200), True),
+                                            ((100, 107), True),
+                                            ((50, 90), False)])
+def test_check_overlap(coord, expected):
+    s, e = coord
+    assert ra.check_overlap(ex_trees, 'chr1', s, e) == expected
+
+def test_get_pos_parts():
+    assert ra.get_pos_parts('chr1:100(+)') == ('chr1', 100, '+')
+    assert ra.get_pos_parts('chr1:100(-)') == ('chr1', 100, '-')
+
+def test_get_varsize():
+    sv = {'pos1': 'chr1:100(+)', 'pos2': 'chr1:200(+)'}
+    assert ra.get_varsize(sv) == 100
 
 @pytest.mark.parametrize('coord,expected', [((150, 160), True),
                                             ((90, 150), False),
@@ -63,19 +97,3 @@ def test_overlaps_same_exon(coord, expected):
 def test_overlaps_gene(coord, expected):
     row = {'pos1': coord[0], 'pos2': coord[1]}
     assert ra.overlaps_gene(row, ex_trees) == expected
-
-@pytest.mark.parametrize('seq,expected', [('AG,GT', True),
-                                          ('AC,CT', True),
-                                          ('CA,GT', False),
-                                          (',', False),
-                                          ('AG,', True),
-                                          ('AC,', True),
-                                          (',GT', True),
-                                          (',CT', True),
-                                          ('CA,', False),
-                                          (',AC', False)])
-def test_is_valid_motif(seq, expected):
-    block_seqs = seq.split(',')
-    left_idx = '' if block_seqs[0] == '' else 0
-    right_idx = '' if block_seqs[1] == '' else 1
-    assert ra.is_valid_motif(left_idx, right_idx, block_seqs) == expected
