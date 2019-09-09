@@ -167,29 +167,6 @@ def get_crossing_reads(contigs, read_align, st_bed):
             contigs.loc[idx, 'junctions'] = ','.join(['%s-%s' % (s,e) for s,e in se])
     return contigs
 
-def add_score(contigs):
-    '''
-    add a score per variant based on:
-        - p-value
-        - logFC
-        - reads in case EC(s)
-        - reads in control EC(s)
-    '''
-    top_pval = np.max(np.negative(np.log(contigs.PValue)))
-    pval_score = np.negative(np.log(contigs.PValue)) / top_pval
-
-    top_logFC = np.max(contigs.logFC)
-    logFC_score = contigs.logFC / top_logFC
-
-    case_read_score = contigs.case_reads / np.max(contigs.case_reads)
-    con_read_score = 1 - (contigs.controls_total_reads / np.max(contigs.controls_total_reads))
-
-    exp_score = 1/4 * np.array([pval_score, logFC_score, con_read_score, case_read_score])
-    contigs['score'] = np.sum(exp_score, axis=0)
-    contigs = contigs.sort_values(by='score', ascending=False)
-
-    return contigs
-
 def main():
     args = parse_args()
     init_logging(args.log)
@@ -220,10 +197,9 @@ def main():
     contigs = get_st_alignments(contigs, args.cont_align)
     logging.info('Counting reads crossing variant boundaries...')
     contigs = get_crossing_reads(contigs, args.read_align, st_bed)
-    logging.info('Calculating scores...')
-    contigs = add_score(contigs)
 
     logging.info('Outputting to CSV')
+    contigs = contigs.sort_values(by='PValue', ascending=True)
     contigs.to_csv(sys.stdout, index=False, sep='\t', na_rep='NA')
 
 if __name__ == '__main__':
