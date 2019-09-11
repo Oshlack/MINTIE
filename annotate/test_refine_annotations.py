@@ -109,3 +109,11 @@ def test_overlaps_exon(coord, expected):
 def test_overlaps_gene(coord, expected):
     row = {'pos1': coord[0], 'pos2': coord[1]}
     assert ra.overlaps_gene(row, ex_trees) == expected
+
+def test_match_splice_juncs():
+    contigs = {'pos1': ['chr1:100(+)', 'chr1:200(+)', 'chr1:400(+)'],
+               'pos2': ['chr1:200(+)', 'chr1:300(+)', 'chr1:500(+)'],
+               'variant_type': ['NE', 'NEJ', 'INS'],
+               'variant_id': ['A', 'B', 'C']}
+    contigs = pd.DataFrame.from_dict(contigs)
+    assert all(ra.match_splice_juncs(contigs) == pd.Series([True, False, False]))
