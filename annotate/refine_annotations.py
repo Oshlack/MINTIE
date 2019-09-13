@@ -315,16 +315,18 @@ def get_junc_vars(contigs, ex_trees):
     Return truncated exons and novel introns
     '''
     # check for novel exon juncs contained within single exon (may be deletions)
+    within_exon = contigs.apply(overlaps_same_exon, axis=1, args=(ex_trees,))
     nej_var = contigs.variant_type == 'NEJ'
     nej_dels = np.empty(0, dtype=object)
     if sum(nej_var.values) > 0:
-        within_exon = contigs[nej_var].apply(overlaps_same_exon, axis=1, args=(ex_trees,))
         bigger_than_mingap = contigs[nej_var].apply(get_varsize, axis=1) >= MIN_GAP
-        nej_dels = contigs[nej_var][np.logical_and(within_exon, bigger_than_mingap)].variant_id.values
+        nej_dels = contigs[nej_var][np.logical_and(within_exon[nej_var], bigger_than_mingap)].variant_id.values
 
     # check truncated-exon vars
-    is_trunc = contigs.variant_type.isin(NOVEL_JUNCS)
-    is_trunc = np.logical_and(is_trunc, contigs.overlaps_exon)
+    is_trunc = np.logical_and.reduce((contigs.variant_type.isin(NOVEL_JUNCS),
+                                      np.invert(within_exon),
+                                      contigs.overlaps_exon,
+                                      contigs.large_varsize))
     if 'valid_motif' in contigs.columns.values:
         is_trunc = np.logical_and(is_trunc, contigs.valid_motif)
     trunc_vars = contigs[is_trunc].variant_id.values

@@ -119,14 +119,28 @@ def test_match_splice_juncs():
     assert all(ra.match_splice_juncs(contigs) == pd.Series([True, False, False]))
 
 
-@pytest.mark.parametrize('coord,expected', [(('chr1', 200, 250, 'NE'), False),
-                                            (('chr1', 100, 150, 'DEL'), True),
-                                            (('chr1', 450, 500, 'FUS'), False)])
+@pytest.mark.parametrize('coord,expected', [((200, 250, 'NE'), False),
+                                            ((100, 150, 'DEL'), True),
+                                            ((450, 500, 'FUS'), False)])
 def test_vars_overlap_exons(coord, expected):
-    c, s, e, t = coord
-    contigs = {'pos1': ['%s:%d(+)' % (c, s)],
-               'pos2': ['%s:%d(+)' % (c, e)],
+    s, e, t = coord
+    contigs = {'pos1': ['chr1:%d(+)' % s],
+               'pos2': ['chr1:%d(+)' % e],
                'variant_type': [t],
                'variant_id': ['A']}
     contigs = pd.DataFrame.from_dict(contigs)
     assert ra.vars_overlap_exon(contigs, ex_trees)[0] == expected
+
+@pytest.mark.parametrize('coord,expected', [((140, 160), True),
+                                            ((160, 200), True),
+                                            ((140, 145), False)])
+def test_get_junc_vars(coord, expected):
+    s, e = coord
+    contigs = {'pos1': ['chr1:%d(+)' % s],
+               'pos2': ['chr1:%d(+)' % e],
+               'variant_type': ['NEJ'],
+               'variant_id': ['A'],
+               'overlaps_exon': [True],
+               'large_varsize': e - s > args.minClip}
+    contigs = pd.DataFrame.from_dict(contigs)
+    assert ('A' in ra.get_junc_vars(contigs, ex_trees)) == expected
