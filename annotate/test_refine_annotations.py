@@ -144,3 +144,20 @@ def test_get_junc_vars(coord, expected):
                'large_varsize': e - s > args.minClip}
     contigs = pd.DataFrame.from_dict(contigs)
     assert ('A' in ra.get_junc_vars(contigs, ex_trees)) == expected
+
+@pytest.mark.parametrize('coord,expected', [((100, 150, 'NE', 50), False),
+                                            ((100, 150, 'DEL', 0), True),
+                                            ((100, 100, 'INS', 10), True),
+                                            ((100, 100, 'UN', 20), True),
+                                            ((100, 100, 'UN', 19), False)])
+def test_get_tsv_vars(coord, expected):
+    s, e, t, cv = coord
+    contigs = {'pos1': ['chr1:%d(+)' % s],
+               'pos2': ['chr1:%d(+)' % e],
+               'variant_type': [t],
+               'variant_id': ['A'],
+               'contig_varsize': [cv]}
+    contigs = pd.DataFrame.from_dict(contigs)
+    contigs['varsize'] = [cv] if t == 'UN' else [e - s]
+    contigs['overlaps_exon'] = ra.vars_overlap_exon(contigs, ex_trees)
+    assert ('A' in ra.get_tsv_vars(contigs)) == expected
