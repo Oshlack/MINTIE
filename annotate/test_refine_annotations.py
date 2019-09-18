@@ -161,3 +161,13 @@ def test_get_tsv_vars(coord, expected):
     contigs['varsize'] = [cv] if t == 'UN' else [e - s]
     contigs['overlaps_exon'] = ra.vars_overlap_exon(contigs, ex_trees)
     assert ('A' in ra.get_tsv_vars(contigs)) == expected
+
+
+def test_get_fusion_vars():
+    contigs = {'pos1': ['chr1:100(+)', 'chr1:150(+)', 'chr1:400(+)'],
+               'pos2': ['chr1:150(+)', 'chr2:200(+)', 'chr1:500(+)'],
+               'variant_type': ['EE', 'FUS', 'DEL'],
+               'variant_id': ['A', 'B', 'C'],
+               'contig_id': ['C1', 'C1', 'C2']}
+    contigs = pd.DataFrame.from_dict(contigs)
+    assert all([fv in ['A', 'B'] for fv in ra.get_fusion_vars(contigs)])
