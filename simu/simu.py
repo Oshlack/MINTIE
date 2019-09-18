@@ -86,7 +86,7 @@ def get_gene_name(row):
     Prevents KeyError if gene name missing
     '''
     try:
-        return row.attrs['gene_name']
+        return row.attrs['gene_id']
     except KeyError:
         return ''
 
@@ -99,18 +99,16 @@ def get_gene_loc(chrom, gene_trees, gene):
     loc = '%s:%s-%s' % (chrom, record.begin.values[0], record.end.values[0])
     return loc
 
-def get_valid_txs(all_exons, min_exons):
+def get_valid_txs(tx_ref, min_exons):
     '''
     Returns all valid transcripts (with at least [min_exons]
     exons, for fusions or splice variants),as well as all
     genes associated with these valids transcripts.
     '''
-    all_txs = [(tx['transcript_id'], get_gene_name(tx)) for tx in all_exons]
-    valid_txs = pd.DataFrame(pd.Series(all_txs).value_counts(), columns=['exon_count'])
-    valid_txs = valid_txs[valid_txs.exon_count >= min_exons]
-    valid_txs = valid_txs.index.values
-
-    all_genes = np.unique([gene for tx, gene in valid_txs if gene != ''])
+    exon_counts = tx_ref.groupby(['transcript_id']).agg({'feature': lambda x: len(x)})
+    valid_txs = np.unique(exon_counts[exon_counts.values >= min_exons].index.values)
+    valid_ref = tx_ref[tx_ref.transcript_id.isin(valid_txs)]
+    all_genes = np.unique(valid_ref.gene_id.values)
 
     return valid_txs, all_genes
 
@@ -170,10 +168,25 @@ def get_junction(ex1, ex2):
     assert start < end
     return start, end
 
+def get_attribute(attributes, attribute_id):
+    re_attr = re.search(r'%s "([\w\-\.\/]+)"' % attribute_id, attributes)
+    attr = re_attr.group(1) if re_attr else ''
+    return attr
+
+def get_tx_features(gtf):
+    tx_ref = pd.read_csv(gtf, comment='#', sep='\t', header=None, low_memory=False)
+    tx_ref.columns = ['seqname', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute']
+    tx_ref['transcript_id'] = tx_ref.attribute.apply(lambda x: get_attribute(x, 'transcript_id'))
+    tx_ref['gene_id'] = tx_ref.attribute.apply(lambda x: get_attribute(x, 'gene_id'))
+    tx_ref['gene'] = tx_ref.attribute.apply(lambda x: get_attribute(x, 'gene_name'))
+    tx_ref = tx_ref[tx_ref.feature == 'exon']
+    return tx_ref
+
 def get_gene_features(gr):
     '''
     Get interval tree for start/ends for
     each gene on each chromosome
+    TODO: merge get_tx_features into this function
     '''
     chroms = np.unique([x.chrom for x in gr])
     gn_ref = pd.DataFrame([(g.chrom, g.start, g.end, get_gene_name(g)) for g in gr])

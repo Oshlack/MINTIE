@@ -253,6 +253,17 @@ def gzip_files(sample, out_prefix):
         subprocess.call(cmd, stdout=outf)
         outf.close()
 
+def get_non_overlapping_genes(ref_trees):
+    '''
+    Return all genes that do not overlap
+    '''
+    rt = ref_trees.copy()
+    valid_genes = []
+    for chrom in ref_trees:
+        rt[chrom].merge_overlaps()
+        valid_genes.extend([n for s,e,n in rt[chrom] if n])
+    return np.unique(valid_genes)
+
 def simulate(args):
     config = configparser.ConfigParser()
     config.read(args.params)
@@ -270,16 +281,20 @@ def simulate(args):
     junc_ref = simu.build_junc_ref(paths['junc_ref'])
 
     # make gene start/end reference
+    txs = simu.get_tx_features(paths['gtf_ref'])
     gene_trees = simu.get_gene_features(gr)
+    nolap_genes = get_non_overlapping_genes(gene_trees)
+    valid_txs, valid_genes = simu.get_valid_txs(txs, int(simp['min_exons']))
+    available_genes = [gene for gene in valid_genes if gene in nolap_genes]
 
     # get exons for records that have a gene name
     all_exons = gr.filter(lambda x: x[2] == 'exon').saveas()
-    all_genes = np.unique([simu.get_gene_name(ex) for ex in all_exons if simu.get_gene_name(ex)!=''])
+    #all_genes = np.unique([simu.get_gene_name(ex) for ex in all_exons if simu.get_gene_name(ex) in available_genes])
 
-    logging.info('Extracting valid transcripts')
-    valid_txs, valid_genes = simu.get_valid_txs(all_exons, int(simp['min_exons']))
-    valid_txs = np.unique([tx for tx, gn in valid_txs])
-    available_genes = [gene for gene in all_genes if gene in valid_genes]
+    #logging.info('Extracting valid transcripts')
+    #valid_txs, valid_genes = simu.get_valid_txs(all_exons, int(simp['min_exons']))
+    #valid_txs = np.unique([tx for tx, gn in valid_txs])
+    #available_genes = [gene for gene in all_genes if gene in valid_genes]
 
     # set up parameters
     block_range = (int(simp['block_min']),
