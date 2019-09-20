@@ -632,9 +632,9 @@ def write_indel(tx, all_exons, genome_fasta, indel_range, out_prefix, vartype='D
         select, varmin, varmax = get_exon_for_deletion(seq, indel_range)
 
         delseq = seq[select]
-        varsize = np.random.randint(varmin, varmax)
-        delpos = np.random.randint(MAX_BP_FROM_BOUNDARY,
-                                   (len(delseq) - varsize - MAX_BP_FROM_BOUNDARY))
+        varsize = np.random.randint(varmin, varmax) if varmin < varmax else varmin
+        minpos, maxpos = MAX_BP_FROM_BOUNDARY, (len(delseq) - varsize - MAX_BP_FROM_BOUNDARY)
+        delpos = np.random.randint(minpos, maxpos) if minpos < maxpos else minpos
 
         # perform deletion
         delseq = delseq[:delpos] + delseq[(delpos + varsize):]
@@ -644,7 +644,7 @@ def write_indel(tx, all_exons, genome_fasta, indel_range, out_prefix, vartype='D
 
         select_seq = seq[select]
         maxpos = len(select_seq) - MAX_BP_FROM_BOUNDARY
-        ins_pos = np.random.randint(MAX_BP_FROM_BOUNDARY, maxpos)
+        ins_pos = np.random.randint(MAX_BP_FROM_BOUNDARY, maxpos) if MAX_BP_FROM_BOUNDARY < maxpos else MAX_BP_FROM_BOUNDARY
 
         # perform insertion
         insertion = get_random_seq(indel_range)
