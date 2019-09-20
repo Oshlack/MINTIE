@@ -35,7 +35,7 @@ BED_EXT_COLS = ['chr', 'start', 'end', 'name', 'score', 'strand', 'thickStart', 
 VARS_TO_ANNOTATE = ['EE','NE','INS','RI','UN','FUS','DEL']
 
 # regex masks
-STRAND = '\(([+-])\)'
+STRAND = r'\(([+-])\)'
 
 # keep track of canonical genes written to avoid duplicate entries
 canonical_genes_written = []
@@ -111,6 +111,7 @@ def get_contig_genes(con_info):
     if len(fus_genes) > 0:
         fus_genes = np.unique(fus_genes.overlapping_genes)
         fus_genes = [fg.split(':') for fg in fus_genes][0]
+        assert len(fus_genes) <= 2
         return fus_genes[0], fus_genes[1]
     else:
         genes = np.unique(con_info.overlapping_genes.values)
@@ -413,7 +414,7 @@ def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
     add any novel sequence from the given record to the reference blocks
     '''
     chrom = record[0]
-    vtype = re.search('SVTYPE=(\w+)', record[7])
+    vtype = re.search(r'SVTYPE=(\w+)', record[7])
     vtype = vtype.group(1) if vtype else 'UN'
 
     seq = re.findall('([ATGCNatgc]+)', record[4]) # TODO: make this parsing more robust
