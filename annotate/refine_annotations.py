@@ -325,8 +325,7 @@ def get_junc_vars(contigs, ex_trees):
     # check truncated-exon vars
     is_trunc = np.logical_and.reduce((contigs.variant_type.isin(NOVEL_JUNCS),
                                       np.invert(within_exon),
-                                      contigs.overlaps_exon,
-                                      contigs.large_varsize))
+                                      contigs.overlaps_exon))
     if 'valid_motif' in contigs.columns.values:
         is_trunc = np.logical_and(is_trunc, contigs.valid_motif)
     trunc_vars = contigs[is_trunc].variant_id.values
