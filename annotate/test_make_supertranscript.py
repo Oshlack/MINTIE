@@ -17,3 +17,14 @@ def test_get_contig_genes():
     con_info = {'overlapping_genes': ['A:B', 'B:', 'C']}
     con_info = pd.DataFrame.from_dict(con_info)
     assert list(ms.get_contig_genes(con_info)) == ['A', 'B']
+
+def test_get_contig_strand():
+    contigs = {'pos1': ['chr1:100(+)', 'chr1:200(-)', 'chr1:400(+)'],
+               'pos2': ['chr1:100(-)', 'chr1:200(+)', 'chr1:500(+)'],
+               'variant_id': ['A', 'B', 'C'],
+               'partner_id': ['B', 'A', '']}
+    contigs = pd.DataFrame.from_dict(contigs)
+    assert ms.get_contig_strand(contigs, 'A') == '+'
+    assert ms.get_contig_strand(contigs, 'B') == '-'
+    assert ms.get_contig_strand(contigs, 'C') == '+'
+    assert ms.get_contig_strand(contigs, 'X') == '.'
