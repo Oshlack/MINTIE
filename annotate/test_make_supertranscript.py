@@ -28,3 +28,10 @@ def test_get_contig_strand():
     assert ms.get_contig_strand(contigs, 'B') == '-'
     assert ms.get_contig_strand(contigs, 'C') == '+'
     assert ms.get_contig_strand(contigs, 'X') == '.'
+
+def test_get_gene_strands():
+    gtf = {'gene': ['A', 'B', 'C', 'D', ''],
+           'strand': ['+', '+', '-', '', '+']}
+    gtf = pd.DataFrame.from_dict(gtf)
+    assert ms.get_gene_strands(gtf, ['A', 'B', 'C', 'D']) == ['+', '+', '-', '']
+
