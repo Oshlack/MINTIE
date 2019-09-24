@@ -87,8 +87,8 @@ def preproc(case_fasta, control_fasta, out_prefix):
     outdir = '/'.join(out_prefix.split('/')[:-1])
     subprocess.call(['mkdir', '-p', outdir])
 
-def simulate_fusions(simp, params, available_genes, valid_txs, gene_trees, all_exons, paths):
-    fuscols = ['loc1', 'gene1', 'tx1', 'insert', 'loc2', 'gene2', 'tx2', 'fusion_type']
+def simulate_fusions(simp, params, available_genes, valid_txs, gene_trees, all_exons, paths, gene_ref):
+    fuscols = ['loc1', 'gene_id1', 'tx1', 'insert', 'loc2', 'gene_id2', 'tx2', 'fusion_type']
     n_vars = int(simp['n_cfus']) \
              + int(simp['n_ee_fus']) \
              + int(simp['n_ne_fus']) \
@@ -105,15 +105,15 @@ def simulate_fusions(simp, params, available_genes, valid_txs, gene_trees, all_e
         + [''] * int(simp['n_ufus'])
 
     valid_tx_df = all_exons[all_exons.transcript_id.isin(valid_txs)]
-    fusions = pd.DataFrame({'gene1': fus_genes,
-                            'gene2': partner_genes,
+    fusions = pd.DataFrame({'gene_id1': fus_genes,
+                            'gene_id2': partner_genes,
                             'add': add})
     fus_info = []
     for idx, row in fusions.iterrows():
         vartype = 'canonical' if row['add'] == '' else row['add']
-        vartype = 'unpartnered' if row['gene2'] == '' else vartype
+        vartype = 'unpartnered' if row['gene_id1'] == '' else vartype
 
-        gene1, gene2 = row['gene1'], row['gene2'] if row['gene2'] != '' else None
+        gene1, gene2 = row['gene_id1'], row['gene_id2'] if row['gene_id2'] != '' else None
         fusname = '%s:%s' % (gene1, gene2) if gene2 else gene1
         logging.info('Generating %s %s fusion' % (fusname, vartype))
 
@@ -126,11 +126,18 @@ def simulate_fusions(simp, params, available_genes, valid_txs, gene_trees, all_e
         fus_info.append(fus_parts)
 
     fus_info = pd.DataFrame(fus_info, columns=fuscols)
+
+    # add gene names to dataframe
+    fus_info = pd.merge(fus_info, gene_ref, left_on='gene_id1', right_on='gene_id', how='left')
+    fus_info = pd.merge(fus_info, gene_ref, left_on='gene_id2', right_on='gene_id', how='left')
+    fus_info = fus_info.rename(columns={'gene_x': 'gene1', 'gene_y': 'gene2'})
+    fus_info = fus_info.drop(['gene_id_x', 'gene_id_y'], axis=1)
+
     fus_info.to_csv('%s_fusions_simulated.tsv' % paths['out_prefix'], index=False, sep='\t')
     return available_genes
 
 def simulate_tsvs_and_splicevars(simp, params, available_genes, valid_txs,
-                                 gene_trees, junc_ref, all_exons, paths):
+                                 gene_trees, junc_ref, all_exons, paths, gene_ref):
     vartypes = ['DEL'] * int(simp['n_del']) \
              + ['INS'] * int(simp['n_ins']) \
              + ['ITD'] * int(simp['n_itd']) \
@@ -142,15 +149,15 @@ def simulate_tsvs_and_splicevars(simp, params, available_genes, valid_txs,
              + ['NEJ'] * int(simp['n_nej']) \
              + ['US'] * int(simp['n_us'])
     var_genes, available_genes = simu.pick_genes(len(vartypes), available_genes)
-    varcols = ['loc', 'tx', 'gene', 'size', 'exon', 'vartype']
+    varcols = ['loc', 'tx', 'gene_id', 'size', 'exon', 'vartype']
     indel_range, block_range, exons_range = params['ins_range'], params['block_range'], params['exons_range']
     genome_fasta, out_prefix = paths['genome_fasta'], paths['out_prefix']
 
-    var_df = pd.DataFrame({'gene': var_genes, 'vartype': vartypes})
+    var_df = pd.DataFrame({'gene_id': var_genes, 'vartype': vartypes})
     var_info = []
 
     for idx, row in var_df.iterrows():
-        vartype, gene = row['vartype'], row['gene']
+        vartype, gene = row['vartype'], row['gene_id']
         logging.info('Generating %s in gene %s' % (vartype, gene))
 
         tx = simu.get_transcripts(gene, all_exons, valid_txs=valid_txs)[0]
@@ -205,6 +212,7 @@ def simulate_tsvs_and_splicevars(simp, params, available_genes, valid_txs,
         var_info.append([loc, tx, gene, varsize, exon, vartype])
 
     var_info = pd.DataFrame(var_info, columns=varcols)
+    var_info = pd.merge(var_info, gene_ref, left_on='gene_id', right_on='gene_id', how='left')
     var_info.to_csv('%s_tsvs_splice_simulated.tsv' % paths['out_prefix'], index=False, sep='\t')
     return available_genes
 
@@ -283,7 +291,7 @@ def simulate(args):
     junc_ref = simu.build_junc_ref(paths['junc_ref'])
 
     # make gene start/end reference
-    all_exons, gene_trees = simu.get_features(paths['gtf_ref'])
+    all_exons, gene_ref, gene_trees = simu.get_features(paths['gtf_ref'])
     nolap_genes = get_non_overlapping_genes(gene_trees)
     valid_txs, valid_genes = simu.get_valid_txs(all_exons, int(simp['min_exons']))
     available_genes = [gene for gene in valid_genes if gene in nolap_genes]
@@ -311,11 +319,11 @@ def simulate(args):
 
     logging.info('Simulating fusions')
     available_genes = simulate_fusions(simp, params, available_genes, valid_txs,
-                                       gene_trees, all_exons, paths)
+                                       gene_trees, all_exons, paths, gene_ref)
 
     logging.info('Simulating TSVs and splice variants')
     available_genes = simulate_tsvs_and_splicevars(simp, params, available_genes, valid_txs,
-                                                   gene_trees, junc_ref, all_exons, paths)
+                                                   gene_trees, junc_ref, all_exons, paths, gene_ref)
 
     logging.info('Writing background genes')
     bg_genes, available_genes = simu.pick_genes(int(simp['n_background_genes']), available_genes)

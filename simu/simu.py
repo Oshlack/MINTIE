@@ -227,7 +227,8 @@ def get_features(gtf):
             ref_tree.addi(s-1, e, g)
         ref_trees[chrom] = ref_tree
 
-    return tx_ref, ref_trees
+    gn_ref = gn_ref[['gene_id', 'gene']].drop_duplicates()
+    return tx_ref, gn_ref, ref_trees
 
 #=====================================================================================================
 # Sequence funcs
@@ -268,7 +269,7 @@ def get_intron_seq(ex_list, strand, all_exons, genome_fasta):
     if strand == '-':
         start, end = max(ex[ex.end < pos].end), pos
     else:
-        start, end = pos, min(ex[ex.begin > pos].begin)
+        start, end = pos, min(ex[ex.begin > pos].begin) - 1
 
     block_bed = '%s\t%d\t%d\t.\t1\t%s' % (loc[0], start, end, strand)
     block_bt = BedTool(block_bed, from_string=True)
