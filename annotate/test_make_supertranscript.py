@@ -19,10 +19,10 @@ def test_get_contig_genes():
     assert list(ms.get_contig_genes(con_info)) == ['A', 'B']
 
 def test_get_contig_strand():
-    contigs = {'pos1': ['chr1:100(+)', 'chr1:200(-)', 'chr1:400(+)'],
-               'pos2': ['chr1:100(-)', 'chr1:200(+)', 'chr1:500(+)'],
-               'variant_id': ['A', 'B', 'C'],
-               'partner_id': ['B', 'A', '']}
+    contigs = {'pos1': ['chr1:100(+)', 'chr1:400(+)'],
+               'pos2': ['chr1:200(-)', 'chr1:500(+)'],
+               'variant_id': ['A', 'C'],
+               'partner_id': ['B', '']}
     contigs = pd.DataFrame.from_dict(contigs)
     assert ms.get_contig_strand(contigs, 'A') == '+'
     assert ms.get_contig_strand(contigs, 'B') == '-'
@@ -35,3 +35,17 @@ def test_get_gene_strands():
     gtf = pd.DataFrame.from_dict(gtf)
     assert ms.get_gene_strands(gtf, ['A', 'B', 'C', 'D']) == ['+', '+', '-', '']
 
+@pytest.mark.parametrize('strands,expected', [((['+', '-'], ['+', '-']), ['+', '-']),
+                                              ((['-', '-'], ['+', '+']), ['+', '+']),
+                                              ((['+', '-'], ['-', '-']), ['+', '-']),
+                                              ((['-', '-'], ['-', '+']), ['-', '-'])])
+def test_get_strand_info(strands, expected):
+    cstrands, gstrands = strands
+    pos1, pos2 = 'chr1:100(%s)' % cstrands[0], 'chr1:200(%s)' % cstrands[1]
+    contigs = {'pos1': [pos1],
+               'pos2': [pos2],
+               'variant_id': ['A'],
+               'partner_id': ['B'],
+               'variant_type': ['FUS']}
+    contigs = pd.DataFrame.from_dict(contigs)
+    assert ms.get_strand_info(contigs, gstrands) == expected

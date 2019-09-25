@@ -142,14 +142,14 @@ def get_gene_strands(gtf, genes):
     return strands
 
 def get_strand_info(con_info, gstrands):
-    #strands = [re.search(STRAND, con_info.pos1.values[0]).group(1)]
     if 'FUS' in con_info.variant_type.values:
         con_fus = con_info[con_info.variant_type == 'FUS']
         cs1 = get_contig_strand(con_fus, con_fus.variant_id.values[0])
         cs2 = get_contig_strand(con_fus, con_fus.partner_id.values[0])
 
-        # if contig strands align counter to gene orientation,
-        # return strands corresponding to contig alignment
+        # if one fragment aligns on a strand counter to gene orientation
+        # while the other aligns matching gene orientation, return strands
+        # corresponding to contig alignment
         gs1, gs2 = gstrands
         if (cs1 != gs1 and cs2 == gs2) or (cs1 == gs1 and cs2 != gs2):
             return [cs1, cs2]

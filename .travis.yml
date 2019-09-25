@@ -32,7 +32,7 @@ matrix:
         - pip install -r requirements.txt
         - pip install pytest-cov
       script:
-        - pytest annotate --cov=./
+        - pytest --cov=./
         - bash <(curl -s https://codecov.io/bash)
       after_success:
         - codecov
