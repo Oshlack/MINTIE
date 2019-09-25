@@ -58,6 +58,7 @@ def construct_dataframe(ec_matrix, tx_lookup):
     - add EC names
     - convert transcript IDs to transcript names
     '''
+    ec_matrix = ec_matrix.sort_index()
     tmp = [(eid, etxs.split('|')) for eid, etxs in enumerate(ec_matrix.index.values)]
     tmp = [(tid, eid) for eid, tids in tmp for tid in tids]
     tx_ids, ec_ids = zip(*tmp)
