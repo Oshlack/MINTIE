@@ -73,7 +73,7 @@ def test_build_ec_matrix(tmp_path):
     matrix_file.write_text(OUTPUT_MATRIX)
     out_matrix = pd.read_csv(matrix_file, sep='\t')
 
-    assert np.all(out_matrix == ec_matrix)
+    assert np.all(out_matrix.sort_index() == ec_matrix.sort_index())
 
 def test_construct_dataframe(tmp_path):
     ec_file = tmp_path / 'ec_file1.txt'
@@ -88,4 +88,4 @@ def test_construct_dataframe(tmp_path):
     out_df = pd.read_csv(df_file, sep='\t')
     out_df['tx_ids'] = out_df.tx_ids.map(str)
 
-    assert np.all(out_df == ec_df)
+    assert np.all(out_df.sort_index() == ec_df.sort_index())
