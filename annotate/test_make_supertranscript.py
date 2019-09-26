@@ -49,3 +49,11 @@ def test_get_strand_info(strands, expected):
                'variant_type': ['FUS']}
     contigs = pd.DataFrame.from_dict(contigs)
     assert ms.get_strand_info(contigs, gstrands) == expected
+
+def test_get_output_files():
+    sample, outdir = 'A', '.'
+    genome_bed, st_block_bed, st_gene_bed, st_fasta = ms.get_output_files(sample, outdir)
+    assert genome_bed == './A_genome.bed'
+    assert st_block_bed == './A_blocks_supertranscript.bed'
+    assert st_gene_bed == './A_genes_supertranscript.bed'
+    assert st_fasta == './A_supertranscript.fasta'
