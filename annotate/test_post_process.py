@@ -18,3 +18,10 @@ def test_filter_by_gene():
 
     result = pp.filter_by_gene(contigs, gene_filter).overlapping_genes.values
     assert list(result) == ['A:B', 'C|E', 'X']
+
+@pytest.mark.parametrize('gene,expected', [('A', 'A'),
+                                           ('A|B', 'A'),
+                                           ('A:B', 'A|B'),
+                                           ('A|B|C:X|Y|Z', 'A|X')])
+def test_get_short_gene_name(gene, expected):
+    assert pp.get_short_gene_name(gene) == expected
