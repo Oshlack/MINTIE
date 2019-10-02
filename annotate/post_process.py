@@ -150,7 +150,7 @@ def make_junctions(st_blocks):
             st_blocks = st_blocks.append(row)
             row['start'], row['end'] = end, end
             st_blocks = st_blocks.append(row)
-    return st_blocks[st_blocks.end - st_blocks.start <= SPLIT_LEN]
+    return st_blocks[st_blocks.end - st_blocks.start <= SPLIT_LEN].drop_duplicates()
 
 def get_crossing_reads(contigs, read_align, st_bed):
     #TODO: handle fusions
