@@ -383,12 +383,12 @@ def overlaps_gene(row, gene_tree):
     chr2, pos2, strand2 = get_pos_parts(row['pos2'])
     if chr1 == chr2:
         gtree = ac.get_chrom_ref_tree(chr1, gene_tree)
-        olaps = gtree.overlaps(pos1, pos2)
+        olaps = gtree.overlaps(pos1, pos2) if gtree else False
     else:
         gtree = ac.get_chrom_ref_tree(chr1, gene_tree)
-        olaps = gtree.overlaps(pos1, pos1 + 1)
+        olaps = gtree.overlaps(pos1, pos1 + 1) if gtree else False
         gtree = ac.get_chrom_ref_tree(chr2, gene_tree)
-        olaps = olaps or gtree.overlaps(pos2, pos2 + 1)
+        olaps = olaps or gtree.overlaps(pos2, pos2 + 1) if gtree else olaps
     return olaps
 
 def get_contigs_to_keep(args):

@@ -158,7 +158,7 @@ def get_gene_lookup(tx_ref_file):
 
     logging.info('Generating lookup for genes...')
     #TODO: standardise with make_supertranscript for gtf handling
-    tx_ref = pd.read_csv(tx_ref_file, comment='#', sep='\t', header=None)
+    tx_ref = pd.read_csv(tx_ref_file, comment='#', sep='\t', header=None, low_memory=False)
     tx_ref['gene_id'] = tx_ref[8].apply(lambda x: get_attribute(x, 'gene_id'))
     tx_ref['gene'] = tx_ref[8].apply(lambda x: get_attribute(x, 'gene_name'))
     aggregator = {3: lambda x: min(x),
@@ -229,7 +229,7 @@ def get_junc_lookup(junc_file):
     logging.info('Generating lookup for known splice junctions...')
 
     # aligning against genome
-    genref = pd.read_csv(junc_file, sep='\t')
+    genref = pd.read_csv(junc_file, sep='\t', low_memory=False)
     junc_info = genref.apply(lambda tx: get_juncs(tx), axis=1)
 
     juncs = ['%s:%s-%s' % (c, s, e) for jv in junc_info.values for c, s, e in jv] # flatten juncs list

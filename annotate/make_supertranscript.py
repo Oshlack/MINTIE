@@ -183,7 +183,7 @@ def load_gtf_file(gtf_file):
 
     with tempfile.NamedTemporaryFile(mode='r+') as temp_gtf:
         gtf.saveas(temp_gtf.name)
-        gtf_pd = pd.read_csv(temp_gtf, header=None, sep='\t', names=GTF_COLS, comment='#')
+        gtf_pd = pd.read_csv(temp_gtf, header=None, sep='\t', names=GTF_COLS, comment='#', low_memory=False)
         gtf_pd['gene'] = gene_names
 
     # no non-standard chroms will be handled
@@ -216,7 +216,7 @@ def load_vcf_file(contig_vcf):
     load in VCF file containing novel contig variants
     remove 'chr' prefix from chroms if present
     '''
-    cvcf = pd.read_csv(contig_vcf, sep='\t', header=None, comment='#')
+    cvcf = pd.read_csv(contig_vcf, sep='\t', header=None, comment='#', low_memory=False)
     vcf_chrs = cvcf[0].map(str).str.contains('chr')
     if any(vcf_chrs.values):
         cvcf = cvcf[vcf_chrs]
@@ -535,7 +535,7 @@ def main():
     try:
         gtf = load_gtf_file(args.gtf_file)
         cvcf = load_vcf_file(args.contig_vcf)
-        contigs = pd.read_csv(args.contig_info, sep='\t').fillna('')
+        contigs = pd.read_csv(args.contig_info, sep='\t', low_memory=False).fillna('')
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
