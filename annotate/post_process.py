@@ -30,7 +30,7 @@ EXIT_FILE_IO_ERROR = 1
 BED_COLS = ['contig', 'start', 'end', 'name', 'score', 'strand', 'tStart', 'tEnd', 'itemRgb']
 SPLIT_LEN = 10 # split variants longer than this many base-pairs into two separate junctions to count reads for
 
-def parse_args():
+def parse_args(args):
     '''
     Parse command line arguments.
     Returns Options object with command line argument values as attributes.
@@ -77,7 +77,7 @@ def parse_args():
                         nargs='+',
                         help='''Types of variant to keep.''')
 
-    return parser.parse_args()
+    return parser.parse_args(args)
 
 def get_all_genes(overlapping_genes):
     if isinstance(overlapping_genes, str):
@@ -168,7 +168,7 @@ def get_crossing_reads(contigs, read_align, st_bed):
     return contigs
 
 def main():
-    args = parse_args()
+    args = parse_args(sys.argv[1:])
     init_logging(args.log)
 
     try:

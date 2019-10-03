@@ -2,6 +2,23 @@ import pytest
 import pandas as pd
 import post_process as pp
 
+def test_parse_args():
+    args = pp.parse_args(['sample',
+                         'contig_info.tsv',
+                         'de_results.tsv',
+                         'st_bed.bed',
+                         'cont_align.bam',
+                         'read_align.bam',
+                         '--gene_filter', 'gene_filter.txt',
+                         '--var_filter', 'FUS INS DEL'])
+    assert args.sample == 'sample'
+    assert args.contig_info == 'contig_info.tsv'
+    assert args.st_bed == 'st_bed.bed'
+    assert args.cont_align == 'cont_align.bam'
+    assert args.read_align == 'read_align.bam'
+    assert args.gene_filter == 'gene_filter.txt'
+    assert args.var_filter == ['FUS INS DEL']
+
 @pytest.mark.parametrize('gene,expected', [('A', ['A']),
                                             ('A|B', ['A', 'B']),
                                             ('A:B', ['A', 'B']),
