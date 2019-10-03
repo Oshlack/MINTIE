@@ -258,10 +258,11 @@ make_super_supertranscript = {
 }
 
 make_supertranscript_gmap_reference = {
-    output.dir = new File(input.fasta).getParentFile().getName()
-    produce("st_gmap_ref"){
+    def collated_dir = new File(input.fasta).getParentFile().getName()
+    output.dir = collated_dir + "/st_gmap_ref"
+    produce("st_gmap_ref.chromosome"){
         exec """
-        ${gmap}_build -s chrom -k 15 -d st_gmap_ref -D $output.dir $input.fasta ;
+        ${gmap}_build -s chrom -k 15 -d st_gmap_ref -D $collated_dir $input.fasta ;
         """
     }
 }

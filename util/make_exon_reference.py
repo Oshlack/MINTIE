@@ -19,7 +19,8 @@ parser.add_argument(dest='tx_info')
 args = parser.parse_args()
 tx_info = args.tx_info
 
-genref = pd.read_csv(tx_info, sep='\t', comment='#', header=None)
+print('Reading in gene reference...')
+genref = pd.read_csv(tx_info, sep='\t', comment='#', header=None, low_memory=False)
 pd.options.mode.chained_assignment = None #to get rid of those pesky annoying pandas warnings
 
 def featuretype_filter(feature, featuretype):
