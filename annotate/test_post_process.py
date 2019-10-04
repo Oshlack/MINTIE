@@ -36,6 +36,37 @@ def test_filter_by_gene():
     result = pp.filter_by_gene(contigs, gene_filter).overlapping_genes.values
     assert list(result) == ['A:B', 'C|E', 'X']
 
+def test_add_de_info():
+    de_results = {'contig': ['A', 'A', 'B'],
+                  'contigs': ['k49_123', 'k79_234', 'k49_789'],
+                  'case_reads': [100, 200, 50],
+                  'controls_total_reads': [5, 20, 10],
+                  'logFC': [5, 6, 2],
+                  'F': [45, 50, 25],
+                  'logCPM': [10, 15, 5],
+                  'n_contigs_in_ec': [1, 2, 1],
+                  'PValue': [0.005, 0.001, 0.003],
+                  'FDR': [0.05, 0.01, 0.03],
+                  'ec_names': ['ec1', 'ec2', 'ec3']}
+    de_results = pd.DataFrame.from_dict(de_results)
+    contigs = {'contig_id': ['A', 'B']}
+    contigs = pd.DataFrame.from_dict(contigs)
+
+    results = {'contig_id': ['A', 'B'],
+               'contigs_in_EC': ['k49_123,k79_234', 'k49_789'],
+               'case_reads': [300, 50],
+               'controls_total_reads': [25, 10],
+               'logFC': [6, 2],
+               'F': [50, 25],
+               'logCPM': [15, 5],
+               'n_contigs_in_ec': [2, 1],
+               'PValue': [0.001, 0.003],
+               'FDR': [0.01, 0.03],
+               'ec_names': ['ec1,ec2', 'ec3']}
+    results = pd.DataFrame.from_dict(results)
+
+    assert all(pp.add_de_info(contigs, de_results) == results)
+
 @pytest.mark.parametrize('gene,expected', [('A', 'A'),
                                            ('A|B', 'A'),
                                            ('A:B', 'A|B'),
