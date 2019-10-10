@@ -247,7 +247,7 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
                 block_strands.append(last_strand)
             else:
                 block_strands.append(last_strand)
-    genes = [g for gn in genes for g in gn]
+    genes = [g for gn in genes for g in gn if g != '']
 
     for gene, block_strand in zip(genes, block_strands):
         gn = gene_gtf[gene_gtf.gene == gene]
@@ -285,11 +285,10 @@ def write_supertranscript_genes(blocks, block_bed, gtf, genes, st_gene_bed):
         gene_names.append(gene)
         gene_cols.append(gene_col)
 
-    if len(genes) > 1 and genes[0] == genes[1]:
-        gene_starts[1] = gene_ends[0]
-        gene_ends[1] = gene_ends[1] * 2
-
     if len(gene_starts) > 0:
+        if len(genes) > 1 and genes[0] == genes[1]:
+            gene_starts[1] = gene_ends[0]
+            gene_ends[1] = gene_ends[1] * 2
         bed = pd.DataFrame({'chr': contig_name, 'start': gene_starts, 'end': gene_ends,
                             'name': gene_names, 'score': '.', 'strand': gene_strands,
                             'thickStart': gene_starts, 'thickEnd': gene_ends,
