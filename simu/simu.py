@@ -580,7 +580,7 @@ def write_fusion(txs, genes, all_exons, genome_fasta, params,
     loc1 = get_gene_loc(chr1, gene_trees, gene1)
     fusion_parts = [loc1, gene1, tx1, bloc]
 
-    seq2, tx_seq2 = '', {}
+    seq2, tx2_seq = '', {}
     if tx2:
         # get sequence for tx1
         seq2, strand2, ex2_list, tx2_seq = get_tx_seq(tx2, all_exons, genome_fasta,
@@ -607,7 +607,7 @@ def write_fusion(txs, genes, all_exons, genome_fasta, params,
     # write wildtype to case and control fastas
     for fasta in [case_fasta, control_fasta]:
         write_wildtype_sequence(tx1_seq, strand1, fasta, tx1)
-        if tx_seq2:
+        if len(tx2_seq) > 0:
             write_wildtype_sequence(tx2_seq, strand2, fasta, tx2)
 
     vartype = '%s_fusion' % add if add else 'canonical_fusion'
