@@ -1,6 +1,25 @@
 import pytest
 import pandas as pd
+import numpy as np
 import post_process as pp
+import count_junction_reads as cjr
+
+# dummy classes
+class Read:
+    def __init__(self, contig, start, end, name):
+        self.contig = contig
+        self.reference_start = start
+        self.reference_end = end
+        self.query_name = name
+class AlignmentFile:
+    def __init__(self, reads):
+        self.reads = []
+        for read in reads:
+            contig, start, end, name = read
+            self.reads.append(Read(contig, start, end, name))
+    def fetch(self, contig, start, end, until_eof=True):
+        # dummy method
+        return self.reads
 
 def test_parse_args():
     args = pp.parse_args(['sample',
@@ -83,3 +102,10 @@ def test_make_junctions():
     result = pd.DataFrame.from_dict(result)
     juncs = pp.make_junctions(st_blocks).sort_values('start').reset_index(drop=True)
     assert all(result == juncs)
+
+def test_get_crossing_reads():
+    reads = [('1', 100, 200, 'A'),
+             ('1', 105, 205, 'B'),
+             ('1', 200, 300, 'C')]
+    bamf = AlignmentFile(reads)
+    assert list(cjr.get_crossing_reads('1', 110, 117, bamf)) == ['A', 'B']
