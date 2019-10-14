@@ -121,4 +121,15 @@ def test_get_read_counts(junc, expected):
              'end': [end]}
     junc = pd.DataFrame.from_dict(junc)
     assert cjr.get_read_counts(bamf, junc).crossing.values[0] == expected
-    
+
+def test_get_read_support():
+    st_bed = {'contig': ['s1|A', 's1|A'],
+              'start': [110, 250],
+              'end': [116, 250]}
+    st_bed = pd.DataFrame.from_dict(st_bed)
+    contigs = {'contig_id': ['A'],
+               'sample': ['s1'],
+               'contig': ['1']}
+    contigs = pd.DataFrame.from_dict(contigs)
+    bamf = AlignmentFile(test_reads)
+    assert pp.get_read_support(contigs, bamf, st_bed).crossing_reads.values[0] == '2,1'

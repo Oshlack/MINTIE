@@ -157,7 +157,7 @@ def get_read_support(contigs, bamf, st_bed):
     contigs['crossing_reads'] = np.float('nan')
     contigs['junctions'] = np.float('nan')
     for idx,row in contigs.iterrows():
-        st = r'%s\|%s' % (row['sample'], row['contig_id'])
+        st = '%s|%s' % (row['sample'], row['contig_id'])
         st_blocks = st_bed[st_bed.contig.str.contains(st)]
         if len(st_blocks) > 0:
             st_blocks = make_junctions(st_blocks)
