@@ -21,6 +21,10 @@ class AlignmentFile:
         # dummy method
         return self.reads
 
+test_reads = [('1', 100, 200, 'A'),
+              ('1', 105, 205, 'B'),
+              ('1', 200, 300, 'C')]
+
 def test_parse_args():
     args = pp.parse_args(['sample',
                          'contig_info.tsv',
@@ -104,8 +108,17 @@ def test_make_junctions():
     assert all(result == juncs)
 
 def test_get_crossing_reads():
-    reads = [('1', 100, 200, 'A'),
-             ('1', 105, 205, 'B'),
-             ('1', 200, 300, 'C')]
-    bamf = AlignmentFile(reads)
+    bamf = AlignmentFile(test_reads)
     assert list(cjr.get_crossing_reads('1', 110, 117, bamf)) == ['A', 'B']
+
+@pytest.mark.parametrize('junc,expected', [(('1', 110, 116), 2),
+                                           (('1', 250, 250), 1)])
+def test_get_read_counts(junc, expected):
+    bamf = AlignmentFile(test_reads)
+    contig, start, end = junc
+    junc = {'contig': [contig],
+             'start': [start],
+             'end': [end]}
+    junc = pd.DataFrame.from_dict(junc)
+    assert cjr.get_read_counts(bamf, junc).crossing.values[0] == expected
+    

@@ -152,7 +152,7 @@ def make_junctions(st_blocks):
             st_blocks = st_blocks.append(row)
     return st_blocks[st_blocks.end - st_blocks.start <= SPLIT_LEN].drop_duplicates()
 
-def get_crossing_reads(contigs, read_align, st_bed):
+def get_read_support(contigs, bamf, st_bed):
     #TODO: handle fusions
     contigs['crossing_reads'] = np.float('nan')
     contigs['junctions'] = np.float('nan')
@@ -161,7 +161,7 @@ def get_crossing_reads(contigs, read_align, st_bed):
         st_blocks = st_bed[st_bed.contig.str.contains(st)]
         if len(st_blocks) > 0:
             st_blocks = make_junctions(st_blocks)
-            rc = cjr.get_read_counts(read_align, st_blocks)
+            rc = cjr.get_read_counts(bamf, st_blocks)
             contigs.loc[idx, 'crossing_reads'] = ','.join(rc.crossing.apply(str).values)
             se = zip(rc.start.values, rc.end.values)
             contigs.loc[idx, 'junctions'] = ','.join(['%s-%s' % (s,e) for s,e in se])
@@ -196,7 +196,8 @@ def main():
     logging.info('Matching contigs to ST alignments...')
     contigs = get_st_alignments(contigs, args.cont_align)
     logging.info('Counting reads crossing variant boundaries...')
-    contigs = get_crossing_reads(contigs, args.read_align, st_bed)
+    bamf = pysam.AlignmentFile(args.read_align, "rb")
+    contigs = get_read_support(contigs, bamf, st_bed)
 
     logging.info('Outputting to CSV')
     contigs = contigs.sort_values(by='PValue', ascending=True)

@@ -30,8 +30,7 @@ def get_crossing_reads(contig, start, end, bamf):
         logging.info('Fetching reads failed at loc %s; skipping.' % loc)
         return np.array([])
 
-def get_read_counts(bam_path, juncs):
-    bamf = pysam.AlignmentFile(bam_path, "rb")
+def get_read_counts(bamf, juncs):
     read_counts = np.empty([0, len(rc_dtype)], dtype=rc_dtype)
     for idx, junc in juncs.iterrows():
         contig = junc['contig']
