@@ -17,3 +17,12 @@ def test_subset_featuretypes():
     g = BedTool.from_dataframe(gtf)
     exons = BedTool(bh.subset_featuretypes(g, 'exon'))
     assert [e[2] for e in exons] == ['exon', 'exon']
+
+def test_add_strand():
+    bed = {'chrom': ['1', '1'],
+           'start': [100, 200],
+           'end': [150, 250]}
+    bed = pd.DataFrame.from_dict(bed)
+    b = BedTool.from_dataframe(bed).remove_invalid().sort().merge()
+    bex = b.each(bh.add_strand, '+')
+    assert [x.strand for x in bex] == ['+', '+']
