@@ -6,15 +6,15 @@ import tempfile
 from pybedtools import BedTool
 
 # test data
-gtf_data = {'chrom': ['1', '1', '1'],
-       'source': ['test', 'test', 'test'],
-       'feature': ['gene', 'exon', 'exon'],
-       'start': [100, 100, 200],
-       'end': [250, 150, 250],
-       'score': ['.', '.', '.'],
-       'strand': ['+', '+', '+'],
-       'frame': ['.', '.', '.'],
-       'attribute': ['', '', '']}
+gtf_data = {'chrom': ['1', '1', '1', '2'],
+       'source': ['test', 'test', 'test', 'test'],
+       'feature': ['gene', 'exon', 'exon', 'gene'],
+       'start': [100, 100, 200, 100],
+       'end': [250, 150, 250, 400],
+       'score': ['.', '.', '.', '.'],
+       'strand': ['+', '+', '+', '+'],
+       'frame': ['.', '.', '.', '.'],
+       'attribute': ['', '', '', '']}
 
 def test_subset_featuretypes():
     gtf = pd.DataFrame.from_dict(gtf_data)
@@ -44,3 +44,20 @@ def test_get_block_seqs():
         g = g.sequence(fi=fa_tmp.name, s=True)
         block_seqs = bh.get_block_seqs(g)
         assert len(block_seqs) == 3
+
+def test_get_merged_exons():
+    gtf = gtf_data.copy()
+    gtf['gene'] = ['A', 'A', 'A', 'B']
+    gtf = pd.DataFrame.from_dict(gtf)
+
+    with tempfile.NamedTemporaryFile() as fa_tmp:
+        seq = np.random.choice(list('AGTC'), 400)
+        seq = ''.join(seq)
+        fa_tmp.write(bytes('>1\n', 'utf-8'))
+        fa_tmp.write(bytes(seq, 'utf-8'))
+        fa_tmp.flush()
+
+        blocks, block_seqs = bh.get_merged_exons(['A'], gtf, fa_tmp.name, '+')
+        assert len(blocks) == 2
+        assert len(block_seqs) == 2
+        
