@@ -64,14 +64,10 @@ def parse_args():
                         metavar='FASTA',
                         type=str,
                         help='''Genome fasta file''')
-    parser.add_argument(dest='contig_out_file',
-                        metavar='CONTIG_OUT_FILE',
+    parser.add_argument(dest='out_prefix',
+                        metavar='OUT_PREFIX',
                         type=str,
-                        help='''Contig tsv output file''')
-    parser.add_argument(dest='bam_out_file',
-                        metavar='BAM_OUT_FILE',
-                        type=str,
-                        help='''Contig BAM output file''')
+                        help='''Output prefix''')
     parser.add_argument('--minClip',
                         metavar='MIN_CLIP',
                         type=int,
@@ -446,7 +442,7 @@ def get_contigs_to_keep(args):
     contigs['variant_of_interest'] = contigs.variant_id.isin(keep_vars)
     keep_contigs = contigs[contigs.variant_of_interest].contig_id.values
     contigs = contigs[contigs.contig_id.isin(keep_contigs)]
-    contigs.to_csv(args.contig_out_file, sep='\t', index=None)
+    contigs.to_csv('%s_info.tsv' % args.out_prefix, sep='\t', index=None)
 
     return(keep_contigs)
 
@@ -466,14 +462,17 @@ def write_output(args, keep_contigs):
     vcf = vcf[vcf[7].apply(lambda x: x.split(';')[0].split('=')[1] in keep_contigs)]
     vcf.to_csv(sys.stdout, sep='\t', index=False, header=False)
 
-def write_bam(args, keep_contigs):
+def write_bam_and_fasta(args, keep_contigs):
     bam_file = args.bam_file
     bam = pysam.AlignmentFile(bam_file, 'rb')
-    outbam = pysam.AlignmentFile(args.bam_out_file, 'wb', template=bam)
+    outbam = pysam.AlignmentFile('%s.bam'% args.out_prefix, 'wb', template=bam)
 
     for read in bam.fetch():
         if read.query_name in keep_contigs:
-           outbam.write(read)
+            with open('%s.fasta' % args.out_prefix, 'a') as fout:
+                fout.write('>%s\n' % read.query_name)
+                fout.write('%s\n' % read.seq)
+            outbam.write(read)
 
 def main():
     args = parse_args()
@@ -481,7 +480,7 @@ def main():
     set_globals(args)
     keep_contigs = get_contigs_to_keep(args)
     write_output(args, keep_contigs)
-    write_bam(args, keep_contigs)
+    write_bam_and_fasta(args, keep_contigs)
 
 if __name__ == '__main__':
     main()

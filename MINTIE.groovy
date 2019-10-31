@@ -215,11 +215,11 @@ refine_contigs = {
     def sample_name = branch.name
     output.dir = sample_name
     def motif_check = test_mode.toBoolean() ? "--skipMotifCheck" : ""
-    produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam"){
+    produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam", "novel_contigs.fasta"){
         exec """
         $python ${code_base}/annotate/refine_annotations.py \
             $input.tsv $input.vcf $input.bam $tx_annotation \
-            $genome_fasta $output.tsv $output.bam \
+            $genome_fasta $output.prefix \
             --minClip $min_clip \
             --minGap $min_gap \
             $motif_check \
@@ -229,82 +229,21 @@ refine_contigs = {
     }
 }
 
-make_supertranscript_reference = {
+post_process = {
     def sample_name = branch.name
+    def var_filter = var_filter.split(',').join(' ')
+    def gf_arg = gene_filter == '' ? '' : '--gene_filter ' + gene_filter
+    def vf_arg = var_filter == '' ? '' : '--var_filter ' + var_filter
     output.dir = sample_name
-    produce(sample_name + "_supertranscript.fasta", sample_name + "_blocks_supertranscript.bed", sample_name + "_genes_supertranscript.bed"){
+    produce(sample_name + '_results.tsv'){
         exec """
-        $python ${code_base}/annotate/make_supertranscript.py $input.tsv $input.vcf \
-            $tx_annotation $genome_fasta $output.dir $sample_name --log $output.dir/makest.log
-        """, "make_supertranscript_reference"
-    }
-}
-
-make_super_supertranscript = {
-    def files = inputs.fasta.collect{ it as String }.collect{ it as File }
-    def colpath = files.collect{ it.getName().split('_').first() }.join('_')
-    def workingDir = System.getProperty("user.dir");
-    input_beds = inputs.bed.collect{ it as String }
-    block_beds = input_beds.findAll{ it.contains('_blocks_') }.join(' ')
-    gene_beds = input_beds.findAll{ it.contains('_genes_') }.join(' ')
-    colpath = workingDir + '/' + colpath + '_collated'
-    output.dir = colpath
-    produce("supersupertranscript.fasta", "supersupertranscript_blocks.bed", "supersupertranscript_genes.bed"){
-        exec """
-        cat $inputs.fasta | $python ${code_base}/util/remove_redundant_records.py - > $output.fasta ;
-        cat $block_beds > $output2 ; cat $gene_beds > $output3
+        $python ${code_base}/annotate/post_process.py \
+            $sample_name \
+            $input.tsv \
+            $sample_name/eq_classes_de.txt \
+            $gf_arg \
+            $vf_arg > $output
         """
-    }
-}
-
-make_supertranscript_gmap_reference = {
-    def collated_dir = new File(input.fasta).getParentFile().getName()
-    output.dir = collated_dir + "/st_gmap_ref"
-    produce("st_gmap_ref.chromosome"){
-        exec """
-        ${gmap}_build -s chrom -k 15 -d st_gmap_ref -D $collated_dir $input.fasta ;
-        """
-    }
-}
-
-align_contigs_to_supertranscript = {
-    def colpath = new File(input.fasta).getParentFile().getName()
-    def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
-    def index_dir = colpath
-    output.dir = colpath + "/alignment"
-    produce(sample_name + "_novel_contigs_st_aligned.sam"){
-        exec """
-        $gmap -D $index_dir -d st_gmap_ref -f samse -t $threads \
-            -n 0 ${sample_name}/de_contigs.fasta > $output.sam ;
-        """, "align_contigs_to_supertranscript"
-    }
-}
-
-hisat_index = {
-    def colpath = new File(input).getParentFile().getName()
-    output.dir = colpath + "/genome"
-    def idx_prefix = output.dir + "/hisat_index"
-    produce("hisat_index.1.ht2") {
-        exec """
-        ${hisat}-build $input.fasta $idx_prefix
-        """
-    }
-}
-
-hisat_align = {
-    def workingDir = System.getProperty("user.dir");
-    def (rf1, rf2) = inputs.split().collect { workingDir+"/$it" }
-    def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
-    def colpath = new File(input.fasta).getParentFile().getName()
-    output.dir = colpath + "/alignment"
-    if(type == "controls"){
-        output.dir = colpath + "/alignment/controls/"
-    }
-    produce(sample_name + "_hisatAligned.sam"){
-        exec """
-        hisat_idx=$input.ht2; idx=\${hisat_idx%.1.ht2} ;
-        $hisat --threads $threads -x \$idx -1 $rf1 -2 $rf2 > $output ;
-        """, "hisat_align"
     }
 }
 
@@ -315,27 +254,6 @@ sort_and_index_bam = {
         $samtools sort -@ $threads -m ${sort_ram} $input.sam -o $output ;
         $samtools index $output
         """, "sort_and_index_bam"
-    }
-}
-
-post_process = {
-    def colpath = new File(input.fasta).getParentFile().getName()
-    def sample_name = branch.name.split('\\.').first() //remove branch dot suffix
-    def var_filter = var_filter.split(',').join(' ')
-    def gf_arg = gene_filter == '' ? '' : '--gene_filter ' + gene_filter
-    def vf_arg = var_filter == '' ? '' : '--var_filter ' + var_filter
-    output.dir = colpath + "/results"
-    produce(sample_name + '_results.tsv'){
-        exec """
-        $python ${code_base}/annotate/post_process.py $sample_name \
-            $sample_name/novel_contigs_info.tsv \
-            $sample_name/eq_classes_de.txt \
-            $sample_name/${sample_name}_blocks_supertranscript.bed \
-            $colpath/alignment/${sample_name}_novel_contigs_st_aligned.bam \
-            $colpath/alignment/${sample_name}_hisatAligned.bam \
-            $gf_arg \
-            $vf_arg > $output
-        """
     }
 }
 
@@ -352,12 +270,5 @@ run { fastqCaseFormat * [ fastq_dedupe +
                           sort_and_index_bam +
                           annotate_contigs +
                           refine_contigs +
-                          make_supertranscript_reference ] +
-        make_super_supertranscript +
-        make_supertranscript_gmap_reference +
-        hisat_index +
-            [ fastqCaseFormat * [ align_contigs_to_supertranscript + sort_and_index_bam,
-                                  hisat_align + sort_and_index_bam],
-              fastqControlFormat * [ hisat_align.using(type:"controls") + sort_and_index_bam ] ] +
-              fastqCaseFormat * [ post_process ]
+                          post_process ]
 }

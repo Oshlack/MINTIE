@@ -54,18 +54,6 @@ def parse_args(args):
                         metavar='DE_RESULTS',
                         type=str,
                         help='''Differential expression results.''')
-    parser.add_argument(dest='st_bed',
-                        metavar='ST_BED',
-                        type=str,
-                        help='''Supertranscript variant bed file.''')
-    parser.add_argument(dest='cont_align',
-                        metavar='CONT_ALIGN',
-                        type=str,
-                        help='''Alignment of novel contigs to supertranscript reference.''')
-    parser.add_argument(dest='read_align',
-                        metavar='READ_ALIGN',
-                        type=str,
-                        help='''Alignment of reads to supertranscript reference.''')
     parser.add_argument('--gene_filter',
                         metavar='GENE_FILTER',
                         type=str,
@@ -122,51 +110,6 @@ def get_short_gene_name(overlapping_genes):
     sgn = [og.split('|')[0] for og in overlapping_genes.split(':')]
     return '|'.join([g for g in sgn if g != ''])
 
-def get_st_alignments(contigs, st_bam):
-    bam = pysam.AlignmentFile(st_bam, 'rc')
-    index = pysam.IndexedReads(bam)
-    index.build()
-
-    st_alignment = []
-    for contig in contigs.contig_id.values:
-        aligned_conts = [read.reference_name for read in index.find(contig) if read.reference_name]
-        aligned_conts = ','.join(np.unique(aligned_conts)) if len(aligned_conts) > 0 else ''
-        st_alignment.append(aligned_conts)
-
-    # get short gene name (first gene of every overlapping set of genes, include fusion genes)
-    short_gnames = contigs.overlapping_genes.apply(get_short_gene_name)
-    contig_ids, samples = contigs.contig_id, contigs['sample']
-    con_names = ['|'.join([s, cid, sg]) for cid, s, sg in zip(contig_ids, samples, short_gnames)]
-
-    contigs['expected_ST_alignment'] = con_names
-    contigs['real_ST_alignment'] = st_alignment
-    return contigs
-
-def make_junctions(st_blocks):
-    for idx,row in st_blocks.iterrows():
-        if row.end - row.start > SPLIT_LEN:
-            start, end = row.start, row.end
-            row['end'] = start
-            st_blocks = st_blocks.append(row)
-            row['start'], row['end'] = end, end
-            st_blocks = st_blocks.append(row)
-    return st_blocks[st_blocks.end - st_blocks.start <= SPLIT_LEN].drop_duplicates()
-
-def get_read_support(contigs, bamf, st_bed):
-    #TODO: handle fusions
-    contigs['crossing_reads'] = np.float('nan')
-    contigs['junctions'] = np.float('nan')
-    for idx,row in contigs.iterrows():
-        st = r'%s\|%s' % (row['sample'], row['contig_id'])
-        st_blocks = st_bed[st_bed.contig.str.contains(st)]
-        if len(st_blocks) > 0:
-            st_blocks = make_junctions(st_blocks)
-            rc = cjr.get_read_counts(bamf, st_blocks)
-            contigs.loc[idx, 'crossing_reads'] = ','.join(rc.crossing.apply(str).values)
-            se = zip(rc.start.values, rc.end.values)
-            contigs.loc[idx, 'junctions'] = ','.join(['%s-%s' % (s,e) for s,e in se])
-    return contigs
-
 def main():
     args = parse_args(sys.argv[1:])
     init_logging(args.log)
@@ -176,7 +119,6 @@ def main():
         de_results = pd.read_csv(args.de_results, sep='\t', low_memory=False)
         gene_filter = pd.read_csv(args.gene_filter, header=None, low_memory=False) if args.gene_filter != '' \
                                                                                    else pd.DataFrame()
-        st_bed = pd.read_csv(args.st_bed, sep='\t', header=None, names=BED_COLS, low_memory=False)
     except IOError as exception:
         exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
 
@@ -185,7 +127,6 @@ def main():
 
     if args.var_filter:
         contigs = contigs[contigs.variant_type.apply(lambda v: v in args.var_filter).values]
-        st_bed = st_bed[st_bed['name'].isin(args.var_filter)]
 
     contigs['sample'] = args.sample
     if len(gene_filter) > 0:
@@ -193,11 +134,16 @@ def main():
 
     logging.info('Adding DE info...')
     contigs = add_de_info(contigs, de_results)
-    logging.info('Matching contigs to ST alignments...')
-    contigs = get_st_alignments(contigs, args.cont_align)
-    logging.info('Counting reads crossing variant boundaries...')
-    bamf = pysam.AlignmentFile(args.read_align, "rb")
-    contigs = get_read_support(contigs, bamf, st_bed)
+    #logging.info('Matching contigs to ST alignments...')
+    #contigs = get_st_alignments(contigs, args.cont_align)
+    #logging.info('Counting reads crossing variant boundaries...')
+    #bamf = pysam.AlignmentFile(args.read_align, "rb")
+    #contigs = get_read_support(contigs, bamf, st_bed)
+
+    short_gnames = contigs.overlapping_genes.apply(get_short_gene_name)
+    contig_ids, samples = contigs.contig_id, contigs['sample']
+    con_names = ['|'.join([s, cid, sg]) for cid, s, sg in zip(contig_ids, samples, short_gnames)]
+    contigs['unique_contig_ID'] = con_names
 
     logging.info('Outputting to CSV')
     contigs = contigs.sort_values(by='PValue', ascending=True)
