@@ -13,8 +13,6 @@ import re
 import sys
 import logging
 import pysam
-import bedtool_helper as bh
-import make_supertranscript as ms
 import annotate_contigs as ac
 import pybedtools as pbt
 import constants
@@ -96,6 +94,34 @@ def set_globals(args):
     else:
         MIN_GAP = constants.DEFAULT_MIN_GAP
 
+def get_block_seqs(exons):
+    '''
+    get sequences from exon blocks and
+    return block sequences dictionary
+    '''
+    block_seqs = {}
+    with tempfile.NamedTemporaryFile() as fa_tmp:
+        fa_tmp.write(bytes(open(exons.seqfn).read(), 'utf-8'))
+        fa_tmp.flush()
+
+        for record in SeqIO.parse(fa_tmp.name, 'fasta'):
+            block_seqs[record.id] = str(record.seq)
+
+    return(block_seqs)
+
+def load_vcf_file(contig_vcf):
+    '''
+    load in VCF file containing novel contig variants
+    remove 'chr' prefix from chroms if present
+    '''
+    cvcf = pd.read_csv(contig_vcf, sep='\t', header=None, comment='#', low_memory=False)
+    vcf_chrs = cvcf[0].map(str).str.contains('chr')
+    if any(vcf_chrs.values):
+        cvcf = cvcf[vcf_chrs]
+        cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
+        cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
+    return cvcf
+
 def is_valid_motif(left_id, right_id, block_seqs):
     try:
         if left_id != '' and right_id != '':
@@ -124,7 +150,7 @@ def get_valid_motif_vars(variants, args):
     '''
     #TODO: refactor function; too long
     # get VCF data of given variants
-    vcf = ms.load_vcf_file(args.vcf_file)
+    vcf = load_vcf_file(args.vcf_file)
     vcf = vcf[vcf[2].apply(lambda x: x in variants.variant_id.values)]
     vcf = vcf[vcf[3].apply(lambda x: np.invert(pd.isnull(x)))]
 
@@ -155,7 +181,7 @@ def get_valid_motif_vars(variants, args):
     # extract sequences
     g = BedTool.from_dataframe(mlocs).remove_invalid()
     g = g.sequence(fi=args.fasta)
-    bs = bh.get_block_seqs(g)
+    bs = get_block_seqs(g)
 
     # check whether variants have valid motifs
     # left blocks

@@ -19,10 +19,8 @@ import sys
 import logging
 import os
 import pysam
-import count_junction_reads as cjr
-from Bio import SeqIO
 from argparse import ArgumentParser
-from utils import cached, init_logging, exit_with_error
+from utils import init_logging, exit_with_error
 
 pd.set_option("mode.chained_assignment", None)
 
@@ -134,11 +132,6 @@ def main():
 
     logging.info('Adding DE info...')
     contigs = add_de_info(contigs, de_results)
-    #logging.info('Matching contigs to ST alignments...')
-    #contigs = get_st_alignments(contigs, args.cont_align)
-    #logging.info('Counting reads crossing variant boundaries...')
-    #bamf = pysam.AlignmentFile(args.read_align, "rb")
-    #contigs = get_read_support(contigs, bamf, st_bed)
 
     short_gnames = contigs.overlapping_genes.apply(get_short_gene_name)
     contig_ids, samples = contigs.contig_id, contigs['sample']

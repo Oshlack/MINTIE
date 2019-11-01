@@ -2,7 +2,6 @@ import pytest
 import pandas as pd
 import numpy as np
 import post_process as pp
-import count_junction_reads as cjr
 
 # dummy classes
 class Read:

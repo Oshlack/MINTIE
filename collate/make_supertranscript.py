@@ -14,10 +14,10 @@ import re
 import sys
 import logging
 import os
-import bedtool_helper
 import tempfile
 import pickle
-import block_helper as bh
+import st_helper as sh
+import bedtool_helper
 from pybedtools import BedTool
 from Bio import SeqIO
 from argparse import ArgumentParser
@@ -343,13 +343,13 @@ def write_gene(contig, blocks, block_seqs, args, genes, gtf):
             g1 = gnames == gene1
             g2 = gnames == gene2
 
-        c1 = bh.get_block_colours(blocks[g1], names[g1])
-        c2 = bh.get_block_colours(blocks[g2], names[g2], alt=True)
+        c1 = sh.get_block_colours(blocks[g1], names[g1])
+        c2 = sh.get_block_colours(blocks[g2], names[g2], alt=True)
         colours = np.concatenate([c1, c2])
 
         assert len(colours) == len(seg_starts)
     else:
-        colours = bh.get_block_colours(blocks, names)
+        colours = sh.get_block_colours(blocks, names)
 
     # write supertranscript block bed annotation
     bed = pd.DataFrame({'chr': contig_name, 'start': seg_starts, 'end': seg_ends,
@@ -378,7 +378,7 @@ def write_canonical_genes(args, contigs, gtf):
             continue
         if len(blocks.drop_duplicates()) != len(block_seqs):
             continue
-        blocks = bh.sort_blocks(blocks)
+        blocks = sh.sort_blocks(blocks)
         write_gene('', blocks, block_seqs, args, [gene], gtf)
 
 #=====================================================================================================
@@ -405,7 +405,7 @@ def get_block_info(args, genes, strands, gtf, genome_fasta):
             if gene not in canonical_genes_written and gene.find('|') < 0:
                 logging.info('Writing %s' % gene)
                 canonical_genes_written.append(gene)
-                write_gene('', bh.sort_blocks(blocks), block_seqs, args, [gene], gtf)
+                write_gene('', sh.sort_blocks(blocks), block_seqs, args, [gene], gtf)
     return blocks.drop_duplicates(), block_seqs
 
 def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
@@ -442,7 +442,7 @@ def add_novel_sequence(blocks, block_seqs, record, con_info, genes, strand):
             logging.info('''WARNING: multiple blocks affected by variant;
                             Exons may not have been merged properly''')
         block = block_affected.reset_index().loc[0]
-        blocks, block_seqs = bh.split_block(blocks, block, block_seqs, start_pos,
+        blocks, block_seqs = sh.split_block(blocks, block, block_seqs, start_pos,
                                             end_pos, seq, name, strand)
     else:
         blocks = blocks.append([{'chr': chrom,
@@ -492,7 +492,7 @@ def contig_to_supertranscript(con_info, args, cvcf, gtf):
 
     contig = con_info.contig_id.values[0]
     logging.info('Writing supertranscript for contig %s' % contig)
-    blocks = bh.sort_blocks(blocks)
+    blocks = sh.sort_blocks(blocks)
     blocks.to_csv(genome_bed, mode='a', index=False, header=False, sep='\t')
 
     if genes[0].split('|')[0] == genes[1].split('|')[0]:
