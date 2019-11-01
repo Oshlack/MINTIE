@@ -8,15 +8,17 @@ if (!require("seqinr")) {
 if (!require("data.table")) {
     install.packages("data.table", repos=repos)
 }
-if (!require("edgeR")) {
+if (!require("edgeR") | !require("tximport")) {
     r_version = paste(R.Version()$major, strsplit(R.Version()$minor, '\\.')[[1]][1], sep='.')
     if(as.numeric(r_version) < 3.5) {
         source("https://bioconductor.org/biocLite.R")
         biocLite("edgeR")
+        biocLite("tximport")
     } else {
         if (!requireNamespace("BiocManager", quietly = TRUE)) {
             install.packages("BiocManager")
         }
         BiocManager::install("edgeR")
+        BiocManager::install("tximport")
     }
 }

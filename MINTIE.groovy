@@ -224,8 +224,25 @@ refine_contigs = {
             --minGap $min_gap \
             $motif_check \
             --log $output.dir/refine.log > $output.vcf ;
-        $samtools index $output.bam
+        $samtools index $output.bam ;
+        $python $code_base/util/filter_fasta.py $input.fasta $output.tsv --col_id contig_id > $output.fasta ;
         """
+    }
+}
+
+salmon_quant = {
+    def workingDir = System.getProperty("user.dir");
+    def (rf1, rf2) = inputs.split().collect { workingDir+"/$it" }
+    def sample_name = branch.name
+    def salmon_index = sample_name + "/salmon_quant_index"
+    output.dir = sample_name + "/salmon_quant_out"
+
+    produce("quant.sf"){
+        exec """
+        cat $trans_fasta $input.fasta > $sample_name/salmon_quant_index.fasta ;
+        $salmon index -t $sample_name/salmon_quant_index.fasta -i $salmon_index ;
+        $salmon quant --seqBias --validateMappings -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $output.dir
+        """, "salmon_quant"
     }
 }
 
@@ -270,5 +287,6 @@ run { fastqCaseFormat * [ fastq_dedupe +
                           sort_and_index_bam +
                           annotate_contigs +
                           refine_contigs +
+                          [ fastqCaseFormat * [ salmon_quant ] ] +
                           post_process ]
 }
