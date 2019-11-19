@@ -28,6 +28,7 @@ def test_parse_args():
     args = pp.parse_args(['sample',
                          'contig_info.tsv',
                          'de_results.tsv',
+                         'estimated_VAF.txt',
                          '--gene_filter', 'gene_filter.txt',
                          '--var_filter', 'FUS INS DEL'])
     assert args.sample == 'sample'
