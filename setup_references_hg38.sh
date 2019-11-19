@@ -6,7 +6,7 @@ mkdir -p ref
 cd ref
 
 gmap_refdir=$PWD
-commands="genome_fasta trans_fasta tx_annotation ann_info gmap_refdir gmap_genome"
+commands="genome_fasta trans_fasta tx_annotation ann_info tx2gene gmap_refdir gmap_genome"
 
 function genome_fasta_setup {
     file=Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa
@@ -40,6 +40,14 @@ function ann_info_setup {
     python ../util/make_exon_reference.py chess2.2.gtf
     if [ -f $file ]; then
         echo -e "$PWD/$file" > ann_info.success
+    fi
+}
+
+function tx2gene_setup {
+    file=tx2gene.txt
+    python ../util/make_tx2gene_lookup.py chess2.2.gtf > $file
+    if [ -f $file ]; then
+        echo -e "$PWD/$file" > tx2gene.success
     fi
 }
 

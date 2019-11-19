@@ -47,12 +47,6 @@ contig_info <- args[2]
 tx2gene <- args[3]
 outfile <- args[4]
 
-# # testing
-contig_info <- '/group/bioi1/marekc/20170918_cryptic_variant/MINTIE/allvars-case/novel_contigs_info.tsv'
-tx2gene <- '/group/bioi1/marekc/20170918_cryptic_variant/MINTIE/ref/tx2gene.txt'
-quant_file <- '/group/bioi1/marekc/20170918_cryptic_variant/MINTIE/allvars-case/salmon_quant_out/quant.sf'
-outfile <- 'vaf.txt'
-
 #############################################################
 # Load data
 #############################################################

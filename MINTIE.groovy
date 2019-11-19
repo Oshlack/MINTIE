@@ -246,6 +246,15 @@ salmon_quant = {
     }
 }
 
+calculate_VAF = {
+    output.dir = branch.name
+    produce("vaf_estimates.txt"){
+        exec """
+        ${R}script ${code_base}/annotate/estimate_VAF.R $input.sf $input.tsv $tx2gene $output
+        """
+    }
+}
+
 post_process = {
     def sample_name = branch.name
     def var_filter = var_filter.split(',').join(' ')
@@ -288,5 +297,6 @@ run { fastqCaseFormat * [ fastq_dedupe +
                           annotate_contigs +
                           refine_contigs +
                           [ fastqCaseFormat * [ salmon_quant ] ] +
-                          post_process ]
+                          calculate_VAF ]
+//                          post_process ]
 }
