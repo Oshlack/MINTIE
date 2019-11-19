@@ -52,6 +52,10 @@ def parse_args(args):
                         metavar='DE_RESULTS',
                         type=str,
                         help='''Differential expression results.''')
+    parser.add_argument(dest='vaf_estimates',
+                        metavar='VAF_ESTIMATES',
+                        type=str,
+                        help='''VAF estimates file.''')
     parser.add_argument('--gene_filter',
                         metavar='GENE_FILTER',
                         type=str,
@@ -115,6 +119,7 @@ def main():
     try:
         contigs = pd.read_csv(args.contig_info, sep='\t', low_memory=False)
         de_results = pd.read_csv(args.de_results, sep='\t', low_memory=False)
+        vafs = pd.read_csv(args.vaf_estimates, sep='\t', low_memory=False)
         gene_filter = pd.read_csv(args.gene_filter, header=None, low_memory=False) if args.gene_filter != '' \
                                                                                    else pd.DataFrame()
     except IOError as exception:
@@ -130,8 +135,9 @@ def main():
     if len(gene_filter) > 0:
         contigs = filter_by_gene(contigs, gene_filter)
 
-    logging.info('Adding DE info...')
+    logging.info('Adding DE and VAF info...')
     contigs = add_de_info(contigs, de_results)
+    contigs = pd.merge(contigs, vafs, on='contig_id')
 
     short_gnames = contigs.overlapping_genes.apply(get_short_gene_name)
     contig_ids, samples = contigs.contig_id, contigs['sample']

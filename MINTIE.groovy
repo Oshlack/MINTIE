@@ -267,6 +267,7 @@ post_process = {
             $sample_name \
             $input.tsv \
             $sample_name/eq_classes_de.txt \
+            $sample_name/vaf_estimates.txt \
             $gf_arg \
             $vf_arg > $output
         """
@@ -297,6 +298,6 @@ run { fastqCaseFormat * [ fastq_dedupe +
                           annotate_contigs +
                           refine_contigs +
                           [ fastqCaseFormat * [ salmon_quant ] ] +
-                          calculate_VAF ]
-//                          post_process ]
+                          calculate_VAF +
+                          post_process ]
 }
