@@ -90,3 +90,45 @@ def test_add_de_info():
                                            ('A|B|C:X|Y|Z', 'A|X')])
 def test_get_short_gene_name(gene, expected):
     assert pp.get_short_gene_name(gene) == expected
+
+def test_reformat_fields():
+    contigs = { 'contig_id': ['1', '2'],
+                'variant_id': ['1a', '2a'],
+                'partner_id': ['', ''],
+                'pos1': ['chr1:100(+)', 'chr2:200(-)'],
+                'pos2': ['chr1:200(+)', 'chr2:250(-)'],
+                'varsize': [100, 0],
+                'cpos': [0, 0],
+                'contig_varsize': [0, 0],
+                'contig_len': [200, 150],
+                'contig_cigar': ['100M50N100M', '50M50N50M'],
+                'variant_type': ['NE', 'NEJ'],
+                'overlapping_genes': ['A', 'B'],
+                'large_varsize': [True, False],
+                'is_contig_spliced': [True, True],
+                'spliced_exon': [True, False],
+                'overlaps_exon': [False, False],
+                'overlaps_gene': [True, True],
+                'sample': ['S1', 'S1'],
+                'logFC': [10, 10],
+                'logCPM': [10, 9],
+                'PValue': [0.004, 0.001],
+                'FDR': [0.04, 0.01],
+                'ec_names': ['ec1', 'ec2'],
+                'n_contigs_in_ec': [1, 1],
+                'contigs_in_EC': ['1', '2'],
+                'case_reads': [100, 200],
+                'controls_total_reads': [0, 5],
+                'TPM': [1000, 2000],
+                'mean_WT_TPM': [1400, 1400],
+                'VAF': [1000./2400, 2000./3400],
+                'unique_contig_ID': ['S1|1|A', 'S1|2|B'] }
+    contigs = pd.DataFrame.from_dict(contigs)
+    contigs = pp.reformat_fields(contigs)
+
+    assert list(contigs['chr1'].values) == ['chr2', 'chr1']
+    assert list(contigs['chr2'].values) == ['chr2', 'chr1']
+    assert list(contigs['pos1'].values) == [200, 100]
+    assert list(contigs['pos2'].values) == [250, 200]
+    assert list(contigs['strand1'].values) == ['-', '+']
+    assert list(contigs['strand2'].values) == ['-', '+']
