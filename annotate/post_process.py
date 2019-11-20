@@ -19,6 +19,7 @@ import sys
 import logging
 import os
 import pysam
+from refine_annotations import get_pos_parts
 from argparse import ArgumentParser
 from utils import init_logging, exit_with_error
 
@@ -112,6 +113,34 @@ def get_short_gene_name(overlapping_genes):
     sgn = [og.split('|')[0] for og in overlapping_genes.split(':')]
     return '|'.join([g for g in sgn if g != ''])
 
+def reformat_fields(contigs):
+    '''
+    Extract chrom, pos and strand fields.
+    Reorder fields for clarity.
+    Sort by p value.
+    '''
+    pos1 = contigs.pos1.apply(get_pos_parts).values
+    pos2 = contigs.pos2.apply(get_pos_parts).values
+    chr1, pos1, str1 = zip(*pos1)
+    chr2, pos2, str2 = zip(*pos2)
+    contigs['chr1'], contigs['pos1'], contigs['strand1'] = chr1, pos1, str1
+    contigs['chr2'], contigs['pos2'], contigs['strand2'] = chr2, pos2, str2
+
+    basic = ['chr1', 'pos1', 'strand1',
+             'chr2', 'pos2', 'strand2',
+             'variant_type', 'overlapping_genes', 'sample']
+    variant = ['variant_id', 'partner_id', 'varsize',
+               'contig_varsize', 'cpos', 'large_varsize',
+               'is_contig_spliced', 'spliced_exon',
+               'overlaps_gene', 'overlaps_gene', 'VAF']
+    de = ['logFC', 'logCPM', 'PValue', 'FDR', 'TPM', 'mean_WT_TPM']
+    ec = ['ec_names', 'n_contigs_in_ec', 'contigs_in_EC', 'case_reads', 'controls_total_reads']
+    cont = ['contig_id', 'unique_contig_ID', 'contig_len', 'contig_cigar']
+    contigs = contigs[basic + variant + de + ec + cont]
+
+    contigs = contigs.sort_values(by='PValue', ascending=True)
+    return contigs
+
 def main():
     args = parse_args(sys.argv[1:])
     init_logging(args.log)
@@ -145,7 +174,7 @@ def main():
     contigs['unique_contig_ID'] = con_names
 
     logging.info('Outputting to CSV')
-    contigs = contigs.sort_values(by='PValue', ascending=True)
+    contigs = reformat_fields(contigs)
     contigs.to_csv(sys.stdout, index=False, sep='\t', na_rep='NA')
 
 if __name__ == '__main__':
