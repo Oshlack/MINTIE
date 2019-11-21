@@ -19,7 +19,9 @@ def get_attribute(attributes, attribute_id):
 def main():
     args = parse_args()
     tx_ref = pd.read_csv(args.gtf, comment='#', sep='\t', header=None, low_memory=False)
-    tx_ref = tx_ref[tx_ref[2] == 'transcript']
+    if 'transcript' in tx_ref[2].values:
+        # makes things faster if the gtf has transcript records
+        tx_ref = tx_ref[tx_ref[2] == 'transcript']
 
     tx_ids = tx_ref[8].apply(lambda x: get_attribute(x, 'transcript_id'))
     genes = tx_ref[8].apply(lambda x: get_attribute(x, 'gene_name'))

@@ -16,6 +16,8 @@ import pysam
 import annotate_contigs as ac
 import pybedtools as pbt
 import constants
+import tempfile
+from Bio import SeqIO
 from intervaltree import IntervalTree
 from pybedtools import BedTool
 from argparse import ArgumentParser

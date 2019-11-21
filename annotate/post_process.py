@@ -129,10 +129,11 @@ def reformat_fields(contigs):
     basic = ['chr1', 'pos1', 'strand1',
              'chr2', 'pos2', 'strand2',
              'variant_type', 'overlapping_genes', 'sample']
-    variant = ['variant_id', 'partner_id', 'varsize',
+    variant = ['variant_id', 'partner_id', 'VAF', 'varsize',
                'contig_varsize', 'cpos', 'large_varsize',
                'is_contig_spliced', 'spliced_exon',
-               'overlaps_gene', 'overlaps_gene', 'VAF']
+               'overlaps_exon', 'overlaps_gene']
+    variant = variant if 'valid_motif' not in contigs.columns.values else variant + ['valid_motif']
     de = ['logFC', 'logCPM', 'PValue', 'FDR', 'TPM', 'mean_WT_TPM']
     ec = ['ec_names', 'n_contigs_in_ec', 'contigs_in_EC', 'case_reads', 'controls_total_reads']
     cont = ['contig_id', 'unique_contig_ID', 'contig_len', 'contig_cigar']
