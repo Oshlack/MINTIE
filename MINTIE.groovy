@@ -269,7 +269,8 @@ post_process = {
             $sample_name/eq_classes_de.txt \
             $sample_name/vaf_estimates.txt \
             $gf_arg \
-            $vf_arg > $output
+            $vf_arg \
+            --log $output.dir/postprocess.log > $output
         """
     }
 }

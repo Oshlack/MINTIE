@@ -157,13 +157,18 @@ def main():
 
     # consider only variants of interest
     contigs = contigs[contigs.variant_of_interest]
+    contigs['sample'] = args.sample
 
     if args.var_filter:
         contigs = contigs[contigs.variant_type.apply(lambda v: v in args.var_filter).values]
 
-    contigs['sample'] = args.sample
     if len(gene_filter) > 0:
         contigs = filter_by_gene(contigs, gene_filter)
+
+    if len(contigs) == 0:
+        logging.info('WARNING: no variants present after filtering. Exiting.')
+        contigs.to_csv(sys.stdout, index=False, sep='\t', na_rep='NA')
+        sys.exit()
 
     logging.info('Adding DE and VAF info...')
     contigs = add_de_info(contigs, de_results)
