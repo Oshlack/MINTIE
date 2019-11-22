@@ -45,7 +45,7 @@ function ann_info_setup {
 
 function tx2gene_setup {
     file=tx2gene.txt
-    python ../util/make_tx2gene_lookup.py chess2.2.gtf > $file
+    python ../util/make_tx2gene_lookup.py Homo_sapiens.GRCh38.cdna.all.fa > $file
     if [ -f $file ]; then
         echo -e "$PWD/$file" > tx2gene.success
     fi
