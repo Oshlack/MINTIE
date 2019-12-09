@@ -22,7 +22,8 @@ def make_from_fasta(fasta_file):
             gname = re.search('gene_symbol:([A-Za-z0-9\.\_\-]+)', record.description).group(1)
             tx2gene.append((tx_id, gname))
     tx2gene = pd.DataFrame(tx2gene)
-    tx2gene.drop_duplicates().to_csv(sys.stdout, index=False, header=False, sep='\t')
+    tx2gene = tx2gene[tx2gene.gene != ''].drop_duplicates()
+    tx2gene.to_csv(sys.stdout, index=False, header=False, sep='\t')
 
 def make_from_gtf(gtf):
     tx_ref = pd.read_csv(gtf, comment='#', sep='\t', header=None, low_memory=False)

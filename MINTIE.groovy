@@ -90,8 +90,10 @@ assemble = {
             """, "assemble"
         } else {
             exec """
-            if [ ! -d $output.dir/SOAPassembly ]; then mkdir $output.dir/SOAPassembly ; fi ;
-            cd $sample_name/SOAPassembly ;
+            if [ ! -d $output.dir/SOAPassembly ]; then
+                mkdir $output.dir/SOAPassembly ;
+            fi ;
+            cd $output.dir/SOAPassembly ;
 
             echo \"max_rd_len=$max_read_length\" > config.config ;
             echo -e \"[LIB]\\nq1=../../$input1\\nq2=../../$input2\" >> config.config ;
@@ -101,12 +103,19 @@ assemble = {
                 $soapdenovotrans contig -g outputGraph_\$k ;
                 cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
             done ;
+
             cd ../../ ;
-            $dedupe in=$sample_name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true |
-            $fasta_formatter |
-            awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }'
-            > $output1 ;
-            cat $output1 $trans_fasta > $output2 ;
+            $dedupe in=$sample_name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true | \
+                $fasta_formatter | \
+                awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }' > $output1 ;
+            if [ -s $output1 ] ; then
+                cat $output1 $trans_fasta > $output2 ;
+            else
+                rm $output1 ;
+                echo "ERROR: de novo assembled contigs fasta file is empty." ;
+                echo "Please check paths for SOAPdenovoTrans, dedupe and fasta" ;
+                echo "formatter are correct, and their dependencies are installed." ;
+            fi ;
             """, "assemble"
         }
     }
