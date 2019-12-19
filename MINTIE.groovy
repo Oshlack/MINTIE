@@ -69,24 +69,21 @@ assemble = {
     def sample_name = branch.name
     def Ks_for_soap = Ks.split(',').join(' ')
     output.dir = sample_name
-    produce(sample_name+'_denovo_filt.fasta', sample_name+'.fasta'){
+    produce(sample_name + '_denovo_filt.fasta'){
         if (assemblyFasta != '') {
             exec """
-            ln -s $assemblyFasta $output1 ;
-            cat $assemblyFasta $trans_fasta > $output2
+            ln -s $assemblyFasta $output ;
             """
         } else if (assembler.toLowerCase() == 'trinity') {
             exec """
             $Trinity --seqType fq --max_memory ${assembly_mem}G --output $sample_name/trinity_assembly \
                 --left $input1 --right $input2 --CPU $threads ;
-            ln -s trinity_assembly/Trinity.fasta $output1 ;
-            cat $output1 $trans_fasta > $output2
+            ln -s trinity_assembly/Trinity.fasta $output ;
             """, "assemble"
         } else if (assembler.toLowerCase() == 'spades') {
             exec """
             $rnaspades -1 $input1 -2 $input2 -k $Ks -t $threads -m $assembly_mem -o $sample_name/SPAdes_assembly ;
-            ln -s SPAdes_assembly/contigs.fasta $output1 ;
-            cat $output1 $trans_fasta > $output2
+            ln -s SPAdes_assembly/contigs.fasta $output ;
             """, "assemble"
         } else {
             exec """
@@ -107,11 +104,9 @@ assemble = {
             cd ../../ ;
             $dedupe in=$sample_name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true | \
                 $fasta_formatter | \
-                awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }' > $output1 ;
-            if [ -s $output1 ] ; then
-                cat $output1 $trans_fasta > $output2 ;
-            else
-                rm $output1 ;
+                awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }' > $output ;
+            if [ ! -s $output ] ; then
+                rm $output ;
                 echo "ERROR: de novo assembled contigs fasta file is empty." ;
                 echo "Please check paths for SOAPdenovoTrans, dedupe and fasta" ;
                 echo "formatter are correct, and their dependencies are installed." ;
@@ -124,11 +119,16 @@ assemble = {
 create_salmon_index = {
     def sample_name = branch.name
     def salmon_index = sample_name + "/all_fasta_index"
-    output.dir = sample_name + "/all_fasta_index"
-    produce('sa.bin', 'hash.bin', 'rsd.bin'){
+    if (type == "quant") {
+        salmon_index = sample_name + "/salmon_quant_index"
+    }
+    output.dir = salmon_index
+    def index_fasta = output.dir + "/" + sample_name + ".fasta"
+    produce(index_fasta, 'hash.bin'){
         exec """
-         $salmon index -t $input2 -i $salmon_index ;
-         """
+        cat $input.fasta $trans_fasta > $output1 ;
+        $salmon index -t $output1 -i $salmon_index -p $threads ;
+        """, "create_salmon_index"
     }
 }
 
@@ -248,9 +248,7 @@ salmon_quant = {
 
     produce("quant.sf"){
         exec """
-        cat $trans_fasta $input.fasta > $sample_name/salmon_quant_index.fasta ;
-        $salmon index -t $sample_name/salmon_quant_index.fasta -i $salmon_index ;
-        $salmon quant --seqBias --validateMappings -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $output.dir
+        $salmon quant --seqBias --validateMappings -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $output.dir ;
         """, "salmon_quant"
     }
 }
@@ -307,6 +305,7 @@ run { fastqCaseFormat * [ fastq_dedupe +
                           sort_and_index_bam +
                           annotate_contigs +
                           refine_contigs +
+                          create_salmon_index.using(type:"quant") +
                           [ fastqCaseFormat * [ salmon_quant ] ] +
                           calculate_VAF +
                           post_process ]
