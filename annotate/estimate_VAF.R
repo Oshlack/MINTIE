@@ -92,6 +92,10 @@ mean_tpm <- data.table(x)[, mean(WT_TPM), by='contig_id']
 colnames(mean_tpm)[2] <- 'mean_WT_TPM'
 x <- merge(x, mean_tpm, by='contig_id')
 
-# calculate VAF and write output
-x$VAF <- x$TPM / (x$TPM + x$mean_WT_TPM)
-write.table(x, file=outfile, row.names=FALSE, quote=FALSE, sep='\t')
+if (nrow(x) > 0) {
+    # calculate VAF and write output
+    x$VAF <- x$TPM / (x$TPM + x$mean_WT_TPM)
+    write.table(x, file=outfile, row.names=FALSE, quote=FALSE, sep='\t')
+} else {
+    print("ERROR: no variants to output. Please check your tx2gene.txt reference file.")
+}

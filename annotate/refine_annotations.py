@@ -504,8 +504,11 @@ def main():
     init_logging(args.log)
     set_globals(args)
     keep_contigs = get_contigs_to_keep(args)
-    write_output(args, keep_contigs)
-    write_bam(args, keep_contigs)
+    if len(keep_contigs) > 0:
+        write_output(args, keep_contigs)
+        write_bam(args, keep_contigs)
+    else:
+        exit_with_error('ERROR: no variants to output.', constants.EXIT_OUTPUT_ERROR)
 
 if __name__ == '__main__':
     main()
