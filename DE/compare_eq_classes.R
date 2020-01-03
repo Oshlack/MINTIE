@@ -57,7 +57,7 @@ GENE_REGEX <- "gene_symbol:([a-zA-Z0-9.-]+)"
 
 FDR <- 0.05
 minCPM <- 0.1
-minLogFC <- 5
+minLogFC <- 2
 
 #############################################################
 # Parse arguments

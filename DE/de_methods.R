@@ -3,14 +3,14 @@ library(data.table)
 library(edgeR)
 
 run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=0.05, min_logfc=0, test=FALSE) {
-    data <- distinct(ec_matrix[, !colnames(ec_matrix)%in%c("transcript", "tx_ids"), with=F])
+    data <- distinct(ec_matrix[, !colnames(ec_matrix)%in%c("transcript", "tx_ids", "tx_id"), with=FALSE])
     data <- data[data$ec_names%in%tx_ec$ec_names,]
     if(nrow(data) == 0) {
         stop("No novel ECs exist in EC matrix. Please check EC matrix input.")
     }
 
     # prepare counts matrix
-    counts <- data[,!colnames(data)%in%"ec_names", with=F]
+    counts <- data[,!colnames(data)%in%"ec_names", with=FALSE]
     counts <- as.matrix(apply(counts, 2, as.numeric))
     rownames(counts) <- data$ec_names
 
@@ -33,8 +33,6 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     }
     group <- factor(group, levels=c("control", "case"))
     colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub("-", "_", x)}))
-    des <- model.matrix(~group)
-    colnames(des)[2] <- "case"
 
     # filter
     keep <- as.numeric(cpm(counts)[, group=="case"]) > cpm_cutoff
@@ -52,7 +50,7 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
 
     # write counts table to file for reference
     counts_out <- data.frame(ec_names=rownames(counts), counts)
-    write.table(counts_out, file=paste(outdir, "counts_table.txt", sep="/"), row.names=F, quote=F, sep="\t")
+    write.table(counts_out, file=paste(outdir, "counts_table.txt", sep="/"), row.names=FALSE, quote=FALSE, sep="\t")
 
     # perform DE
     if (test) {
@@ -66,6 +64,8 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
         dx_df <- data.frame(topTags(et, n=Inf))
         dx_df <- dx_df[rownames(dx_df)!="",]
     } else {
+        des <- model.matrix(~group)
+        colnames(des)[2] <- "case"
         dge <- DGEList(counts = counts, group = group)
         dge <- calcNormFactors(dge)
         dge <- estimateGLMCommonDisp(dge, design=des, verbose=T)
@@ -92,10 +92,10 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     dx_df <- left_join(dx_df, contigs_in_ec, by="ec_names")
     dx_df <- left_join(dx_df, tx_ec, by="ec_names")
     dx_df <- left_join(dx_df, counts_summary, by="ec_names")
-    dx_df <- dx_df[order(dx_df$PValue, decreasing=F),]
+    dx_df <- dx_df[order(dx_df$PValue, decreasing=FALSE),]
 
     # write full results
-    write.table(dx_df, file=paste(outdir, "full_edgeR_results.txt", sep="/"), row.names=F, quote=F, sep="\t")
+    write.table(dx_df, file=paste(outdir, "full_edgeR_results.txt", sep="/"), row.names=FALSE, quote=FALSE, sep="\t")
     dx_df <- dx_df[dx_df$FDR<qval & dx_df$logFC>min_logfc,]
 
     return(dx_df)
