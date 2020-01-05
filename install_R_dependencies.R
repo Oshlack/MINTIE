@@ -8,6 +8,12 @@ if (!require("seqinr")) {
 if (!require("data.table")) {
     install.packages("data.table", repos=repos)
 }
+if (!require("readr")) {
+    install.packages("readr", repos=repos)
+}
+if (!require("jsonlite")) {
+    install.packages("jsonlite", repos=repos)
+}
 if (!require("edgeR") | !require("tximport")) {
     r_version = paste(R.Version()$major, strsplit(R.Version()$minor, '\\.')[[1]][1], sep='.')
     if(as.numeric(r_version) < 3.5) {
