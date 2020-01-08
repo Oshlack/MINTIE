@@ -68,12 +68,10 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
         colnames(des)[2] <- "case"
         dge <- DGEList(counts = counts, group = group)
         dge <- calcNormFactors(dge)
-        dge <- estimateGLMCommonDisp(dge, design=des, verbose=T)
-        dge <- estimateGLMTrendedDisp(dge, design=des)
-        dge <- estimateGLMTagwiseDisp(dge, design=des)
-        fit <- glmQLFit(dge, design=des)
-        qlf <- glmQLFTest(fit, coef=2)
-        dx_df <- data.frame(topTags(qlf, n=Inf))
+        dge <- estimateDisp(dge)
+        fit <- glmFit(dge, design=des)
+        lrt <- glmLRT(fit, coef=2)
+        dx_df <- data.frame(topTags(lrt, n=Inf))
     }
 
     significant <- dx_df$FDR<qval & dx_df$logFC>min_logfc
