@@ -239,25 +239,11 @@ refine_contigs = {
     }
 }
 
-salmon_quant = {
-    def workingDir = System.getProperty("user.dir");
-    def (rf1, rf2) = inputs.split().collect { workingDir+"/$it" }
-    def sample_name = branch.name
-    def salmon_index = sample_name + "/salmon_quant_index"
-    output.dir = sample_name + "/salmon_quant_out"
-
-    produce("quant.sf"){
-        exec """
-        $salmon quant --seqBias --validateMappings -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $output.dir ;
-        """, "salmon_quant"
-    }
-}
-
 calculate_VAF = {
     output.dir = branch.name
     produce("vaf_estimates.txt"){
         exec """
-        ${R}script ${code_base}/annotate/estimate_VAF.R $input.sf $input.tsv $tx2gene $output
+        ${R}script ${code_base}/annotate/estimate_VAF.R $branch.name/ec_count_matrix.txt $branch.name/salmon_out/quant.sf $input.tsv $trans_fasta $tx2gene $output
         """
     }
 }
@@ -305,8 +291,6 @@ run { fastqCaseFormat * [ fastq_dedupe +
                           sort_and_index_bam +
                           annotate_contigs +
                           refine_contigs +
-                          create_salmon_index.using(type:"quant") +
-                          [ fastqCaseFormat * [ salmon_quant ] ] +
                           calculate_VAF +
                           post_process ]
 }

@@ -12,14 +12,14 @@ if("--help" %in% args) {
         Calculate rough VAF estimation from salmon quantification results
 
         Usage:
-        Rscript estimate_VAF.R <quant.sf> <contig_info> <tx2gene> <outfile>\n\n
+        Rscript estimate_VAF.R <ec_matrix_file> <quant_file> <contig_info_file> <tx_ref_fasta> <tx2gene_file> <outfile>\n\n
     ")
 
     q(save="no")
 }
 
 if (!require("tximport")) {
-    r_version = paste(R.Version()$major, strsplit(R.Version()$minor, '\\.')[[1]][1], sep='.')
+    r_version = paste(R.Version()$major, strsplit(R.Version()$minor, "\\.")[[1]][1], sep=".")
     if(as.numeric(r_version) < 3.5) {
         source("https://bioconductor.org/biocLite.R")
         biocLite("tximport")
@@ -42,60 +42,87 @@ options(stringsAsFactors = FALSE,
 # Parse arguments
 #############################################################
 
-quant_file <- args[1]
-contig_info <- args[2]
-tx2gene <- args[3]
-outfile <- args[4]
+ec_matrix_file <- args[1]
+quant_file <- args[2]
+contig_info_file <- args[3]
+tx_ref_fasta <- args[4]
+tx2gene_file <- args[5]
+outfile <- args[6]
 
 #############################################################
 # Load data
 #############################################################
 
 print("Loading data...")
-cinfo <- read.delim(file = contig_info)
+txi <- tximport(quant_file, type="salmon", countsFromAbundance = "lengthScaledTPM", txOut=TRUE)
+ec_matrix <- fread(ec_matrix_file)
+cinfo <- fread(contig_info_file)
+tx2g <- fread(tx2gene_file, col.names=c("transcript", "gene"))
+txs <- fread(tx_ref_fasta, header=FALSE)
 
-txi <- tximport(quant_file, type='salmon', countsFromAbundance = 'lengthScaledTPM', txOut=TRUE)
-quant <- data.frame(txi$abundance)
-colnames(quant) <- 'TPM'; quant$tx <- rownames(quant)
+#############################################################
+# Prepare data
+#############################################################
 
-tx2g <- read.delim(tx2gene, header = FALSE)
-colnames(tx2g) <- c('tx', 'gene')
+print("Preparing data...")
+# get overlapping gene info for novel annotated contigs
+c2g <- data.frame(contig_id=cinfo$contig_id, gene=cinfo$overlapping_genes)
+split_genes <- sapply(c2g$gene, function(x){strsplit(x, "\\||:")})
+c2g <- data.frame(transcript=rep(c2g$contig_id, sapply(split_genes, length)),
+                  gene=unlist(split_genes))
+c2g <- distinct(c2g)
+c2g <- c2g[c2g$gene!="",]
+
+# match non-novel contig ECs to genes and combine with novel contigs
+# we do this so that we have a gene mapping for every contig and transcript
+ec2g <- inner_join(ec_matrix, tx2g, by="transcript")
+if(nrow(ec2g) == 0) {
+    stop("ERROR: no transcripts in the tx2gene reference match the supplied EC matrix! Please double check your reference and matrix file.")
+}
+ec2g <- ec2g[,c("ec_names", "gene")]
+tx2g <- inner_join(ec_matrix, ec2g, by="ec_names")
+tx2g <- tx2g[,c("transcript", "gene")]
+tx2g <- distinct(rbind(tx2g, c2g))
+
+# get list of all reference transcripts
+# we have to get these from the fasta as some wildtype transcripts
+# may not be in the tx2gene reference because they lack gene names
+txs <- txs[grep("^>", txs$V1),]
+txs <- sapply(txs$V1, function(x){strsplit(x, " ")[[1]][1]})
+txs <- as.character(sapply(txs, gsub, pattern=">", replacement=""))
+
+# extract all novel contigs
+# as in the DE step, get all contigs that have
+# an EC containing no reference transcripts
+tx_ec <- data.table(distinct(ec_matrix[,c("ec_names", "transcript")]))
+tx_ec$novel <- !tx_ec$transcript%in%txs
+novel_contig_ecs <- tx_ec[, all(novel), by="ec_names"]
+novel_contig_ecs <- unique(novel_contig_ecs$ec_names[novel_contig_ecs$V1])
+novel_contigs <- unique(tx_ec$transcript[tx_ec$ec_names%in%novel_contig_ecs])
 
 #############################################################
 # Calculate VAFs
 #############################################################
 
 print("Estimating VAFs...")
-# make lookup table for which genes map to contigs
-c2g <- data.frame(contig_id=cinfo$contig_id, gene=cinfo$overlapping_genes)
-split_genes <- sapply(c2g$gene, function(x){strsplit(x, '\\||:')})
-c2g <- data.frame(contig_id=rep(c2g$contig_id, sapply(split_genes, length)),
-                  gene=unlist(split_genes))
-c2g <- distinct(c2g)
-c2g <- c2g[c2g$gene!='',]
 
-# calculate wild-type TPMs (sum all WT transcripts)
-wt_tpm <- merge(quant, tx2g, by='tx')
-wt_tpm <- data.table(wt_tpm)[, sum(TPM), by='gene']
-colnames(wt_tpm)[2] <- 'WT_TPM'
+# calculate the wildtype TPM by summing TPMs of all wildtype
+# transcripts (anything that isn't a novel contig) per gene
+qn <- data.frame(TPM=txi$abundance[,1], transcript=rownames(txi$abundance))
+x <- inner_join(qn, tx2g, by="transcript")
+wt_count <- data.table(x[!x$transcript%in%novel_contigs,])
+wt_count <- distinct(wt_count)[, list(WT=sum(TPM)), by="gene"]
+wt_count <- wt_count[wt_count$WT > 0,]
 
-# merge to get relevant fields
-x <- quant[!quant$tx%in%tx2g$tx & quant$TPM>0,]
-x$contig_id <- x$tx
-x <- merge(x, c2g, by='contig_id')
-x <- merge(x, wt_tpm, by='gene')
-x <- distinct(x)
-x$tx <- NULL
+# now add the wildtype counts back to the quant table
+# and extract only novel contigs
+x <- inner_join(x, wt_count, by="gene")
+x <- x[x$transcript%in%cinfo$contig_id,]
 
-# for contigs overlapping multiple genes, take average TPM of all WT genes
-mean_tpm <- data.table(x)[, mean(WT_TPM), by='contig_id']
-colnames(mean_tpm)[2] <- 'mean_WT_TPM'
-x <- merge(x, mean_tpm, by='contig_id')
-
-if (nrow(x) > 0) {
-    # calculate VAF and write output
-    x$VAF <- x$TPM / (x$TPM + x$mean_WT_TPM)
-    write.table(x, file=outfile, row.names=FALSE, quote=FALSE, sep='\t')
-} else {
-    print("ERROR: no variants to output. Please check your tx2gene.txt reference file.")
-}
+# if contigs span multiple genes, we need to get the mean TPM
+mean_tpm <- data.table(x)[, list(mean_WT_TPM=mean(WT)), by="transcript"]
+x <- inner_join(x, mean_tpm, by=c("transcript"))
+x$VAF <- x$TPM / (x$TPM + x$mean_WT_TPM)
+colnames(x)[2] <- 'contig_id'
+x <- x[,c('contig_id', 'gene', 'TPM', 'WT', 'mean_WT_TPM', 'VAF')]
+write.table(x, file=outfile, row.names=FALSE, quote=FALSE, sep="\t")
