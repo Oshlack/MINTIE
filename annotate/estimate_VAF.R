@@ -75,6 +75,11 @@ c2g <- c2g[c2g$gene!="",]
 
 # match non-novel contig ECs to genes and combine with novel contigs
 # we do this so that we have a gene mapping for every contig and transcript
+like_refseq <- ec_matrix$transcript%like%"hg38_ncbiRefSeq"
+if(any(like_refseq)) {
+    ec_matrix[like_refseq, 'transcript'] <- sapply(ec_matrix$transcript[like_refseq],
+                                                   function(x){strsplit(gsub("hg38_ncbiRefSeq_", "", x), "\\.")[[1]][1]})
+}
 ec2g <- inner_join(ec_matrix, tx2g, by="transcript")
 if(nrow(ec2g) == 0) {
     stop("ERROR: no transcripts in the tx2gene reference match the supplied EC matrix! Please double check your reference and matrix file.")
@@ -90,6 +95,10 @@ tx2g <- distinct(rbind(tx2g, c2g))
 txs <- txs[grep("^>", txs$V1),]
 txs <- sapply(txs$V1, function(x){strsplit(x, " ")[[1]][1]})
 txs <- as.character(sapply(txs, gsub, pattern=">", replacement=""))
+like_refseq <- txs%like%"hg38_ncbiRefSeq"
+if(any(like_refseq)) {
+    txs <- sapply(txs, function(x){strsplit(gsub("hg38_ncbiRefSeq_", "", x), "\\.")[[1]][1]})
+}
 
 # extract all novel contigs
 # as in the DE step, get all contigs that have
