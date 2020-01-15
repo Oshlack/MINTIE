@@ -12,7 +12,6 @@ if (!require("edgeR")) {
 }
 
 library(dplyr)
-library(seqinr)
 library(data.table)
 
 options(stringsAsFactors = FALSE,
@@ -103,8 +102,10 @@ if(!test_mode) {
 }
 
 # get reference transcript IDs
-seq <- read.fasta(file = tx_ref_fasta)
-txs <- as.character(sapply(names(seq), function(x){strsplit(x, ' ')[[1]][1]}))
+txs <- fread(tx_ref_fasta, header=FALSE)
+txs <- txs[grep("^>", txs$V1),]
+txs <- sapply(txs$V1, function(x){strsplit(x, " ")[[1]][1]})
+txs <- as.character(sapply(txs, gsub, pattern=">", replacement=""))
 
 #############################################################
 # Prepare data for DE analysis

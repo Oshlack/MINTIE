@@ -2,9 +2,6 @@ repos="http://cran.r-project.org"
 if (!require("dplyr")) {
     install.packages("dplyr", repos=repos)
 }
-if (!require("seqinr")) {
-    install.packages("seqinr", repos=repos)
-}
 if (!require("data.table")) {
     install.packages("data.table", repos=repos)
 }
