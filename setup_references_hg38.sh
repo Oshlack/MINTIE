@@ -9,19 +9,29 @@ gmap_refdir=$PWD
 commands="genome_fasta trans_fasta tx_annotation ann_info tx2gene gmap_refdir gmap_genome"
 
 function genome_fasta_setup {
-    file=Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa
-    wget ftp://ftp.ensembl.org/pub/release-84/fasta/homo_sapiens/dna/${file}.gz
-    gunzip ${file}.gz
-    if [ -f $file ]; then
+    file=hg38.fa
+    wget http://ccb.jhu.edu/chess/data/hg38_p8.fa.gz
+    gunzip hg38_p8.fa.gz
+    samtools=`which samtools 2>/dev/null`
+    if [ -z $samtools ] ; then
+        samtools=$PWD/../tools/bin/samtools
+    fi
+    chr=$(seq 1 1 22)" X Y M"
+    for i in $chr; do
+        $samtools faidx hg38_p8.fa chr$i >> $file ;
+    done
+    if [ -s $file ]; then
+        rm hg38_p8.fa*
         echo -e "$PWD/$file" > genome_fasta.success
     fi
 }
 
 function trans_fasta_setup {
-    file=Homo_sapiens.GRCh38.cdna.all.fa
-    wget ftp://ftp.ensembl.org/pub/release-84/fasta/homo_sapiens/cdna/${file}.gz
-    gunzip ${file}.gz
-    if [ -f $file ]; then
+    file=chess2.2.fa
+    wget --no-check-certificate http://ccb.jhu.edu/software/stringtie/dl/gffread-0.11.6.Linux_x86_64.tar.gz
+    tar -xvzf gffread-0.11.6.Linux_x86_64.tar.gz && rm gffread-0.11.6.Linux_x86_64.tar.gz
+    gffread-0.11.6.Linux_x86_64/gffread chess2.2.gtf -g hg38.fa -w $file
+    if [ -s $file ]; then
         echo -e "$PWD/$file" > trans_fasta.success
     fi
 }
@@ -30,7 +40,9 @@ function tx_annotation_setup {
     file=chess2.2.gtf
     wget http://ccb.jhu.edu/chess/data/${file}.gz
     gunzip ${file}.gz
-    if [ -f $file ]; then
+    grep -vE "^K|^chrUn|alt|random" $file > ${file}.tmp && mv ${file}.tmp $file
+
+    if [ -s $file ]; then
         echo -e "$PWD/$file" > tx_annotation.success
     fi
 }
@@ -38,15 +50,15 @@ function tx_annotation_setup {
 function ann_info_setup {
     file=chess2.2.info
     python ../util/make_exon_reference.py chess2.2.gtf
-    if [ -f $file ]; then
+    if [ -s $file ]; then
         echo -e "$PWD/$file" > ann_info.success
     fi
 }
 
 function tx2gene_setup {
     file=tx2gene.txt
-    python ../util/make_tx2gene_lookup.py Homo_sapiens.GRCh38.cdna.all.fa > $file
-    if [ -f $file ]; then
+    python ../util/make_tx2gene_lookup.py chess2.2.gtf > $file
+    if [ -s $file ]; then
         echo -e "$PWD/$file" > tx2gene.success
     fi
 }
@@ -60,7 +72,7 @@ function gmap_genome_setup {
     if [ -z $gmap_build ] ; then
         gmap_build=$PWD/../tools/bin/gmap_build
     fi
-    $gmap_build -s chrom -k 15 -d gmap_genome -D $gmap_refdir Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa
+    $gmap_build -s chrom -k 15 -d gmap_genome -D $gmap_refdir hg38.fa
     if [ -d gmap_genome ]; then
         echo "gmap_genome" > gmap_genome.success
     fi
