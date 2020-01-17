@@ -80,14 +80,13 @@ if(any(like_refseq)) {
     ec_matrix[like_refseq, 'transcript'] <- sapply(ec_matrix$transcript[like_refseq],
                                                    function(x){strsplit(gsub("hg38_ncbiRefSeq_", "", x), "\\.")[[1]][1]})
 }
-ec2g <- inner_join(ec_matrix, tx2g, by="transcript")
+ec2tx <- distinct(ec_matrix[,c("transcript", "ec_names")])
+ec2g <- inner_join(ec2tx, tx2g, by="transcript")
 if(nrow(ec2g) == 0) {
     stop("ERROR: no transcripts in the tx2gene reference match the supplied EC matrix! Please double check your reference and matrix file.")
 }
-ec2g <- ec2g[,c("ec_names", "gene")]
-tx2g <- inner_join(ec_matrix, ec2g, by="ec_names")
-tx2g <- tx2g[,c("transcript", "gene")]
-tx2g <- distinct(rbind(tx2g, c2g))
+tx2g <- distinct(ec2g[,c("transcript", "gene")])
+tx2g <- rbind(tx2g, c2g)
 
 # get list of all reference transcripts
 # we have to get these from the fasta as some wildtype transcripts
@@ -97,7 +96,7 @@ txs <- sapply(txs$V1, function(x){strsplit(x, " ")[[1]][1]})
 txs <- as.character(sapply(txs, gsub, pattern=">", replacement=""))
 like_refseq <- txs%like%"hg38_ncbiRefSeq"
 if(any(like_refseq)) {
-    txs <- sapply(txs, function(x){strsplit(gsub("hg38_ncbiRefSeq_", "", x), "\\.")[[1]][1]})
+    txs <- as.character(sapply(txs, function(x){strsplit(gsub("hg38_ncbiRefSeq_", "", x), "\\.")[[1]][1]}))
 }
 
 # extract all novel contigs
@@ -118,6 +117,11 @@ print("Estimating VAFs...")
 # calculate the wildtype TPM by summing TPMs of all wildtype
 # transcripts (anything that isn't a novel contig) per gene
 qn <- data.frame(TPM=txi$abundance[,1], transcript=rownames(txi$abundance))
+like_refseq <- qn$transcript%like%"hg38_ncbiRefSeq"
+if(any(like_refseq)) {
+    qn[like_refseq, 'transcript'] <- sapply(qn[like_refseq, 'transcript'],
+                                            function(x){strsplit(gsub("hg38_ncbiRefSeq_", "", x), "\\.")[[1]][1]})
+}
 x <- inner_join(qn, tx2g, by="transcript")
 wt_count <- data.table(x[!x$transcript%in%novel_contigs,])
 wt_count <- distinct(wt_count)[, list(WT=sum(TPM)), by="gene"]
@@ -134,4 +138,8 @@ x <- inner_join(x, mean_tpm, by=c("transcript"))
 x$VAF <- x$TPM / (x$TPM + x$mean_WT_TPM)
 colnames(x)[2] <- 'contig_id'
 x <- x[,c('contig_id', 'gene', 'TPM', 'WT', 'mean_WT_TPM', 'VAF')]
-write.table(x, file=outfile, row.names=FALSE, quote=FALSE, sep="\t")
+if (nrow(x) > 0) {
+    write.table(x, file=outfile, row.names=FALSE, quote=FALSE, sep="\t")
+} else {
+    stop("ERROR: no variants to output. Please double-check your reference files.")
+}
