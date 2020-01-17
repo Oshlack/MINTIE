@@ -17,7 +17,7 @@ matrix:
           libbz2-dev liblzma-dev libicu-dev cdbs qpdf texinfo libssh2-1-dev
           gfortran r-base-core bedtools
       install:
-        - ./install_linux64.sh
+        - ./install_linux64.sh --skip_R
         - sudo Rscript install_R_dependencies.R
         - ./test/setup_references_test.sh
       script:
