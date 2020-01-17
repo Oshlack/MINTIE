@@ -141,14 +141,22 @@ for c in $commands ; do
 done
 
 # check that R is installed
+# install requirements if so
 R_path=`which R 2>/dev/null`
 if [ -z $R_path ] ; then
     echo "R not found!"
     echo "Please go to http://www.r-project.org/ and follow the installation instructions."
     echo "Then install requirements by running \"Rscript install_R_dependencies.R\""
+    exit 1
 else
     echo "Installing R requirements..."
     Rscript ../install_R_dependencies.R
+    status=$?
+    if [ ! $status -eq 0 ]; then
+        echo "Installing R requirements failed!"
+        echo "Please install dependencies manually (https://github.com/Oshlack/MINTIE/wiki/Install#troubleshooting)."
+        exit 1
+    fi
 fi
 echo "R=\"$R_path\"" >> ../tools.groovy
 
@@ -160,9 +168,16 @@ if [ -z $python_path ] ; then
     echo "Please go to https://www.anaconda.com/distribution/#download-section,"
     echo "download the Python 3.7+ version and follow download instructions."
     echo "Then install requirements by running \"pip install -r requirements.txt\""
+    exit 1
 else
     echo "Installing python requirements..."
     pip install -r ../requirements.txt
+    status=$?
+    if [ ! $status -eq 0 ]; then
+        echo "Installing python requirements failed!"
+        echo "Please install dependencies manually (https://github.com/Oshlack/MINTIE/wiki/Install#troubleshooting)."
+        exit 1
+    fi
 fi
 echo "python=\"$python_path\"" >> ../tools.groovy
 
