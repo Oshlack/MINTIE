@@ -117,11 +117,6 @@ def load_vcf_file(contig_vcf):
     remove 'chr' prefix from chroms if present
     '''
     cvcf = pd.read_csv(contig_vcf, sep='\t', header=None, comment='#', low_memory=False)
-    vcf_chrs = cvcf[0].map(str).str.contains('chr')
-    if any(vcf_chrs.values):
-        cvcf = cvcf[vcf_chrs]
-        cvcf[0] = cvcf[0].apply(lambda a: a.split('chr')[1])
-        cvcf.loc[cvcf[0] == 'M', 0] = 'MT'
     return cvcf
 
 def is_valid_motif(left_id, right_id, block_seqs):
@@ -293,14 +288,11 @@ def overlaps_exon(sv, ex_trees):
                                      start + 1, size=size)
     return olap
 
-def check_for_valid_motifs(contigs, args):
-    valid_motif = np.array([False] * len(contigs))
-    check_motifs = contigs.variant_type.isin(NOVEL_JUNCS \
-                                             + NOVEL_BLOCKS \
-                                             + ['DEL'])
-    if any(check_motifs.values):
-        valid_motif_vars = get_valid_motif_vars(contigs[check_motifs], args)
-        valid_motif[check_motifs] = contigs[check_motifs].variant_id.isin(valid_motif_vars).values
+def check_for_valid_motifs(contigs, vars_to_check, args):
+    valid_motif = contigs.valid_motif
+    if any(vars_to_check):
+        valid_motif_vars = get_valid_motif_vars(contigs[vars_to_check], args)
+        valid_motif[vars_to_check] = contigs[vars_to_check].variant_id.isin(valid_motif_vars).values
 
     return valid_motif
 
@@ -334,7 +326,7 @@ def vars_overlap_exon(contigs, ex_trees):
                                                                      axis=1, args=(ex_trees,))
     return vars_overlaps_exon
 
-def get_junc_vars(contigs, ex_trees):
+def get_junc_vars(contigs, ex_trees, args):
     '''
     Return truncated exons and novel introns
     '''
@@ -351,6 +343,7 @@ def get_junc_vars(contigs, ex_trees):
                                       np.invert(within_exon),
                                       contigs.overlaps_exon))
     if 'valid_motif' in contigs.columns.values:
+        contigs['valid_motif'] = check_for_valid_motifs(contigs, is_trunc, args)
         is_trunc = np.logical_and(is_trunc, contigs.valid_motif)
     trunc_vars = contigs[is_trunc].variant_id.values
 
@@ -436,8 +429,6 @@ def get_contigs_to_keep(args):
     contigs['spliced_exon'] = match_splice_juncs(contigs)
     contigs['overlaps_exon'] = vars_overlap_exon(contigs, ex_trees)
     contigs['overlaps_gene'] = contigs.apply(overlaps_gene, axis=1, args=(gene_tree,))
-    if not args.skipMotifCheck:
-        contigs['valid_motif'] = check_for_valid_motifs(contigs, args)
 
     # keep exons falling outside the gene
     is_intergenic_exon = np.logical_and.reduce((contigs.spliced_exon,
@@ -445,17 +436,18 @@ def get_contigs_to_keep(args):
                                                 contigs.large_varsize,
                                                 np.invert(contigs.overlaps_gene)))
     # novel exon contigs (spliced, valid motif and large variant size)
-    is_novel_exon = contigs.spliced_exon
+    is_novel_exon = np.logical_and(contigs.spliced_exon, contigs.large_varsize)
     if not args.skipMotifCheck:
+        contigs['valid_motif'] = np.array([None] * len(contigs))
+        contigs['valid_motif'] = check_for_valid_motifs(contigs, is_novel_exon, args)
         is_novel_exon = np.logical_and(is_novel_exon, contigs.valid_motif)
-    is_novel_exon = np.logical_and(is_novel_exon, contigs.large_varsize)
     ne_vars = contigs[np.logical_or(is_novel_exon, is_intergenic_exon)].variant_id.values
 
     # keep all splice vars
     as_vars = contigs.variant_id.values[contigs.variant_type.isin(SPLICE_VARS)]
 
     # get junc vars
-    junc_vars = get_junc_vars(contigs, ex_trees)
+    junc_vars = get_junc_vars(contigs, ex_trees, args)
 
     # check size of retained introns
     ri_vars = contigs[np.logical_and(contigs.variant_type == 'RI',

@@ -143,7 +143,7 @@ def test_get_junc_vars(coord, expected):
                'overlaps_exon': [True],
                'large_varsize': e - s > args.minClip}
     contigs = pd.DataFrame.from_dict(contigs)
-    assert ('A' in ra.get_junc_vars(contigs, ex_trees)) == expected
+    assert ('A' in ra.get_junc_vars(contigs, ex_trees, args)) == expected
 
 @pytest.mark.parametrize('coord,expected', [((100, 150, 'NE', 50), False),
                                             ((100, 150, 'DEL', 0), True),
