@@ -289,7 +289,7 @@ def overlaps_exon(sv, ex_trees):
     return olap
 
 def check_for_valid_motifs(contigs, vars_to_check, args):
-    valid_motif = contigs.valid_motif
+    valid_motif = np.array(contigs.valid_motif)
     if any(vars_to_check):
         valid_motif_vars = get_valid_motif_vars(contigs[vars_to_check], args)
         valid_motif[vars_to_check] = contigs[vars_to_check].variant_id.isin(valid_motif_vars).values

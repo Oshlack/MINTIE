@@ -102,6 +102,9 @@ def add_de_info(contigs, de_results):
         elif cname in ['contigs_in_EC', 'ec_names']:
             agg_dict[cname] = lambda x: ','.join(x)
 
+    # remove NaNs (which are otherwise dropped when using groupby)
+    contigs['valid_motif'] = contigs.valid_motif.fillna('Untested')
+
     group_vars = [c for c in contigs.columns if c not in agg_dict.keys()]
     return contigs.groupby(by=group_vars, as_index=False).agg(agg_dict)
 
