@@ -124,18 +124,19 @@ if(any(like_refseq)) {
 }
 x <- inner_join(qn, tx2g, by="transcript")
 wt_count <- data.table(x[!x$transcript%in%novel_contigs,])
-wt_count <- distinct(wt_count)[, list(WT=sum(TPM)), by="gene"]
+wt_count <- distinct(wt_count)[, list(WT=sum(TPM, na.rm=TRUE)), by="gene"]
 wt_count <- wt_count[wt_count$WT > 0,]
 
 # now add the wildtype counts back to the quant table
 # and extract only novel contigs
-x <- inner_join(x, wt_count, by="gene")
+x <- left_join(x, wt_count, by="gene")
 x <- x[x$transcript%in%cinfo$contig_id,]
 
 # if contigs span multiple genes, we need to get the mean TPM
-mean_tpm <- data.table(x)[, list(mean_WT_TPM=mean(WT)), by="transcript"]
+mean_tpm <- data.table(x)[, list(mean_WT_TPM=mean(WT, na.rm=TRUE)), by="transcript"]
 x <- inner_join(x, mean_tpm, by=c("transcript"))
 x$VAF <- x$TPM / (x$TPM + x$mean_WT_TPM)
+x$VAF[is.nan(x$VAF)] <- 1 #assume no WT counts have a VAF of 1
 colnames(x)[2] <- 'contig_id'
 x <- x[,c('contig_id', 'gene', 'TPM', 'WT', 'mean_WT_TPM', 'VAF')]
 if (nrow(x) > 0) {

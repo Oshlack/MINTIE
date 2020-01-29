@@ -154,6 +154,7 @@ def main():
         contigs = pd.read_csv(args.contig_info, sep='\t', low_memory=False)
         de_results = pd.read_csv(args.de_results, sep='\t', low_memory=False)
         vafs = pd.read_csv(args.vaf_estimates, sep='\t', low_memory=False)
+        vafs = vafs[['contig_id', 'TPM', 'mean_WT_TPM', 'VAF']].drop_duplicates()
         gene_filter = pd.read_csv(args.gene_filter, header=None, low_memory=False) if args.gene_filter != '' \
                                                                                    else pd.DataFrame()
     except IOError as exception:
@@ -176,7 +177,7 @@ def main():
 
     logging.info('Adding DE and VAF info...')
     contigs = add_de_info(contigs, de_results)
-    contigs = pd.merge(contigs, vafs, on='contig_id')
+    contigs = pd.merge(contigs, vafs, on='contig_id', how='left')
 
     short_gnames = contigs.overlapping_genes.apply(get_short_gene_name)
     contig_ids, samples = contigs.contig_id, contigs['sample']
