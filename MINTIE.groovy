@@ -126,7 +126,7 @@ create_salmon_index = {
     def index_fasta = output.dir + "/" + sample_name + ".fasta"
     produce(index_fasta, 'hash.bin'){
         exec """
-        cat $input.fasta $trans_fasta > $output1 ;
+        cat $trans_fasta $input.fasta > $output1 ;
         $salmon index -t $output1 -i $salmon_index -p $threads ;
         """, "create_salmon_index"
     }

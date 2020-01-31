@@ -77,16 +77,19 @@ c2g <- c2g[c2g$gene!="",]
 # we do this so that we have a gene mapping for every contig and transcript
 like_refseq <- ec_matrix$transcript%like%"hg38_ncbiRefSeq"
 if(any(like_refseq)) {
-    ec_matrix[like_refseq, 'transcript'] <- sapply(ec_matrix$transcript[like_refseq],
+    ec_matrix[like_refseq, "transcript"] <- sapply(ec_matrix$transcript[like_refseq],
                                                    function(x){strsplit(gsub("hg38_ncbiRefSeq_", "", x), "\\.")[[1]][1]})
+    # also fix tx2g to remove extra suffix from transcripts, e.g. NM_030642[_2]
+    tx2g$transcript <- sapply(tx2g$transcript, function(x){paste(strsplit(x, "_")[[1]][1:2], collapse="_")})
+    tx2g <- distinct(tx2g)
 }
 ec2tx <- distinct(ec_matrix[,c("transcript", "ec_names")])
-ec2g <- inner_join(ec2tx, tx2g, by="transcript")
-if(nrow(ec2g) == 0) {
+ec2g <- right_join(ec2tx, tx2g, by="transcript")
+if(nrow(ec2g[!is.na(ec2g$ec_names),]) == 0) {
     stop("ERROR: no transcripts in the tx2gene reference match the supplied EC matrix! Please double check your reference and matrix file.")
 }
-tx2g <- distinct(ec2g[,c("transcript", "gene")])
-tx2g <- rbind(tx2g, c2g)
+tx2g <- ec2g[,c("transcript", "gene")]
+tx2g <- distinct(rbind(tx2g, c2g))
 
 # get list of all reference transcripts
 # we have to get these from the fasta as some wildtype transcripts
@@ -125,7 +128,7 @@ if(any(like_refseq)) {
 x <- inner_join(qn, tx2g, by="transcript")
 wt_count <- data.table(x[!x$transcript%in%novel_contigs,])
 wt_count <- distinct(wt_count)[, list(WT=sum(TPM, na.rm=TRUE)), by="gene"]
-wt_count <- wt_count[wt_count$WT > 0,]
+wt_count <- wt_count[wt_count$WT >= 0,]
 
 # now add the wildtype counts back to the quant table
 # and extract only novel contigs
@@ -134,9 +137,10 @@ x <- x[x$transcript%in%cinfo$contig_id,]
 
 # if contigs span multiple genes, we need to get the mean TPM
 mean_tpm <- data.table(x)[, list(mean_WT_TPM=mean(WT, na.rm=TRUE)), by="transcript"]
-x <- inner_join(x, mean_tpm, by=c("transcript"))
+x <- distinct(inner_join(x, mean_tpm, by=c("transcript")))
 x$VAF <- x$TPM / (x$TPM + x$mean_WT_TPM)
-x$VAF[is.nan(x$VAF)] <- 1 #assume no WT counts have a VAF of 1
+x$VAF[is.nan(x$VAF) & x$TPM==0] <- 0
+
 colnames(x)[2] <- 'contig_id'
 x <- x[,c('contig_id', 'gene', 'TPM', 'WT', 'mean_WT_TPM', 'VAF')]
 if (nrow(x) > 0) {
