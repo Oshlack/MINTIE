@@ -27,7 +27,7 @@ def test_add_strand():
            'start': [100, 200],
            'end': [150, 250]}
     bed = pd.DataFrame.from_dict(bed)
-    b = BedTool.from_dataframe(bed).remove_invalid().sort().merge()
+    b = BedTool.from_dataframe(bed)
     bex = b.each(bh.add_strand, '+')
     assert [x.strand for x in bex] == ['+', '+']
 
