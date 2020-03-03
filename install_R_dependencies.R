@@ -11,17 +11,15 @@ if (!require("readr")) {
 if (!require("jsonlite")) {
     install.packages("jsonlite", repos=repos)
 }
-if (!require("edgeR") | !require("tximport")) {
+if (!require("tximport")) {
     r_version = paste(R.Version()$major, strsplit(R.Version()$minor, '\\.')[[1]][1], sep='.')
     if(as.numeric(r_version) < 3.5) {
         source("https://bioconductor.org/biocLite.R")
-        biocLite("edgeR")
         biocLite("tximport")
     } else {
         if (!requireNamespace("BiocManager", quietly = TRUE)) {
             install.packages("BiocManager")
         }
-        BiocManager::install("edgeR")
         BiocManager::install("tximport")
     }
 }

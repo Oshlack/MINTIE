@@ -1,5 +1,4 @@
 -p threads=8
--p genome_mem=8000000000
 -p assembly_mem=8
 -p assembler=soap
 -p scores=33
@@ -10,13 +9,12 @@
 -p min_gap=7
 -p min_clip=20
 -p min_match=30,0.3
--p min_logfc=2
--p min_cpm=0.1
--p fdr=0.05
+-p min_count=10
+-p prop_controls_zero=1
 -p sort_ram=800M
 -p gene_filter=
 -p var_filter=
--p test_mode=true
+-p check_motifs=false
 -p fastqCaseFormat=cases/%_R*.fastq.gz
 -p fastqControlFormat=controls/%_R*.fastq.gz
 -p assemblyFasta=

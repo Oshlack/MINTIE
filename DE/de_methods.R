@@ -1,8 +1,7 @@
 library(dplyr)
 library(data.table)
-library(edgeR)
 
-run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=0.05, min_logfc=0, test=FALSE) {
+get_significant_ecs <- function(case_name, ec_matrix, tx_ec, outdir, minCaseCount=minCaseCount, n_zero_controls=n_zero_controls) {
     data <- distinct(ec_matrix[, !colnames(ec_matrix)%in%c("transcript", "tx_ids", "tx_id"), with=FALSE])
     data <- data[data$ec_names%in%tx_ec$ec_names,]
     if(nrow(data) == 0) {
@@ -35,10 +34,10 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub("-", "_", x)}))
 
     # filter
-    keep <- as.numeric(cpm(counts)[, group=="case"]) > cpm_cutoff
+    keep <- as.numeric(counts[, group=="case"]) >= minCaseCount
     counts <- counts[keep,]
     if(nrow(counts) == 0) {
-        stop(paste("All ECCs were below the CPM cutoff of", paste0(cpm_cutoff, ".")))
+        stop(paste("All ECCs were below the min case count cutoff of", paste0(minCaseCount, ".")))
     }
 
     # make counts summary
@@ -52,49 +51,22 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     counts_out <- data.frame(ec_names=rownames(counts), counts)
     write.table(counts_out, file=paste(outdir, "counts_table.txt", sep="/"), row.names=FALSE, quote=FALSE, sep="\t")
 
-    # perform DE
-    if (test) {
-        # add dummy record to get around zero library size error in controls
-        counts <- rbind(counts, c(0, rep(sum(counts[,1], ncol(counts)-1))))
+    significant <- as.logical(rowSums(counts[, group=="control"]==0) >= n_zero_controls)
+    sig_ecs <- rownames(counts[significant,])
 
-        # add manual dispersion parameter, perform exact test, don't correct for libsize
-        dge <- DGEList(counts = counts, group = group)
-        et <- exactTest(dge, dispersion = 0.1)
-
-        dx_df <- data.frame(topTags(et, n=Inf))
-        dx_df <- dx_df[rownames(dx_df)!="",]
-    } else {
-        des <- model.matrix(~group)
-        colnames(des)[2] <- "case"
-        dge <- DGEList(counts = counts, group = group)
-        dge <- calcNormFactors(dge)
-        dge <- estimateDisp(dge)
-        fit <- glmFit(dge, design=des)
-        lrt <- glmLRT(fit, coef=2)
-        dx_df <- data.frame(topTags(lrt, n=Inf))
+    if(sum(significant) == 0) {
+        stop("No significant ECCs were found. Pipeline cannot continue.")
     }
-
-    significant <- dx_df$FDR<qval & dx_df$logFC>min_logfc
-    if(nrow(dx_df[significant,]) == 0) {
-        stop("No significantly differentially expressed ECCs were found. Pipeline cannot continue.")
-    }
-    print("Successfully ran differential expression!")
-    print(paste("There were", sum(significant), "significantly differentially expressed novel-contig ECs."))
+    print(paste("There were", sum(significant), "significant novel-contig ECs."))
 
     # get number of contigs in each EC
     contigs_in_ec <- data.frame(table(tx_ec$ec_names))
     contigs_in_ec$Var1 <- as.character(contigs_in_ec$Var1)
     colnames(contigs_in_ec) <- c("ec_names", "n_contigs_in_ec")
 
-    dx_df$ec_names <- rownames(dx_df)
-    dx_df <- left_join(dx_df, contigs_in_ec, by="ec_names")
+    dx_df <- contigs_in_ec[contigs_in_ec$ec_names%in%sig_ecs,]
     dx_df <- left_join(dx_df, tx_ec, by="ec_names")
     dx_df <- left_join(dx_df, counts_summary, by="ec_names")
-    dx_df <- dx_df[order(dx_df$PValue, decreasing=FALSE),]
-
-    # write full results
-    write.table(dx_df, file=paste(outdir, "full_edgeR_results.txt", sep="/"), row.names=FALSE, quote=FALSE, sep="\t")
-    dx_df <- dx_df[dx_df$FDR<qval & dx_df$logFC>min_logfc,]
 
     return(dx_df)
 }

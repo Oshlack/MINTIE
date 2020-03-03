@@ -162,10 +162,9 @@ run_salmon = {
 run_de = {
     def sample_name = branch.name
     output.dir = sample_name
-    def test_flag = test_mode.toBoolean() ? "--test" : ""
     produce("eq_classes_de.txt"){
         exec """
-        ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $trans_fasta $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc $test_flag
+        ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $trans_fasta $output --minCaseCount=10 --propControlsZero=0.9
         """, "run_de"
     }
 }
@@ -223,7 +222,7 @@ annotate_contigs = {
 refine_contigs = {
     def sample_name = branch.name
     output.dir = sample_name
-    def motif_check = test_mode.toBoolean() ? "--skipMotifCheck" : ""
+    def motif_check = check_motifs.toBoolean() ? "" : "--skipMotifCheck"
     produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam", "novel_contigs.fasta"){
         exec """
         $python ${code_base}/annotate/refine_annotations.py \
@@ -244,7 +243,7 @@ calculate_VAF = {
     produce("vaf_estimates.txt"){
         exec """
         ${R}script ${code_base}/annotate/estimate_VAF.R $branch.name/ec_count_matrix.txt $branch.name/salmon_out/quant.sf $input.tsv $trans_fasta $tx2gene $output
-        """
+        """, "calculate_VAF"
     }
 }
 

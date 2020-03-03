@@ -95,10 +95,8 @@ def add_de_info(contigs, de_results):
     for cname in contigs.columns.values:
         if cname in ['case_reads', 'controls_total_reads']:
             agg_dict[cname] = 'sum'
-        elif cname in ['logFC', 'F', 'logCPM', 'n_contigs_in_ec']:
+        elif cname in ['n_contigs_in_ec']:
             agg_dict[cname] = 'max'
-        elif cname in ['PValue', 'FDR']:
-            agg_dict[cname] = 'min'
         elif cname in ['contigs_in_EC', 'ec_names']:
             agg_dict[cname] = lambda x: ','.join(x)
 
@@ -138,12 +136,12 @@ def reformat_fields(contigs):
                'is_contig_spliced', 'spliced_exon',
                'overlaps_exon', 'overlaps_gene']
     variant = variant if 'valid_motif' not in contigs.columns.values else variant + ['valid_motif']
-    de = ['logFC', 'logCPM', 'PValue', 'FDR', 'TPM', 'mean_WT_TPM']
+    de = ['TPM', 'mean_WT_TPM']
     ec = ['ec_names', 'n_contigs_in_ec', 'contigs_in_EC', 'case_reads', 'controls_total_reads']
     cont = ['contig_id', 'unique_contig_ID', 'contig_len', 'contig_cigar']
     contigs = contigs[basic + variant + de + ec + cont]
 
-    contigs = contigs.sort_values(by='PValue', ascending=True)
+    contigs = contigs.sort_values(by='case_reads', ascending=False)
     return contigs
 
 def main():
