@@ -266,7 +266,7 @@ def get_tx_juncs(read):
 
     chroms = [read.reference_name] * (len(starts)-1)
     tx_juncs = list(zip(chroms, ends[:-1], starts[1:]))
-    tx_juncs = [junc for junc in tx_juncs if (junc[2] - junc[1]) > MIN_GAP]
+    tx_juncs = [junc for junc in tx_juncs if (junc[2] - junc[1]) >= MIN_GAP]
 
     return tx_juncs
 

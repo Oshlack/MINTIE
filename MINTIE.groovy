@@ -244,7 +244,7 @@ calculate_VAF = {
     produce("vaf_estimates.txt"){
         exec """
         ${R}script ${code_base}/annotate/estimate_VAF.R $branch.name/ec_count_matrix.txt $branch.name/salmon_out/quant.sf $input.tsv $trans_fasta $tx2gene $output
-        """
+        """, "calculate_VAF"
     }
 }
 
