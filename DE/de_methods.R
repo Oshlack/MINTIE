@@ -4,10 +4,6 @@ library(edgeR)
 
 run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=0.05, min_logfc=0, test=FALSE) {
     data <- distinct(ec_matrix[, !colnames(ec_matrix)%in%c("transcript", "tx_ids", "tx_id"), with=FALSE])
-    data <- data[data$ec_names%in%tx_ec$ec_names,]
-    if(nrow(data) == 0) {
-        stop("No novel ECs exist in EC matrix. Please check EC matrix input.")
-    }
 
     # prepare counts matrix
     counts <- data[,!colnames(data)%in%"ec_names", with=FALSE]
@@ -34,11 +30,20 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     group <- factor(group, levels=c("control", "case"))
     colnames(counts) <- as.character(sapply(colnames(counts), function(x){gsub("-", "_", x)}))
 
+    # calculate "true" library sizes
+    dge <- DGEList(counts = counts, group = group)
+    dge <- calcNormFactors(dge)
+    norm_factors <- dge$samples
+
     # filter
     keep <- as.numeric(cpm(counts)[, group=="case"]) > cpm_cutoff
     counts <- counts[keep,]
     if(nrow(counts) == 0) {
         stop(paste("All ECCs were below the CPM cutoff of", paste0(cpm_cutoff, ".")))
+    }
+    counts <- counts[rownames(counts)%in%tx_ec$ec_names,]
+    if(nrow(data) == 0) {
+        stop("No novel ECs exist in EC matrix. Please check EC matrix input.")
     }
 
     # make counts summary
@@ -67,9 +72,9 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
         des <- model.matrix(~group)
         colnames(des)[2] <- "case"
         dge <- DGEList(counts = counts, group = group)
-        dge <- calcNormFactors(dge)
+        dge$samples <- norm_factors
         dge <- estimateDisp(dge)
-        fit <- glmFit(dge, design=des)
+        fit <- glmQLFit(dge, design=des, robust=TRUE)
         lrt <- glmLRT(fit, coef=2)
         dx_df <- data.frame(topTags(lrt, n=Inf))
     }

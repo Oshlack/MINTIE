@@ -188,7 +188,7 @@ filter_on_significant_ecs = {
     output.dir = sample_name
     produce("de_contigs.fasta"){
         exec """
-        $python $code_base/util/filter_fasta.py $input.fasta $input.txt --col_id contig > $output1 ;
+        $python $code_base/util/filter_fasta.py $output.dir/${sample_name}_denovo_filt.fasta $input.txt --col_id contig > $output1 ;
         """
     }
 }
