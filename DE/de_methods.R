@@ -59,15 +59,11 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
 
     # perform DE
     if (test) {
-        # add dummy record to get around zero library size error in controls
-        counts <- rbind(counts, c(0, rep(sum(counts[,1], ncol(counts)-1))))
-
-        # add manual dispersion parameter, perform exact test, don't correct for libsize
+        # add manual dispersion parameter, perform exact test
         dge <- DGEList(counts = counts, group = group)
+        dge$samples <- norm_factors
         et <- exactTest(dge, dispersion = 0.1)
-
         dx_df <- data.frame(topTags(et, n=Inf))
-        dx_df <- dx_df[rownames(dx_df)!="",]
     } else {
         des <- model.matrix(~group)
         colnames(des)[2] <- "case"

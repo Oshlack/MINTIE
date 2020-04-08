@@ -102,7 +102,7 @@ if(!test_mode) {
 }
 
 # get reference transcript IDs
-txs <- fread(tx_ref_fasta, header=FALSE)
+txs <- fread(tx_ref_fasta, header=FALSE, sep="\n")
 txs <- txs[grep("^>", txs$V1),]
 txs <- sapply(txs$V1, function(x){strsplit(x, " ")[[1]][1]})
 txs <- as.character(sapply(txs, gsub, pattern=">", replacement=""))

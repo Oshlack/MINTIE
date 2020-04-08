@@ -40,6 +40,7 @@ def make_from_gtf(gtf):
 
     tx2gene = pd.DataFrame.from_dict({'tx': tx_ids, 'gene': genes})
     tx2gene = tx2gene[tx2gene.gene != ''].drop_duplicates()
+    tx2gene = tx2gene[['tx', 'gene']]
     tx2gene.to_csv(sys.stdout, index=False, header=False, sep='\t')
 
 def main():
