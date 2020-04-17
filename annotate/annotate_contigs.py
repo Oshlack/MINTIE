@@ -161,11 +161,14 @@ def get_gene_lookup(tx_ref_file):
     tx_ref = pd.read_csv(tx_ref_file, comment='#', sep='\t', header=None, low_memory=False)
     tx_ref['gene_id'] = tx_ref[8].apply(lambda x: get_attribute(x, 'gene_id'))
     tx_ref['gene'] = tx_ref[8].apply(lambda x: get_attribute(x, 'gene_name'))
-    aggregator = {3: lambda x: min(x),
-                  4: lambda x: max(x)}
-    gn_ref = tx_ref.groupby([0, 'gene_id', 'gene'], as_index=False, sort=False).agg(aggregator)
-    gn_ref = gn_ref[[0, 3, 4, 'gene_id', 'gene']]
+
+    # create start/end gene lookup, grouping adjacent rows
+    # (this prevents merging distant genes with the same IDs)
+    gn_ref = tx_ref[[0, 3, 4, 'gene_id', 'gene']]
     gn_ref.columns = ['chrom', 'start', 'end', 'gene_id', 'gene']
+    adj_check = (gn_ref.gene_id != gn_ref.gene_id.shift()).cumsum()
+    gn_ref = gn_ref.groupby(['chrom', 'gene_id', 'gene', adj_check],
+                            as_index=False, sort=False).agg({'start': min, 'end': max})
     gn_ref = gn_ref.drop_duplicates()
 
     # start/end coordinates for gene matching
