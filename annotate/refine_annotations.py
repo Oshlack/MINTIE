@@ -411,7 +411,7 @@ def overlaps_gene(row, gene_tree):
 def get_contigs_to_keep(args):
     '''
     Return contigs matching criteria:
-    - novel block size > MIN_CLIP
+    - novel block size >= MIN_CLIP
     - novel blocks are spliced in some way
     - novel exons have corresponding novel splice
       sites and novel splice donor/acceptor motifs
@@ -424,7 +424,7 @@ def get_contigs_to_keep(args):
         exit_with_error(str(exception), constants.EXIT_FILE_IO_ERROR)
 
     gene_tree, ex_trees, ex_ref = ac.get_gene_lookup(args.tx_ref_file)
-    contigs['large_varsize'] = contigs.contig_varsize > MIN_CLIP
+    contigs['large_varsize'] = contigs.contig_varsize >= MIN_CLIP
     contigs['is_contig_spliced'] = contigs.contig_cigar.apply(lambda x: bool(re.search('N', x)))
     contigs['spliced_exon'] = match_splice_juncs(contigs)
     contigs['overlaps_exon'] = vars_overlap_exon(contigs, ex_trees)

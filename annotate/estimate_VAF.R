@@ -58,7 +58,7 @@ txi <- tximport(quant_file, type="salmon", countsFromAbundance = "lengthScaledTP
 ec_matrix <- fread(ec_matrix_file)
 cinfo <- fread(contig_info_file)
 tx2g <- fread(tx2gene_file, col.names=c("transcript", "gene"))
-txs <- fread(tx_ref_fasta, header=FALSE)
+txs <- fread(tx_ref_fasta, header=FALSE, sep="\n")
 
 #############################################################
 # Prepare data

@@ -21,7 +21,6 @@ tx_info = args.tx_info
 
 print('Reading in gene reference...')
 genref = pd.read_csv(tx_info, sep='\t', comment='#', header=None, low_memory=False)
-pd.options.mode.chained_assignment = None #to get rid of those pesky annoying pandas warnings
 
 def featuretype_filter(feature, featuretype):
     '''
@@ -58,16 +57,15 @@ exons = exons.remove_invalid().sort()
 print('extracting attributes...')
 exon_pd = pd.DataFrame([(e['chrom'], e['start'], e['end'], e['strand']) for e in exons],
                         columns=['chrom', 'exonStarts', 'exonEnds', 'strand'])
-exon_pd['exonStarts'] = exon_pd['exonStarts'].map(int)
-exon_pd['exonEnds'] = exon_pd['exonEnds'].map(int)
+exon_pd['exonStarts'] = exon_pd['exonStarts'].map(str)
+exon_pd['exonEnds'] = exon_pd['exonEnds'].map(str)
 exon_pd['transcript'] = get_attribute(exons, 'transcript_id')
 exon_pd['gene'] = get_attribute(exons, 'gene_name')
 exon_pd = exon_pd[exon_pd.gene != '']
 
 print('building exon reference...')
-aggregator_sense = {'exonStarts': lambda x: ','.join(x.map(str)),
-                    'exonEnds': lambda x: ','.join(x.map(str))}
-all_exons = exon_pd.groupby(['transcript', 'chrom', 'gene'], as_index=False, sort=False).agg(aggregator_sense)
+all_exons = exon_pd.groupby(['transcript', 'chrom', 'gene'], as_index=False, sort=False).agg(','.join)
+all_exons = all_exons.drop(columns='strand')
 
 print('writing output...')
 outdir = os.path.dirname(tx_info)
