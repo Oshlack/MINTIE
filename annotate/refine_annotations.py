@@ -460,10 +460,9 @@ def get_contigs_to_keep(args):
     # collate contigs to keep
     keep_vars = np.unique(np.concatenate([ri_vars, as_vars, ne_vars, sv_vars, fus_vars, junc_vars]))
     contigs['variant_of_interest'] = contigs.variant_id.isin(keep_vars)
-    keep_contigs = contigs[contigs.variant_of_interest].contig_id.values
-    contigs = contigs[contigs.contig_id.isin(keep_contigs)]
     contigs.to_csv('%s_info.tsv' % args.out_prefix, sep='\t', index=None)
 
+    keep_contigs = contigs[contigs.variant_of_interest].contig_id.values
     return(keep_contigs)
 
 def write_output(args, keep_contigs):

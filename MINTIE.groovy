@@ -159,16 +159,6 @@ run_salmon = {
     }
 }
 
-run_de = {
-    def sample_name = branch.name
-    output.dir = sample_name
-    produce("eq_classes_de.txt"){
-        exec """
-        ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $trans_fasta $output --minCaseCount=10 --propControlsZero=0.9
-        """, "run_de"
-    }
-}
-
 create_ec_count_matrix = {
     def sample_name = branch.name
     def sample_names = inputs.split().collect { it.split('/')[-3].split('_salmon_out')[0] }
@@ -179,6 +169,16 @@ create_ec_count_matrix = {
         exec """
         $python $code_base/DE/create_ec_count_matrix.py $inputs $sample_names $output1 ;
         """, "create_ec_count_matrix"
+    }
+}
+
+run_de = {
+    def sample_name = branch.name
+    output.dir = sample_name
+    produce("eq_classes_de.txt"){
+        exec """
+        ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $trans_fasta $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc
+        """, "run_de"
     }
 }
 

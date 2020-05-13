@@ -1,0 +1,9 @@
+tools*
+ref*
+*/__pycache__
+allvars-case*
+.bpipe
+commandlog.txt
+*.pickle
+*.rda
+*swp

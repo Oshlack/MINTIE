@@ -12,7 +12,7 @@ source(incl.path, chdir=TRUE)
 
 args <- commandArgs(trailingOnly=TRUE)
 
-if(length(args) < 3) {
+if(length(args) < 4) {
     print("Invalid arguments.\n\n")
     args <- c("--help")
 }
@@ -25,23 +25,23 @@ if("--help" %in% args) {
         samples.
 
         Usage:
-        Rscript compare_eq_classes.R <case_name> <ec_matrix> <tx_ref_fasta> <output> --minCaseCount <value> --propControlsZero <value>\n\n
+        Rscript compare_eq_classes.R <case_name> <ec_matrix> <tx_ref_fasta> <output> --FDR=<value> --minCPM=<value> --minLogFC=<value>)\n\n
 
         All flags are optonal. The defaults are:
-        minCaseCount = 10
-        propControlsZero = 0.9\n\n
+        FDR = 0.05
+        minCPM = 0.1
+        minLogFC = 5\n\n
     ")
 
     q(save="no")
 }
 
 MIN_CONTROLS <- 1
-REC_CONTROLS <- 10
-
 GENE_REGEX <- "gene_symbol:([a-zA-Z0-9.-]+)"
 
-minCaseCount <- 10
-propControlsZero <- 0.9
+FDR <- 0.05
+minCPM <- 0.1
+minLogFC <- 2
 
 #############################################################
 # Parse arguments
@@ -66,8 +66,9 @@ set_arg <- function(argname) {
         assign(argname, value, envir = .GlobalEnv)
     }
 }
-set_arg("minCaseCount")
-set_arg("propControlsZero")
+set_arg("FDR")
+set_arg("minCPM")
+set_arg("minLogFC")
 
 #############################################################
 # load data
@@ -76,15 +77,8 @@ set_arg("propControlsZero")
 print("Reading input data...")
 ec_matrix <- fread(ec_matrix_file, sep="\t")
 n_controls <- ncol(ec_matrix) - 4
-n_zero_controls <- round(n_controls * propControlsZero)
-n_zero_controls <- max(1, n_zero_controls)
-if(!test_mode) {
-    if(n_controls < MIN_CONTROLS) {
-        stop(paste("Insufficient controls. Please run MINTIE with at least", MIN_CONTROLS, "control(s)."))
-    } else if(n_controls < REC_CONTROLS) {
-        print(paste("WARNING: you are running MINTIE with fewer than", REC_CONTROLS, "controls.",
-                    "Adding more control samples will improve results."))
-    }
+if(n_controls < MIN_CONTROLS) {
+    stop(paste("Insufficient controls. Please run MINTIE with at least", MIN_CONTROLS, "controls."))
 }
 
 # get reference transcript IDs
@@ -99,15 +93,21 @@ txs <- as.character(sapply(txs, gsub, pattern=">", replacement=""))
 
 print("Extracting ECs associated with only novel contigs...")
 tx_ec <- data.table(distinct(ec_matrix[,c("ec_names", "transcript")]))
-tx_ec$novel <- !tx_ec$transcript%in%txs
-novel_contig_ecs <- tx_ec[, all(novel), by="ec_names"]
+tx_ec$assembled <- !tx_ec$transcript%in%txs
+novel_contig_ecs <- tx_ec[, all(assembled), by="ec_names"]
 novel_contig_ecs <- unique(novel_contig_ecs$ec_names[novel_contig_ecs$V1])
 if(length(novel_contig_ecs) == 0) {
     stop("No novel ECs were found. Pipeline cannot continue.")
 }
 
+# write EC > TX lookup for reference
+novel_contig_outfile <- paste0(dirname(outfile), "/ec_tx_table.txt")
+tx_ec$novel_ec <- tx_ec$ec_names %in% novel_contig_ecs
+tx_ec$assembled <- NULL
+write.table(tx_ec, novel_contig_outfile, sep="\t", quote=FALSE, row.names=FALSE)
+
 # make collapsed EC > contig lookup table
-tx_ec <- tx_ec[tx_ec$ec_names%in%novel_contig_ecs,]
+tx_ec <- tx_ec[tx_ec$novel_ec,]
 tx_ec <- tx_ec[, paste(transcript, collapse=":"), by="ec_names"]
 colnames(tx_ec)[2] <- "contigs"
 
@@ -115,10 +115,10 @@ colnames(tx_ec)[2] <- "contigs"
 # Perform DE
 #############################################################
 
-print("Comparing...")
-results <- get_significant_ecs(case_name, ec_matrix, tx_ec, dirname(outfile),
-                               minCaseCount=minCaseCount, n_zero_controls=n_zero_controls)
-if(nrow(results) == 0) {
+print("Performing differential expression analysis...")
+de_results <- run_edgeR(case_name, ec_matrix, tx_ec, dirname(outfile),
+                        cpm_cutoff=minCPM, qval=FDR, min_logfc=minLogFC)
+if(nrow(de_results) == 0) {
     stop("Invalid output result obtained from differential expression. Please check all input data.")
 }
 
@@ -129,8 +129,8 @@ if(nrow(results) == 0) {
 print("Compiling and writing results...")
 
 # separate out contigs
-contigs <- sapply(results$contigs, strsplit, split=":")
-results <- results[rep(1:nrow(results), as.numeric(sapply(contigs, length))),]
-results$contig <- as.character(unlist(contigs))
+contigs <- sapply(de_results$contigs, strsplit, split=":")
+de_results <- de_results[rep(1:nrow(de_results), as.numeric(sapply(contigs, length))),]
+de_results$contig <- as.character(unlist(contigs))
 
-write.table(results, outfile, row.names=F, quote=F, sep="\t")
+write.table(de_results, outfile, row.names=F, quote=F, sep="\t")

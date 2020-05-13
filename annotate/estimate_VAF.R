@@ -65,6 +65,9 @@ txs <- fread(tx_ref_fasta, header=FALSE, sep="\n")
 #############################################################
 
 print("Preparing data...")
+# keep only variants of interest
+cinfo <- cinfo[cinfo$variant_of_interest, ]
+
 # get overlapping gene info for novel annotated contigs
 c2g <- data.frame(contig_id=cinfo$contig_id, gene=cinfo$overlapping_genes)
 split_genes <- sapply(c2g$gene, function(x){strsplit(x, "\\||:")})

@@ -89,23 +89,13 @@ def filter_by_gene(contigs, gene_filter):
 def add_de_info(contigs, de_results):
     de_results = de_results.rename(columns={'contig': 'contig_id', 'contigs': 'contigs_in_EC'})
     contigs = pd.merge(contigs, de_results, on='contig_id')
-
-    # aggregate columns by variant ID
-    agg_dict = {}
-    for cname in contigs.columns.values:
-        if cname in ['case_reads', 'controls_total_reads']:
-            agg_dict[cname] = 'sum'
-        elif cname in ['n_contigs_in_ec']:
-            agg_dict[cname] = 'max'
-        elif cname in ['contigs_in_EC', 'ec_names']:
-            agg_dict[cname] = lambda x: ','.join(x)
+    contigs = contigs.drop_duplicates(ignore_index=True)
 
     if 'valid_motif' in contigs.columns:
         # remove NaNs (which are otherwise dropped when using groupby)
         contigs['valid_motif'] = contigs.valid_motif.fillna('Untested')
 
-    group_vars = [c for c in contigs.columns if c not in agg_dict.keys()]
-    return contigs.groupby(by=group_vars, as_index=False).agg(agg_dict)
+    return contigs
 
 def get_short_gene_name(overlapping_genes):
     '''

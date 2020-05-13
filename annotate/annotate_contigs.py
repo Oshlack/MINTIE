@@ -218,7 +218,7 @@ def get_juncs(tx):
     starts = tx['exonStarts'].split(',')[1:]
     ends = tx['exonEnds'].split(',')[:-1]
     chroms = [tx['chrom']] * len(starts)
-    return(list(zip(chroms, ends, starts)))
+    return list(zip(chroms, ends, starts))
 
 @cached('juncs_lookup_cache.pickle')
 def get_junc_lookup(junc_file):
@@ -605,10 +605,9 @@ def annotate_single_read(args, read, juncs, ex_ref, ref_trees, outbam=None, gene
     # check for contig gaps or soft-clips
     has_gaps = any([op in constants.GAPS and val >= MIN_GAP for op, val in read.cigar])
     has_scs = any([op == constants.CIGAR['soft-clip'] and val >= MIN_CLIP for op, val in read.cigar])
-
-    # skip unspliced contigs that aren't fusions, soft-clips or TSVs
     is_spliced = any([op == constants.CIGAR['skipped'] for op, val in read.cigar])
     if not is_spliced and not (has_gaps or has_scs or fusion):
+        logging.info('No splicing, gaps or clipping observed in read %s; skipping' % read.query_name)
         return
 
     # check junctions

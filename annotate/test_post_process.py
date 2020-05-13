@@ -54,32 +54,31 @@ def test_filter_by_gene():
     assert list(result) == ['A:B', 'C|E', 'X']
 
 def test_add_de_info():
-    de_results = {'contig': ['A', 'A', 'B'],
-                  'contigs': ['k49_123', 'k79_234', 'k49_789'],
-                  'case_reads': [100, 200, 50],
-                  'controls_total_reads': [5, 20, 10],
-                  'logFC': [5, 6, 2],
-                  'F': [45, 50, 25],
-                  'logCPM': [10, 15, 5],
-                  'n_contigs_in_ec': [1, 2, 1],
-                  'PValue': [0.005, 0.001, 0.003],
-                  'FDR': [0.05, 0.01, 0.03],
-                  'ec_names': ['ec1', 'ec2', 'ec3']}
+    de_results = {'contig': ['k49_123', 'k79_234', 'k49_789'],
+                  'contigs': ['k49_123:k79_234', 'k49_123:k79_234', 'k49_789'],
+                  'case_reads': [200, 200, 50],
+                  'controls_total_reads': [5, 5, 10],
+                  'logFC': [5, 5, 2],
+                  'F': [50, 50, 25],
+                  'logCPM': [10, 10, 5],
+                  'n_contigs_in_ec': [2, 2, 1],
+                  'PValue': [0.001, 0.001, 0.003],
+                  'FDR': [0.01, 0.01, 0.03],
+                  'ec_names': ['ec1', 'ec1', 'ec3']}
     de_results = pd.DataFrame.from_dict(de_results)
-    contigs = {'contig_id': ['A', 'B']}
+    contigs = {'contig_id': ['k49_123', 'k79_234', 'k49_789']}
     contigs = pd.DataFrame.from_dict(contigs)
 
-    results = {'contig_id': ['A', 'B'],
-               'contigs_in_EC': ['k49_123,k79_234', 'k49_789'],
-               'case_reads': [300, 50],
-               'controls_total_reads': [25, 10],
-               'logFC': [6, 2],
+    results = {'contigs_in_EC': ['k49_123:k79_234', 'k49_789'],
+               'case_reads': [200, 50],
+               'controls_total_reads': [5, 10],
+               'logFC': [5, 2],
                'F': [50, 25],
-               'logCPM': [15, 5],
+               'logCPM': [10, 5],
                'n_contigs_in_ec': [2, 1],
                'PValue': [0.001, 0.003],
                'FDR': [0.01, 0.03],
-               'ec_names': ['ec1,ec2', 'ec3']}
+               'ec_names': ['ec1', 'ec3']}
     results = pd.DataFrame.from_dict(results)
 
     assert all(pp.add_de_info(contigs, de_results) == results)
