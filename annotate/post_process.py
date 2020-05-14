@@ -126,12 +126,12 @@ def reformat_fields(contigs):
                'is_contig_spliced', 'spliced_exon',
                'overlaps_exon', 'overlaps_gene']
     variant = variant if 'valid_motif' not in contigs.columns.values else variant + ['valid_motif']
-    de = ['TPM', 'mean_WT_TPM']
+    de = ['TPM', 'mean_WT_TPM', 'case_CPM', 'logFC', 'PValue', 'FDR']
     ec = ['ec_names', 'n_contigs_in_ec', 'contigs_in_EC', 'case_reads', 'controls_total_reads']
     cont = ['contig_id', 'unique_contig_ID', 'contig_len', 'contig_cigar']
     contigs = contigs[basic + variant + de + ec + cont]
 
-    contigs = contigs.sort_values(by='case_reads', ascending=False)
+    contigs = contigs.sort_values(by='PValue', ascending=False)
     return contigs
 
 def main():
