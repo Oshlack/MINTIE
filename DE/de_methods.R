@@ -2,7 +2,7 @@ library(dplyr)
 library(data.table)
 library(edgeR)
 
-run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=0.05, min_logfc=0.1) {
+run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=0.05, min_logfc=5) {
     data <- distinct(ec_matrix[, !colnames(ec_matrix)%in%c("transcript", "tx_ids", "tx_id"), with=FALSE])
 
     # prepare counts matrix
@@ -56,12 +56,17 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
                                  case_reads=case_counts,
                                  controls_total_reads=apply(con_counts, 1, sum))
 
-    # write counts table to file for reference
-    counts_out <- data.frame(ec_names=rownames(unfilt_counts),
-                             unfilt_counts, CPM=case_cpms,
+    # write counts summary table to file for reference
+    counts_out <- data.frame(counts_summary,
                              passes_CPM_threshold=keep)
     counts_out <- inner_join(counts_out, tx_ec, by = "ec_names")
-    write.table(counts_out, file=paste(outdir, "counts_table.txt", sep="/"), row.names=FALSE, quote=FALSE, sep="\t")
+    counts_out <- counts_out[, c("ec_names",
+                                 "contigs",
+                                 "case_reads",
+                                 "controls_total_reads",
+                                 "case_CPM",
+                                 "passes_CPM_threshold")]
+    write.table(counts_out, file=paste(outdir, "counts_summary.txt", sep="/"), row.names=FALSE, quote=FALSE, sep="\t")
 
     # perform DE
     n_controls <- ncol(ec_matrix) - 4
@@ -101,8 +106,11 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     dx_df <- dx_df[order(dx_df$PValue, decreasing=FALSE),]
 
     # write full results
-    write.table(dx_df, file=paste(outdir, "full_edgeR_results.txt", sep="/"), row.names=FALSE, quote=FALSE, sep="\t")
-    dx_df <- dx_df[dx_df$FDR<qval & dx_df$logFC>min_logfc,]
+    significant <- dx_df$FDR < 0.05
+    passes_logFC_threshold <- dx_df$logFC>min_logfc
+    write.table(data.frame(dx_df, significant, passes_logFC_threshold),
+                file=paste(outdir, "full_edgeR_results.txt", sep="/"), row.names=FALSE, quote=FALSE, sep="\t")
 
+    dx_df <- dx_df[significant & passes_logFC_threshold,]
     return(dx_df)
 }

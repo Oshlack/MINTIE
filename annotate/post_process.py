@@ -139,7 +139,7 @@ def main():
     init_logging(args.log)
 
     try:
-        contigs = pd.read_csv(args.contig_info, sep='\t', low_memory=False)
+        contigs = pd.read_csv(args.contig_info, sep='\t', low_memory=False).fillna('')
         de_results = pd.read_csv(args.de_results, sep='\t', low_memory=False)
         vafs = pd.read_csv(args.vaf_estimates, sep='\t', low_memory=False)
         vafs = vafs[['contig_id', 'TPM', 'mean_WT_TPM', 'VAF']].drop_duplicates()
@@ -167,7 +167,7 @@ def main():
     contigs = add_de_info(contigs, de_results)
     contigs = pd.merge(contigs, vafs, on='contig_id', how='left')
 
-    short_gnames = contigs.overlapping_genes.apply(get_short_gene_name)
+    short_gnames = contigs.overlapping_genes.map(str).apply(get_short_gene_name)
     contig_ids, samples = contigs.contig_id, contigs['sample']
     con_names = ['|'.join([s, cid, sg]) for cid, s, sg in zip(contig_ids, samples, short_gnames)]
     contigs['unique_contig_ID'] = con_names
