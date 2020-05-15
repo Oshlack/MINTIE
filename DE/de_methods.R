@@ -106,8 +106,8 @@ run_edgeR <- function(case_name, ec_matrix, tx_ec, outdir, cpm_cutoff=0.1, qval=
     dx_df <- dx_df[order(dx_df$PValue, decreasing=FALSE),]
 
     # write full results
-    significant <- dx_df$FDR < 0.05
-    passes_logFC_threshold <- dx_df$logFC>min_logfc
+    significant <- dx_df$FDR < qval
+    passes_logFC_threshold <- dx_df$logFC > min_logfc
     write.table(data.frame(dx_df, significant, passes_logFC_threshold),
                 file=paste(outdir, "full_edgeR_results.txt", sep="/"), row.names=FALSE, quote=FALSE, sep="\t")
 
