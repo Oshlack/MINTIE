@@ -89,7 +89,7 @@ def filter_by_gene(contigs, gene_filter):
 def add_de_info(contigs, de_results):
     de_results = de_results.rename(columns={'contig': 'contig_id', 'contigs': 'contigs_in_EC'})
     contigs = pd.merge(contigs, de_results, on='contig_id')
-    contigs = contigs.drop_duplicates(ignore_index=True)
+    contigs = contigs.drop_duplicates()
 
     if 'valid_motif' in contigs.columns:
         # remove NaNs (which are otherwise dropped when using groupby)

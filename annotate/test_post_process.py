@@ -69,16 +69,17 @@ def test_add_de_info():
     contigs = {'contig_id': ['k49_123', 'k79_234', 'k49_789']}
     contigs = pd.DataFrame.from_dict(contigs)
 
-    results = {'contigs_in_EC': ['k49_123:k79_234', 'k49_789'],
-               'case_reads': [200, 50],
-               'controls_total_reads': [5, 10],
-               'logFC': [5, 2],
-               'F': [50, 25],
-               'logCPM': [10, 5],
-               'n_contigs_in_ec': [2, 1],
-               'PValue': [0.001, 0.003],
-               'FDR': [0.01, 0.03],
-               'ec_names': ['ec1', 'ec3']}
+    results = {'contig_id': ['k49_123', 'k79_234', 'k49_789'],
+               'contigs_in_EC': ['k49_123:k79_234', 'k49_123:k79_234', 'k49_789'],
+               'case_reads': [200, 200, 50],
+               'controls_total_reads': [5, 5, 10],
+               'logFC': [5, 5, 2],
+               'F': [50, 50, 25],
+               'logCPM': [10, 10, 5],
+               'n_contigs_in_ec': [2, 2, 1],
+               'PValue': [0.001, 0.001, 0.003],
+               'FDR': [0.01, 0.01, 0.03],
+               'ec_names': ['ec1', 'ec1', 'ec3']}
     results = pd.DataFrame.from_dict(results)
 
     assert all(pp.add_de_info(contigs, de_results) == results)
@@ -112,8 +113,9 @@ def test_reformat_fields():
                 'sample': ['S1', 'S1'],
                 'logFC': [10, 10],
                 'logCPM': [10, 9],
-                'PValue': [0.004, 0.001],
-                'FDR': [0.04, 0.01],
+                'case_CPM': [15, 12],
+                'PValue': [0.001, 0.002],
+                'FDR': [0.01, 0.02],
                 'ec_names': ['ec1', 'ec2'],
                 'n_contigs_in_ec': [1, 1],
                 'contigs_in_EC': ['1', '2'],
