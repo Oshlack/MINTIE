@@ -674,7 +674,7 @@ def annotate_contigs(args):
             continue
 
         if all([op == constants.CIGAR['match'] for op, val in read.cigar]):
-            logging.info('Skipping contig %s: perfect match to reference' % read.query_name)
+            logging.info('Skipping contig %s: unspliced contiguous alignment' % read.query_name)
             continue
 
         is_hardclipped = any([op == constants.CIGAR['hard-clip'] and val >= MIN_CLIP for op, val in read.cigar])
