@@ -2,8 +2,8 @@
 Module      : post_process
 Description : Filter and collate novel variant info
 Copyright   : (c) Marek Cmero, Sep 2018
-License     : TBD
-Maintainer  : MAREK.CMERO@MCRI.EDU.AU
+License     : MIT
+Maintainer  : github.com/mcmero
 Portability : POSIX
 Features:
     - collate expression and annotation information

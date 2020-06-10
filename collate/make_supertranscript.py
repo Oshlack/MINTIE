@@ -2,8 +2,8 @@
 Module      : make_supertranscript_ref
 Description : Make reference supertranscript for cryptic variants
 Copyright   : (c) Marek Cmero, Sep 2018
-License     : TBD
-Maintainer  : MAREK.CMERO@MCRI.EDU.AU
+License     : MIT
+Maintainer  : github.com/mcmero
 Portability : POSIX
 Take VCF, contig_info and reference files, and make a supertranscript
 for each contig including any novel bits inserted into the ref sequence

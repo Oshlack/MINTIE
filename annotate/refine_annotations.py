@@ -2,8 +2,8 @@
 Module      : refine_annotations
 Description : Perform further filtering on annotated contigs
 Copyright   : (c) Marek Cmero, Feb 2019
-License     : TBD
-Maintainer  : MAREK.CMERO@MCRI.EDU.AU
+License     : MIT
+Maintainer  : github.com/mcmero
 Portability : POSIX
 '''
 
@@ -332,11 +332,11 @@ def get_junc_vars(contigs, ex_trees, args):
     '''
     # check for novel exon juncs contained within single exon (may be deletions)
     within_exon = contigs.apply(overlaps_same_exon, axis=1, args=(ex_trees,))
-    nej_var = contigs.variant_type == 'NEJ'
-    nej_dels = np.empty(0, dtype=object)
-    if sum(nej_var.values) > 0:
-        bigger_than_mingap = contigs[nej_var].apply(get_varsize, axis=1) >= MIN_GAP
-        nej_dels = contigs[nej_var][np.logical_and(within_exon[nej_var], bigger_than_mingap)].variant_id.values
+    nj_var = contigs.variant_type.isin(NOVEL_JUNCS)
+    nj_dels = np.empty(0, dtype=object)
+    if sum(nj_var.values) > 0:
+        bigger_than_mingap = contigs[nj_var].apply(get_varsize, axis=1) >= MIN_GAP
+        nj_dels = contigs[nj_var][np.logical_and(within_exon[nj_var], bigger_than_mingap)].variant_id.values
 
     # check truncated-exon vars
     is_trunc = np.logical_and.reduce((contigs.variant_type.isin(NOVEL_JUNCS),
@@ -347,7 +347,7 @@ def get_junc_vars(contigs, ex_trees, args):
         is_trunc = np.logical_and(is_trunc, contigs.valid_motif)
     trunc_vars = contigs[is_trunc].variant_id.values
 
-    return np.unique(np.concatenate([nej_dels, trunc_vars]))
+    return np.unique(np.concatenate([nj_dels, trunc_vars]))
 
 def get_tsv_vars(contigs):
     '''

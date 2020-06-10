@@ -2,8 +2,8 @@
 Module      : annotate_contigs
 Description : Perform contig annotation.
 Copyright   : (c) Marek Cmero, Sep 2018
-License     : TBD
-Maintainer  : MAREK.CMERO@MCRI.EDU.AU
+License     : MIT
+Maintainer  : github.com/mcmero
 Portability : POSIX
 Take an samfile of aligned contigs, filter out
 any contigs matching the reference annotation,

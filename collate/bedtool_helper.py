@@ -2,8 +2,8 @@
 Module      : bedtool_helper
 Description : Helper functions for pybedtools
 Copyright   : (c) Marek Cmero, Mar 2019
-License     : TBD
-Maintainer  : MAREK.CMERO@MCRI.EDU.AU
+License     : MIT
+Maintainer  : github.com/mcmero
 Portability : POSIX
 '''
 import tempfile

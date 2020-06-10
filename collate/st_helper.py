@@ -2,8 +2,8 @@
 Module      : st_helper
 Description : Helper functions for handling exon blocks
 Copyright   : (c) Marek Cmero, Mar 2019
-License     : TBD
-Maintainer  : MAREK.CMERO@MCRI.EDU.AU
+License     : MIT
+Maintainer  : github.com/mcmero
 Portability : POSIX
 '''
 import pandas as pd
