@@ -121,10 +121,10 @@ def reformat_fields(contigs):
     basic = ['chr1', 'pos1', 'strand1',
              'chr2', 'pos2', 'strand2',
              'variant_type', 'overlapping_genes', 'sample']
-    variant = ['variant_id', 'partner_id', 'VAF', 'varsize',
-               'contig_varsize', 'cpos', 'large_varsize',
-               'is_contig_spliced', 'spliced_exon',
-               'overlaps_exon', 'overlaps_gene']
+    variant = ['variant_id', 'partner_id', 'vars_in_contig',
+               'VAF', 'varsize', 'contig_varsize', 'cpos',
+               'large_varsize', 'is_contig_spliced',
+               'spliced_exon', 'overlaps_exon', 'overlaps_gene']
     variant = variant if 'valid_motif' not in contigs.columns.values else variant + ['valid_motif']
     de = ['TPM', 'mean_WT_TPM', 'logFC', 'PValue', 'FDR']
     de = ['case_CPM'] + de if 'case_CPM' in contigs.columns.values else de
@@ -171,7 +171,13 @@ def main():
     short_gnames = contigs.overlapping_genes.map(str).apply(get_short_gene_name)
     contig_ids, samples = contigs.contig_id, contigs['sample']
     con_names = ['|'.join([s, cid, sg]) for cid, s, sg in zip(contig_ids, samples, short_gnames)]
-    contigs['unique_contig_ID'] = con_names
+    contigs['unique_contig_ID'] = con_names # TODO: fix this field (it is not really unique)
+
+    # count the number of variants per contig
+    vars_per_contig = contigs.groupby('contig_id', as_index = False)
+    vars_per_contig = vars_per_contig.agg({'variant_id': lambda x: len(np.unique(x))})
+    vars_per_contig = vars_per_contig.rename({'variant_id': 'vars_in_contig'}, axis = 1)
+    contigs = contigs.merge(vars_per_contig)
 
     logging.info('Outputting to CSV')
     contigs = reformat_fields(contigs)

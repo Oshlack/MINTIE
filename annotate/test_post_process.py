@@ -95,6 +95,7 @@ def test_reformat_fields():
     contigs = { 'contig_id': ['1', '2'],
                 'variant_id': ['1a', '2a'],
                 'partner_id': ['', ''],
+                'vars_in_contig': [1, 1],
                 'pos1': ['chr1:100(+)', 'chr2:200(-)'],
                 'pos2': ['chr1:200(+)', 'chr2:250(-)'],
                 'varsize': [100, 0],
