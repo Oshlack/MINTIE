@@ -197,7 +197,7 @@ align_contigs_against_genome = {
     output.dir = sample_name
     produce('aligned_contigs_against_genome.sam'){
         exec """
-        $gmap -D $gmap_refdir -d $gmap_genome -f samse -t $threads -n 0 $input.fasta > $output
+        $gmap -D $gmap_refdir -d $gmap_genome -f samse -t $threads -x $min_gap --max-intronlength-ends=500000 -n 0 $input.fasta > $output
         """, "align_contigs_against_genome"
     }
 }
