@@ -105,12 +105,12 @@ function bedtools_install {
 }
 
 function gmap_install {
-    wget --no-check-certificate http://research-pub.gene.com/gmap/src/gmap-gsnap-2019-09-12.tar.gz
-    tar -xvzf gmap-gsnap-2019-09-12.tar.gz
-    rm gmap-gsnap-2019-09-12.tar.gz
-    cd gmap-2019-09-12 && ./configure --prefix=$PWD/../ ; cd ..
-    make -C gmap-2019-09-12/
-    make prefix=$PWD install -C gmap-2019-09-12/
+    wget --no-check-certificate http://research-pub.gene.com/gmap/src/gmap-gsnap-2020-06-04.tar.gz
+    tar -xvzf gmap-gsnap-2020-06-04.tar.gz
+    rm gmap-gsnap-2020-06-04.tar.gz
+    cd gmap-2020-06-04 && ./configure --prefix=$PWD/../ ; cd ..
+    make -C gmap-2020-06-04/
+    make prefix=$PWD install -C gmap-2020-06-04/
 }
 
 function salmon_install {
