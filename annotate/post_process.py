@@ -117,6 +117,7 @@ def reformat_fields(contigs):
     chr2, pos2, str2 = zip(*pos2)
     contigs['chr1'], contigs['pos1'], contigs['strand1'] = chr1, pos1, str1
     contigs['chr2'], contigs['pos2'], contigs['strand2'] = chr2, pos2, str2
+    ran_de = 'logFC' in contigs.columns.values
 
     basic = ['chr1', 'pos1', 'strand1',
              'chr2', 'pos2', 'strand2',
@@ -128,11 +129,13 @@ def reformat_fields(contigs):
     variant = variant if 'valid_motif' not in contigs.columns.values else variant + ['valid_motif']
     de = ['TPM', 'mean_WT_TPM', 'logFC', 'PValue', 'FDR']
     de = ['case_CPM'] + de if 'case_CPM' in contigs.columns.values else de
-    ec = ['ec_names', 'n_contigs_in_ec', 'contigs_in_EC', 'case_reads', 'controls_total_reads']
+    de = ['TPM', 'mean_WT_TPM'] if not ran_de else de
+    ec = ['ec_names', 'n_contigs_in_ec', 'contigs_in_EC', 'case_reads']
+    ec = ec + ['controls_total_reads'] if ran_de else ec
     cont = ['contig_id', 'unique_contig_ID', 'contig_len', 'contig_cigar']
     contigs = contigs[basic + variant + de + ec + cont]
 
-    contigs = contigs.sort_values(by='PValue', ascending=False)
+    contigs = contigs if not ran_de else contigs.sort_values(by='PValue', ascending=False)
     return contigs
 
 def main():

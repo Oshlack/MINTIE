@@ -21,9 +21,11 @@ if(!binding.variables.containsKey("fastqCaseFormat")){
 if(!binding.variables.containsKey("fastqControlFormat")){
     fastqControlFormat="controls/%_R*.fastq.gz"
 }
-
 if(!binding.variables.containsKey("assemblyFasta")){
     assemblyFasta=""
+}
+if(!binding.variables.containsKey("run_de")){
+    run_de="true"
 }
 
 fastq_dedupe = {
@@ -173,12 +175,19 @@ create_ec_count_matrix = {
 }
 
 run_de = {
+    def run_de_bool = run_de_step.toBoolean()
     def sample_name = branch.name
     output.dir = sample_name
     produce("eq_classes_de.txt"){
-        exec """
-        ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $trans_fasta $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc
-        """, "run_de"
+        if(run_de_bool) {
+            exec """
+            ${R}script $code_base/DE/compare_eq_classes.R $sample_name $input $trans_fasta $output --FDR=$fdr --minCPM=$min_cpm --minLogFC=$min_logfc
+            """, "run_de"
+        } else {
+            exec """
+            $python $code_base/DE/get_novel_contigs.py $input $trans_fasta $output.dir/${sample_name}_denovo_filt.fasta
+            """
+        }
     }
 }
 

@@ -19,3 +19,4 @@
 -p fastqCaseFormat=cases/%_R*.fastq.gz
 -p fastqControlFormat=controls/%_R*.fastq.gz
 -p assemblyFasta=
+-p run_de_step=true
