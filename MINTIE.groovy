@@ -24,8 +24,8 @@ if(!binding.variables.containsKey("fastqControlFormat")){
 if(!binding.variables.containsKey("assemblyFasta")){
     assemblyFasta=""
 }
-if(!binding.variables.containsKey("run_de")){
-    run_de="true"
+if(!binding.variables.containsKey("run_de_step")){
+    run_de_step="true"
 }
 
 fastq_dedupe = {
