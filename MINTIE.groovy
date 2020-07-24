@@ -186,7 +186,7 @@ run_de = {
         } else {
             exec """
             $python $code_base/DE/get_novel_contigs.py $input $trans_fasta $output.dir/${sample_name}_denovo_filt.fasta
-            """
+            """, "run_de"
         }
     }
 }

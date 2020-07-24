@@ -58,10 +58,11 @@ def get_tx_ec(ecm, ref_txs, outdir):
     contigs
     '''
     # get TX > EC table
+    print('Constructing TX > EC table...')
     tx_ec = ecm[['ec_names', 'transcript']].drop_duplicates()
-    tx_ec['assembled'] = [te not in ref_txs for te in tx_ec.transcript]
+    tx_ec['assembled'] = np.invert(tx_ec.transcript.isin(ref_txs))
 
-    # check whether all TXs in EC are assembled (false if some are reference0
+    # check whether all TXs in EC are assembled (false if any are reference)
     is_ec_assembled = tx_ec.groupby('ec_names', as_index = False)
     is_ec_assembled = is_ec_assembled.assembled.agg({'all_assembled': all})
 
@@ -71,6 +72,7 @@ def get_tx_ec(ecm, ref_txs, outdir):
     tx_ec.to_csv('%s/ec_tx_table.txt' % outdir, sep = '\t', index = False)
 
     # get tx_ec table containing only novel EC txs
+    print('Preparing output table...')
     tx_ec = tx_ec[tx_ec.all_assembled]
 
     # add some extra cols
@@ -90,7 +92,9 @@ def get_tx_ec(ecm, ref_txs, outdir):
 def main():
     args = parse_args(sys.argv[1:])
     try:
+        print('Reading in EC count matrix file...')
         ecm = pd.read_csv(args.ecm_file, sep = '\t')
+        print('Fetching reference transcripts...')
         ref_txs = get_ref_txs(args.ref_tx_fasta)
     except IOError as message:
         print("{} ERROR: {}, exiting".format("get_novel_contigs", message), file=sys.stderr)
