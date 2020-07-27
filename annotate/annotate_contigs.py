@@ -498,6 +498,9 @@ def annotate_fusion(args, read, juncs, bam_idx, ex_ref, ref_trees, outbam):
 
     cv1.genes = get_overlapping_genes(r1, ref_trees)
     cv2.genes = get_overlapping_genes(r2, ref_trees)
+    if cv1.genes == cv2.genes:
+        # intra-genic rearrangement
+        cv1.cvtype, cv2.cvtype = 'IGR', 'IGR'
     if cv1.genes == '' and cv2.genes == '':
         # no intersecting gene, this is not an interesting fusion
         logging.info('No gene(s) intersecting candidate fusion contig %s; skipping' % read.query_name)

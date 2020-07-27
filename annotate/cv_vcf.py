@@ -125,8 +125,7 @@ class CrypticVariant(object):
 
         cigar = '%s,%s' % (cv1.ccigar, cv2.ccigar) if cv2 else cv1.ccigar
         genes = '%s:%s' % (cv1.genes, cv2.genes) if cv2 else cv1.genes
-        # only consider a gene its own variant partner if it's a fusion
-        if cv1.cvtype != 'FUS' and cv2 and cv1.genes == cv2.genes:
+        if cv2 and cv1.genes == cv2.genes:
             genes = cv1.genes
 
         line = [cv1.cid, cv1.vid, cv1.parid, pos1,
