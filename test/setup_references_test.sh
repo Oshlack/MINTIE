@@ -10,7 +10,7 @@ commands="genome_fasta tx_annotation ann_info tx2gene gmap_refdir gmap_genome"
 
 function genome_fasta_setup {
     file=Homo_sapiens.GRCh38.dna.chromosome.1.fa
-    wget http://ftp.ensemblorg.ebi.ac.uk/pub/release-84/fasta/homo_sapiens/dna/${file}.gz
+    wget --no-check-certificate http://ftp.ensembl.org/pub/release-100/fasta/homo_sapiens/dna/${file}.gz
     gunzip ${file}.gz
     if [ -f $file ]; then
         echo -e "$PWD/$file" > genome_fasta.success
