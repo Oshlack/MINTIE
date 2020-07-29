@@ -29,8 +29,10 @@ SPLICE_VARS = ['AS']
 SV_VARS = ['DEL', 'INS']
 NOVEL_BLOCKS = ['EE', 'NE']
 NOVEL_JUNCS = ['PNJ', 'NEJ']
-FUSIONS = ['FUS']
+LARGE_SV = ['FUS', 'IGR']
 UNKNOWN = ['UN']
+SENSE_MOTIF = ['AG', 'GT']
+ANTISENSE_MOTIF = ['AC', 'CT']
 
 def parse_args():
     '''
@@ -76,10 +78,17 @@ def parse_args():
                         metavar='MIN_GAP',
                         type=int,
                         help='''Minimum gap (deletion or insertion) size.''')
-    parser.add_argument('--skipMotifCheck',
-                        dest='skipMotifCheck',
-                        action='store_true',
-                        help='''Skip motif checking for junction variants.''')
+    parser.add_argument('--mismatches',
+                        metavar='MISMATCHES',
+                        type=int,
+                        default=0,
+                        help='''Number of allowed mismatches when checking splice motifs (0-4).
+                              0 = no mismatches allowed (default).
+                              1 = allows a single mismatch (total) across both the donor and acceptor sites.
+                              2 = allows two mismatches (one in both donor and acceptor).
+                              3 = motifs are not checked but are returned for certain variants.
+                              4 = motifs are not checked or returned.
+                              Note that options 1 and 2 work identically when checking a single site only.''')
     return parser.parse_args()
 
 def set_globals(args):
@@ -119,23 +128,69 @@ def load_vcf_file(contig_vcf):
     cvcf = pd.read_csv(contig_vcf, sep='\t', header=None, comment='#', low_memory=False)
     return cvcf
 
-def is_valid_motif(left_id, right_id, block_seqs):
+def get_diff_count(motif, side = 0, sense = True):
+    '''
+    Returns the number of differences (with respect to position)
+    from the splicing motifs, given a 2-character motif, side
+    and strand.
+    '''
+    assert len(motif) == 2
+    test_motif = SENSE_MOTIF[side] if sense else ANTISENSE_MOTIF[side]
+    count = int(motif[0] != test_motif[0])
+    count += int(motif[1] != test_motif[1])
+    return count
+
+def is_motif_valid(motifs, mismatches):
+    '''
+    Given a motif (left and right ends), returns whether
+    it is valid on either strand within an allowed number
+    of mismatches.
+    '''
+    if mismatches > 2:
+        return True
+    elif '' in motifs:
+        # single-end motif
+        side = np.where('' != np.array(motifs))[0][0]
+        diff_s = get_diff_count(motifs[side], side = side)
+        diff_as = get_diff_count(motifs[side], side = side, sense = False)
+
+        # mismatches == 2 only affects both ends
+        mismatches = 1 if mismatches == 2 else mismatches
+        return diff_s <= mismatches or diff_as <= mismatches
+    else:
+        # check motif on both ends
+        ldiff_s = get_diff_count(motifs[0])
+        ldiff_as = get_diff_count(motifs[0], sense = False)
+        rdiff_s = get_diff_count(motifs[1], side = 1)
+        rdiff_as = get_diff_count(motifs[1], side = 1, sense = False)
+
+        # check if sense strand valid
+        if ldiff_s + rdiff_s <= mismatches and \
+            ldiff_s < 2 and rdiff_s < 2:
+            return True
+
+        # check if antisense strand valid
+        if ldiff_as + rdiff_as <= mismatches and \
+            ldiff_as < 2 and rdiff_as < 2:
+            return True
+    return False
+
+def check_valid_motif(left_id, right_id, block_seqs, mismatches):
+    '''
+    Test whether motif is valid for given sequences.
+    '''
     try:
-        if left_id != '' and right_id != '':
-            valid_sense = block_seqs[left_id] == 'AG' and block_seqs[right_id] == 'GT'
-            valid_antisense = block_seqs[left_id] == 'AC' and block_seqs[right_id] == 'CT'
-            return valid_sense or valid_antisense
-        elif left_id != '':
-            return block_seqs[left_id] in ['AG', 'AC']
-        elif right_id != '':
-            return block_seqs[right_id] in ['GT', 'CT']
-        else:
-            return False
+        lseq = '' if left_id == '' else block_seqs[left_id]
+        rseq = '' if right_id == '' else block_seqs[right_id]
+
+        motif = [lseq, rseq]
+        valid = False if lseq == '' and rseq == '' else is_motif_valid(motif, mismatches)
+        return valid, ''.join(motif)
     except KeyError:
         # occurs if chrom not in reference
         logging.info('''WARNING: one of the following motif Locations could not be
                         retrieved from the provided reference: %s, %s''' % (left_id, right_id))
-        return False
+        return False, ''
 
 def get_valid_motif_vars(variants, args):
     '''
@@ -172,7 +227,7 @@ def get_valid_motif_vars(variants, args):
             over_limit = np.logical_or(mlocs.start > chr_max, mlocs.end > chr_max)
             mlocs = mlocs.drop(mlocs[np.logical_and(mlocs['chr'] == chrom, over_limit)].index)
         except KeyError:
-            logging.info("WARNING: chrom %s does not exist in hg38 reference." % ref_chrom)
+            logging.info("WARNING: unable to check length for chrom %s, as it does not exist in hg38 reference." % ref_chrom)
             continue
 
     # extract sequences
@@ -182,10 +237,12 @@ def get_valid_motif_vars(variants, args):
 
     # check whether variants have valid motifs
     # left blocks
-    valid_vars = []
+    valid_vars, motifs = [], []
     if len(l_blocks) > 0:
         left_ids = ['%s:%d-%d' % loc for loc in zip(l_blocks[0], l_blocks[1]-3, l_blocks[1]-1)]
-        valid_left = [is_valid_motif(lid, '', bs) for lid in left_ids]
+        info_left = [check_valid_motif(lid, '', bs, args.mismatches) for lid in left_ids]
+        valid_left = [v for (v, m) in info_left]
+        motifs.extend([m for (v, m) in info_left])
         if any(valid_left):
             valid_vars.extend(l_blocks[valid_left][2].values)
 
@@ -193,7 +250,9 @@ def get_valid_motif_vars(variants, args):
     if len(r_blocks) > 0:
         rpos = r_blocks[1] + r_blocks[3].apply(len)-1
         right_ids = ['%s:%d-%d' % loc for loc in zip(r_blocks[0], rpos, rpos+2)]
-        valid_right = [is_valid_motif('', rid, bs) for rid in right_ids]
+        info_right = [check_valid_motif('', rid, bs, args.mismatches) for rid in right_ids]
+        valid_right = [v for (v, m) in info_right]
+        motifs.extend([m for (v, m) in info_right])
         if any(valid_right):
             valid_vars.extend(r_blocks[valid_right][2].values)
 
@@ -202,11 +261,24 @@ def get_valid_motif_vars(variants, args):
         rpos = b_blocks[1] + b_blocks[3].apply(len)-1
         left_ids = ['%s:%d-%d' % loc for loc in zip(b_blocks[0], b_blocks[1]-3, b_blocks[1]-1)]
         right_ids = ['%s:%d-%d' % loc for loc in zip(b_blocks[0], rpos, rpos+2)]
-        valid_both = [is_valid_motif(lid, rid, bs) for lid, rid in zip(left_ids, right_ids)]
+        info_both = [check_valid_motif(lid, rid, bs, args.mismatches) for lid, rid in zip(left_ids, right_ids)]
+        valid_both = [v for (v, m) in info_both]
+        motifs.extend([m for (v, m) in info_both])
         if any(valid_both):
             valid_vars.extend(b_blocks[valid_both][2].values)
 
-    return np.unique(valid_vars)
+    motif_info = pd.concat([l_blocks, r_blocks, b_blocks])
+    motif_info['motif'] = motifs
+    motif_info['variant_id'] = motif_info[2]
+    motif_info['valid_motif'] = motif_info.variant_id.isin(valid_vars)
+    return motif_info[['variant_id', 'motif', 'valid_motif']]
+
+def check_for_valid_motifs(contigs, vars_to_check, args):
+    if any(vars_to_check):
+        motif_info = get_valid_motif_vars(contigs[vars_to_check], args)
+        contigs = contigs.merge(motif_info, on = 'variant_id', how = 'left')
+        contigs['motif'] = contigs.motif.fillna('')
+    return contigs
 
 def check_overlap(ex_trees, chrom, start, end, size=0):
     '''
@@ -283,18 +355,10 @@ def overlaps_exon(sv, ex_trees):
     size = MIN_CLIP if sv['variant_type'] in NOVEL_JUNCS else size
 
     olap = check_overlap(ex_trees, chr1, start, end, size=size)
-    if sv['variant_type'] == 'FUS':
+    if sv['variant_type'] in LARGE_SV:
         olap = olap or check_overlap(ex_trees, chr2, end,
                                      start + 1, size=size)
     return olap
-
-def check_for_valid_motifs(contigs, vars_to_check, args):
-    valid_motif = np.array(contigs.valid_motif)
-    if any(vars_to_check):
-        valid_motif_vars = get_valid_motif_vars(contigs[vars_to_check], args)
-        valid_motif[vars_to_check] = contigs[vars_to_check].variant_id.isin(valid_motif_vars).values
-
-    return valid_motif
 
 def match_splice_juncs(contigs):
     '''
@@ -343,7 +407,10 @@ def get_junc_vars(contigs, ex_trees, args):
                                       np.invert(within_exon),
                                       contigs.overlaps_exon))
     if 'valid_motif' in contigs.columns.values:
-        contigs['valid_motif'] = check_for_valid_motifs(contigs, is_trunc, args)
+        contigs_tmp = contigs.drop(['motif', 'valid_motif'], axis = 1)
+        contigs_tmp = check_for_valid_motifs(contigs_tmp, is_trunc, args)
+        contigs.loc[is_trunc, 'motif'] = contigs_tmp.motif
+        contigs.loc[is_trunc, 'valid_motif'] = contigs_tmp.valid_motif
         is_trunc = np.logical_and(is_trunc, contigs.valid_motif)
     trunc_vars = contigs[is_trunc].variant_id.values
 
@@ -374,14 +441,15 @@ def get_tsv_vars(contigs):
 
 def get_fusion_vars(contigs):
     '''
-    Return all fusion variants and associated variants at fusion boundaries
+    Return all variants and associated variants at
+    large rearrangement (fusion/IGR) boundaries
     '''
-    is_fus = contigs.variant_type.isin(FUSIONS)
+    is_fus = contigs.variant_type.isin(LARGE_SV)
     fus_ids = contigs[is_fus].contig_id.values
     fus_locs = np.union1d(contigs[is_fus].pos1, contigs[is_fus].pos2)
     non_fus_vars = contigs[np.logical_and(contigs.contig_id.isin(fus_ids), np.invert(is_fus))]
 
-    # consider variant associated with fusions (at fusion boundaries) interesting
+    # consider variants at boundaries of large rearrangements interesting
     at_fus_boundary = np.logical_or(non_fus_vars.pos1.isin(fus_locs),
                                     non_fus_vars.pos2.isin(fus_locs))
     fus_boundary_vars = non_fus_vars[at_fus_boundary].variant_id.values
@@ -437,9 +505,8 @@ def get_contigs_to_keep(args):
                                                 np.invert(contigs.overlaps_gene)))
     # novel exon contigs (spliced, valid motif and large variant size)
     is_novel_exon = np.logical_and(contigs.spliced_exon, contigs.large_varsize)
-    if not args.skipMotifCheck:
-        contigs['valid_motif'] = np.array([None] * len(contigs))
-        contigs['valid_motif'] = check_for_valid_motifs(contigs, is_novel_exon, args)
+    if args.mismatches < 4:
+        contigs = check_for_valid_motifs(contigs, is_novel_exon, args)
         is_novel_exon = np.logical_and(is_novel_exon, contigs.valid_motif)
     ne_vars = contigs[np.logical_or(is_novel_exon, is_intergenic_exon)].variant_id.values
 

@@ -126,7 +126,7 @@ def reformat_fields(contigs):
                'VAF', 'varsize', 'contig_varsize', 'cpos',
                'large_varsize', 'is_contig_spliced',
                'spliced_exon', 'overlaps_exon', 'overlaps_gene']
-    variant = variant if 'valid_motif' not in contigs.columns.values else variant + ['valid_motif']
+    variant = variant if 'valid_motif' not in contigs.columns.values else variant + ['motif', 'valid_motif']
     de = ['TPM', 'mean_WT_TPM', 'logFC', 'PValue', 'FDR']
     de = ['case_CPM'] + de if 'case_CPM' in contigs.columns.values else de
     de = ['TPM', 'mean_WT_TPM'] if not ran_de else de

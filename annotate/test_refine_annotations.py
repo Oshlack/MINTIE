@@ -32,21 +32,54 @@ for s,e in coords:
     ref_tree.addi(s, e)
 ex_trees['chr2']= ref_tree
 
-@pytest.mark.parametrize('seq,expected', [('AG,GT', True),
-                                          ('AC,CT', True),
-                                          ('CA,GT', False),
-                                          (',', False),
-                                          ('AG,', True),
-                                          ('AC,', True),
-                                          (',GT', True),
-                                          (',CT', True),
-                                          ('CA,', False),
-                                          (',AC', False)])
-def test_is_valid_motif(seq, expected):
+@pytest.mark.parametrize('params,expected', [(['AG', 0, '+'], 0),
+                                             (['AC', 0, '-'], 0),
+                                             (['AC', 0, '+'], 1),
+                                             (['AC', 1, '-'], 2),
+                                             (['AC', 1, '+'], 2),
+                                             (['GT', 1, '+'], 0),
+                                             (['GT', 0, '+'], 2),
+                                             (['GT', 1, '-'], 1),
+                                             (['TG', 1, '+'], 2),
+                                             (['TG', 0, '+'], 1),
+                                             (['TG', 1, '-'], 2),
+                                             (['TG', 0, '-'], 2)])
+def test_get_diff_count(params, expected):
+    motif, side, strand = params
+    sense = strand == '+'
+    diff  = ra.get_diff_count(motif, side = side, sense = sense)
+    assert diff == expected
+
+@pytest.mark.parametrize('params,expected', [(['AG,GT', 0], True),
+                                            (['AC,CT', 0], True),
+                                            (['CA,GT', 0], False),
+                                            (['AG,GT', 1], True),
+                                            (['AG,CT', 1], True),
+                                            (['AG,CC', 1], False),
+                                            (['AG,CC', 2], True),
+                                            (['TT,CC', 2], False),
+                                            (['AG,CC', 3], True),
+                                            ([',', 0], False),
+                                            ([',', 2], False),
+                                            (['AG,', 0], True),
+                                            (['AC,', 0], True),
+                                            ([',GT', 0], True),
+                                            ([',CT', 0], True),
+                                            (['CA,', 0], False),
+                                            (['CA,', 1], False),
+                                            (['CA,', 2], False),
+                                            (['CA,', 3], True),
+                                            ([',CA', 1], True),
+                                            ([',CA', 2], True),
+                                            ([',TC', 2], False),
+                                            ([',AC', 0], False)])
+def test_check_valid_motif(params, expected):
+    seq, mismatches = params
     block_seqs = seq.split(',')
     left_idx = '' if block_seqs[0] == '' else 0
     right_idx = '' if block_seqs[1] == '' else 1
-    assert ra.is_valid_motif(left_idx, right_idx, block_seqs) == expected
+    valid, motif = ra.check_valid_motif(left_idx, right_idx, block_seqs, mismatches)
+    assert valid == expected and motif == ''.join(block_seqs)
 
 @pytest.mark.parametrize('coord,expected', [((150, 160), True),
                                             ((90, 101), False),

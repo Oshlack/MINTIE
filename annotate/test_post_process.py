@@ -110,6 +110,7 @@ def test_reformat_fields():
                 'spliced_exon': [True, False],
                 'overlaps_exon': [False, False],
                 'overlaps_gene': [True, True],
+                'motif': ['CC', 'AG'],
                 'valid_motif': [False, True],
                 'sample': ['S1', 'S1'],
                 'logFC': [10, 10],

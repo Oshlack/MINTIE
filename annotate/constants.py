@@ -12,6 +12,7 @@ DEFAULT_MIN_GAP = 3
 DEFAULT_MIN_CLIP = 30
 DEFAULT_MIN_MATCH_BP = 30
 DEFAULT_MIN_MATCH_PERC = 0.3
+DEFAULT_MISMATCHES = 0
 
 #=====================================================================================================
 # VCF output parameters

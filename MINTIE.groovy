@@ -27,6 +27,9 @@ if(!binding.variables.containsKey("assemblyFasta")){
 if(!binding.variables.containsKey("run_de_step")){
     run_de_step="true"
 }
+if(!binding.variables.containsKey("splice_motif_mismatch")){
+    splice_motif_mismatch=0
+}
 
 fastq_dedupe = {
     from("*.gz"){
@@ -231,7 +234,6 @@ annotate_contigs = {
 refine_contigs = {
     def sample_name = branch.name
     output.dir = sample_name
-    def motif_check = check_motifs.toBoolean() ? "" : "--skipMotifCheck"
     produce("novel_contigs.vcf", "novel_contigs_info.tsv", "novel_contigs.bam", "novel_contigs.fasta"){
         exec """
         $python ${code_base}/annotate/refine_annotations.py \
@@ -239,7 +241,7 @@ refine_contigs = {
             $genome_fasta $output.prefix \
             --minClip $min_clip \
             --minGap $min_gap \
-            $motif_check \
+            --mismatches $splice_motif_mismatch \
             --log $output.dir/refine.log > $output.vcf ;
         $samtools index $output.bam ;
         $python $code_base/util/filter_fasta.py $input.fasta $output.tsv --col_id contig_id > $output.fasta ;

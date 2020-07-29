@@ -1,4 +1,4 @@
--p threads=8
+-p threads=2
 -p assembly_mem=128
 -p assembler=soap
 -p scores=33
@@ -12,10 +12,10 @@
 -p min_logfc=5
 -p min_cpm=0.1
 -p fdr=0.05
--p sort_ram=4G
+-p sort_ram=2G
 -p gene_filter=
 -p var_filter=
--p check_motifs=false
+-p splice_motif_mismatch=4
 -p fastqCaseFormat=cases/%_R*.fastq.gz
 -p fastqControlFormat=controls/%_R*.fastq.gz
 -p assemblyFasta=

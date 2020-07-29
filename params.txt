@@ -15,7 +15,7 @@
 -p sort_ram=4G
 -p gene_filter=
 -p var_filter=
--p check_motifs=true
+-p splice_motif_mismatch=0
 -p fastqCaseFormat=cases/%_R*.fastq.gz
 -p fastqControlFormat=controls/%_R*.fastq.gz
 -p assemblyFasta=
