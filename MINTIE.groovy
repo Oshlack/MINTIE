@@ -72,7 +72,7 @@ trim = {
 
 assemble = {
     def sample_name = branch.name
-    def Ks_for_soap = Ks.split(',').join(' ')
+    def Ks_for_soap = Ks.toString().contains(',') ? Ks.split(',').join(' ') : Ks
     output.dir = sample_name
     produce(sample_name + '_denovo_filt.fasta'){
         if (assemblyFasta != '') {
@@ -92,24 +92,38 @@ assemble = {
             """, "assemble"
         } else {
             exec """
+            rlens=`zcat $input1 $input2 \
+                       | awk -v mrl=$min_read_length 'BEGIN {minlen = mrl; maxlen = 0} {
+                            if (NR % 4 == 2) {
+                                rlen = length(\$1) ;
+                                if (rlen > maxlen) {maxlen = rlen}
+                                if (rlen < minlen) {minlen = rlen}
+                            }} END {print minlen" "maxlen}'` ;
+            min_rlen=\${rlens% *} ;
+            max_rlen=\${rlens#* } ;
+
             if [ ! -d $output.dir/SOAPassembly ]; then
                 mkdir $output.dir/SOAPassembly ;
             fi ;
             cd $output.dir/SOAPassembly ;
 
-            echo \"max_rd_len=$max_read_length\" > config.config ;
+            echo \"max_rd_len=\$max_rlen\" > config.config ;
             echo -e \"[LIB]\\nq1=../../$input1\\nq2=../../$input2\" >> config.config ;
             if [ -e SOAP.fasta ]; then rm SOAP.fasta ; fi ;
             for k in $Ks_for_soap ; do
-                $soapdenovotrans pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
-                $soapdenovotrans contig -g outputGraph_\$k ;
-                cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
+                if [ \$k -gt \$min_rlen ]; then
+                    echo "WARNING: Kmer size \$k exceeds minimum read length \${min_rlen}. Please double check parameters." ;
+                else
+                    $soapdenovotrans pregraph -s config.config -o outputGraph_\$k -K \$k -p $threads ;
+                    $soapdenovotrans contig -g outputGraph_\$k ;
+                    cat outputGraph_\$k.contig | sed "s/^>/>k\${k}_/g" >> SOAP.fasta ;
+                fi ;
             done ;
 
             cd ../../ ;
             $dedupe in=$sample_name/SOAPassembly/SOAP.fasta out=stdout.fa threads=$threads overwrite=true | \
                 $fasta_formatter | \
-                awk '!/^>/ { next } { getline seq } length(seq) > $max_read_length { print \$0 "\\n" seq }' > $output ;
+                awk '!/^>/ { next } { getline seq } length(seq) > $min_contig_len { print \$0 "\\n" seq }' > $output ;
             if [ ! -s $output ] ; then
                 rm $output ;
                 echo "ERROR: de novo assembled contigs fasta file is empty." ;

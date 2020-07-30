@@ -22,7 +22,6 @@ matrix:
         - ./test/setup_references_test.sh
       script:
         - test/run_test.sh
-        - test/run_test_viz.sh
         - tools/bin/bpipe errors
         - tail commandlog.txt
 
