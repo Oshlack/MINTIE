@@ -3,7 +3,7 @@
 -p assembler=soap
 -p scores=33
 -p min_read_length=76
--p min_contig_len=150
+-p min_contig_len=100
 -p minQScore=20
 -p Ks=29,49,69
 -p min_gap=7

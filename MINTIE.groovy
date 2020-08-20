@@ -143,7 +143,7 @@ create_salmon_index = {
     }
     output.dir = salmon_index
     def index_fasta = output.dir + "/" + sample_name + ".fasta"
-    produce(index_fasta, 'hash.bin'){
+    produce(index_fasta, '*.bin'){
         exec """
         cat $trans_fasta $input.fasta > $output1 ;
         $salmon index -t $output1 -i $salmon_index -p $threads ;
@@ -170,7 +170,7 @@ run_salmon = {
         output.dir = sample_name + "/salmon_out/aux_info"
     }
 
-    produce("eq_classes.txt"){
+    produce("eq_classes.txt*"){
         exec """
         cd $output.dir/../.. ;
         $salmon quant --dumpEq --seqBias -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $base_outdir

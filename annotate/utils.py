@@ -3,7 +3,7 @@ import sys
 import logging
 import pickle
 
-PROGRAM_NAME = 'MAKE_SUPERTRANSCRIPT'
+PROGRAM_NAME = 'ANNOTATE'
 def exit_with_error(message, exit_status):
     '''
     Print an error message to stderr, prefixed by the program name and 'ERROR'.
