@@ -19,7 +19,7 @@ if (!require("tximport") | !require("edgeR")) {
         biocLite("edgeR")
     } else {
         if (!requireNamespace("BiocManager", quietly = TRUE)) {
-            install.packages("BiocManager")
+            install.packages("BiocManager", repos=repos)
         }
         BiocManager::install("tximport")
         BiocManager::install("edgeR")
