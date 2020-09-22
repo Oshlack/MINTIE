@@ -278,6 +278,9 @@ def check_for_valid_motifs(contigs, vars_to_check, args):
         motif_info = get_valid_motif_vars(contigs[vars_to_check], args)
         contigs = contigs.merge(motif_info, on = 'variant_id', how = 'left')
         contigs['motif'] = contigs.motif.fillna('')
+    else:
+        contigs['motif'] = ''
+        contigs['valid_motif'] = None
     return contigs
 
 def check_overlap(ex_trees, chrom, start, end, size=0):
@@ -412,7 +415,7 @@ def get_junc_vars(contigs, ex_trees, args):
         contigs.loc[is_trunc, 'motif'] = contigs_tmp.motif
         contigs.loc[is_trunc, 'valid_motif'] = contigs_tmp.valid_motif
         is_trunc = np.logical_and(is_trunc, contigs.valid_motif)
-    trunc_vars = contigs[is_trunc].variant_id.values
+    trunc_vars = contigs[pd.Series(is_trunc).fillna(False)].variant_id.values
 
     return np.unique(np.concatenate([nj_dels, trunc_vars]))
 
