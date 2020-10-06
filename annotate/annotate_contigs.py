@@ -555,6 +555,7 @@ def annotate_fusion(args, read, juncs, bam_idx, ex_ref, ref_trees, outbam):
     annotate_single_read(args, r2, juncs, ex_ref, ref_trees, genes=cv2.genes)
 
 def annotate_juncs(cv, read, locs, novel_juncs, ci_file):
+    cv.cvsize = 0
     for junc in novel_juncs:
         pos1, pos2 = int(junc[1]), int(junc[2])
         junc_idx = [idx for idx, block in cv.blocks if block[1] == pos1][0]

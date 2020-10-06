@@ -3,7 +3,7 @@ Module      : create_ec_count_matrix
 Description : Perform contig annotation.
 Copyright   : (c) Marek Cmero, Dec 2018
 License     : MIT
-Maintainer  : MAREK.CMERO@MCRI.EDU.AU
+Maintainer  : github.com/mcmero
 Portability : POSIX
 Match salmon equivalence class output files from multiple
 samples and create a matched transcript and EC matrix

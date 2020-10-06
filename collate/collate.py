@@ -2,8 +2,8 @@
 Module      : collate
 Description : Check ST alignment and count reads at coundaries
 Copyright   : (c) Marek Cmero, Sep 2018
-License     : TBD
-Maintainer  : MAREK.CMERO@MCRI.EDU.AU
+License     : MIT
+Maintainer  : github.com/mcmero
 Portability : POSIX
 Features:
     - check contig alignment to supertranscript

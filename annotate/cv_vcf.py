@@ -114,8 +114,13 @@ class CrypticVariant(object):
         '''
         Write contig info for a given variant/variant pair
         '''
-        # make varsize block size for block annotations
-        varsize = cv1.cvsize - 1 if cv1.cvtype in ['NE', 'EE', 'RI'] else cv1.vsize
+        # adjust varsize for block annotations, fusions and junctions
+        varsize = cv1.cvsize if cv1.cvtype in ['NE', 'EE', 'RI'] else cv1.vsize
+        is_intx = cv1.cvtype in ['FUS', 'IGR'] and cv1.chrom == cv2.chrom
+        if is_intx or cv1.cvtype in cv1.cvtype in ['PNJ', 'NEJ', 'AS']:
+            varsize = abs(cv1.pos - cv2.pos)
+
+        # fix pos2 for insertions and soft-clips
         cv_pos2 = cv1.pos if cv1.cvtype in ['INS', 'UN'] else cv1.pos + varsize
 
         pos1 = "%s:%d(%s)" % (cv1.chrom, cv1.pos, cv1.cstrand)
@@ -129,7 +134,7 @@ class CrypticVariant(object):
             genes = cv1.genes
 
         line = [cv1.cid, cv1.vid, cv1.parid, pos1,
-                pos2, cv1.vsize, cv1.cpos, cv1.cvsize,
+                pos2, varsize, cv1.cpos, cv1.cvsize,
                 cv1.clen, cigar, cv1.cvtype, genes]
         line = [str(item) for item in line]
 

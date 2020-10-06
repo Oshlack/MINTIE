@@ -2,8 +2,8 @@
 Module      : run_simu
 Description : Create simulated cryptic variants
 Copyright   : (c) Marek Cmero, 2019
-License     : TBD
-Maintainer  : MAREK.CMERO@MCRI.EDU.AU
+License     : MIT
+Maintainer  : github.com/mcmero
 Portability : POSIX
 '''
 import os
