@@ -283,26 +283,56 @@ def check_for_valid_motifs(contigs, vars_to_check, args):
         contigs['valid_motif'] = None
     return contigs
 
+def get_overlap_size(ex_trees, chrom, start, end):
+    '''
+    Returns by how many bases the variant overlaps
+    any reference exon by (i.e. for truncated exons
+    and novel introns), otherwise returns nan. A value
+    of 0 indicates adjacent elements.
+    '''
+    ex_tree = ac.get_chrom_ref_tree(chrom, ex_trees)
+    if not ex_tree:
+        return float('nan')
+
+    olap_left = ex_tree.overlaps(start - 1, start)
+    olap_right = ex_tree.overlaps(end, end + 1)
+    if not olap_left and not olap_right:
+        return float('nan')
+    else:
+        match_left = ex_tree.overlap(start - 1, start)
+        match_right = ex_tree.overlap(end, end + 1)
+        single_match = not olap_left or not olap_right
+
+        if match_left == match_right or single_match:
+            # simple case -- this means only one exon is involved
+            olap_se = match_left if olap_left else match_right
+            es, ee = [(x[0], x[1]) for x in olap_se][0]
+            size_within = min([ee, end]) - start if start >= es \
+                                          else end - max([es, start])
+            return size_within
+        else:
+            # more complex case, we need to check both overlaps
+            # we return the largest overlap of the two ends
+            es, ee = [(x[0], x[1]) for x in match_left][0]
+            size_within1 = min([ee, end]) - start if start >= es \
+                                          else end - max([es, start])
+            es, ee = [(x[0], x[1]) for x in match_right][0]
+            size_within2 = min([ee, end]) - start if start >= es \
+                                          else end - max([es, start])
+            return max(size_within1, size_within2)
+
 def check_overlap(ex_trees, chrom, start, end, size=0):
     '''
     Checks whether variant overlaps an exonic region.
     For deletions, at least MIN_GAP bp of the deletion
-    must be within the exon body.
+    must be within the exon body. Directly adjacent variants
+    are considered overlapping.
     '''
-    olap = False
-    ex_tree = ac.get_chrom_ref_tree(chrom, ex_trees)
-    if not ex_tree:
-        return olap
-
-    olap = ex_tree.overlaps(start, end)
-    if olap and size > 0:
-        olap_se = ex_tree.overlap(start, end)
-        es, ee = [(x[0], x[1]) for x in olap_se][0]
-        size_within = min([ee, end]) - start if start >= es \
-                                      else end - max([es, start])
-        olap = size_within >= size
-
-    return olap
+    olap_size = get_overlap_size(ex_trees, chrom, start, end)
+    if np.isnan(olap_size):
+        return False
+    else:
+        return olap_size >= size
 
 def get_pos_parts(loc):
     loc = loc.split(':')
@@ -345,23 +375,21 @@ def overlaps_exon(sv, ex_trees):
     '''
     Checks whether variant overlaps an exonic region.
     In variants involving two ends (fusions, junctions etc.)
-    only one end has to overlap and exon to return true
+    only one end has to overlap an exon to return true
     '''
     chr1, start, s1 = get_pos_parts(sv['pos1'])
     chr2, end, s2 = get_pos_parts(sv['pos2'])
 
-    # check starts/ends separately for all vars but deletions and juncs
     span_vars = ['DEL'] + NOVEL_JUNCS
-    end = end if sv['variant_type'] in span_vars else start + 1
-
-    size = MIN_GAP if sv['variant_type'] == 'DEL' else 0
-    size = MIN_CLIP if sv['variant_type'] in NOVEL_JUNCS else size
-
-    olap = check_overlap(ex_trees, chr1, start, end, size=size)
-    if sv['variant_type'] in LARGE_SV:
-        olap = olap or check_overlap(ex_trees, chr2, end,
-                                     start + 1, size=size)
-    return olap
+    if sv['variant_type'] in span_vars:
+        # consider whole span of variant in overlap test
+        size = MIN_GAP if sv['variant_type'] == 'DEL' else MIN_CLIP
+        return check_overlap(ex_trees, chr1, start, end, size=size)
+    else:
+        # check starts/ends separately
+        olap1 = check_overlap(ex_trees, chr1, start, start + 1)
+        olap2 = check_overlap(ex_trees, chr2, end, end + 1)
+        return olap1 or olap2
 
 def match_splice_juncs(contigs):
     '''
@@ -516,8 +544,14 @@ def get_contigs_to_keep(args):
     # keep all splice vars
     as_vars = contigs.variant_id.values[contigs.variant_type.isin(SPLICE_VARS)]
 
-    # get junc vars
+    # get junc vars and, for valid vars, fix varsizes and set spliced exon to true
     junc_vars = get_junc_vars(contigs, ex_trees, args)
+    is_junc_var = contigs.variant_id.isin(junc_vars)
+    loc1 = contigs[is_junc_var].pos1.apply(get_pos_parts).values
+    loc2 = contigs[is_junc_var].pos2.apply(get_pos_parts).values
+    junc_varsizes = [get_overlap_size(ex_trees, loc1[0], loc1[1], loc2[1]) for loc1, loc2 in zip(loc1, loc2)]
+    contigs.loc[is_junc_var, 'varsize'] = junc_varsizes
+    contigs.loc[is_junc_var, 'spliced_exon'] = True
 
     # check size of retained introns
     ri_vars = contigs[np.logical_and(contigs.variant_type == 'RI',

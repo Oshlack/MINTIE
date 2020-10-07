@@ -1,5 +1,6 @@
 import pytest
 import pandas as pd
+import numpy as np
 import refine_annotations as ra
 from intervaltree import Interval, IntervalTree
 
@@ -18,16 +19,16 @@ ra.set_globals(args)
 # these data could represent exons or genes
 ex_trees = {}
 ref_tree = IntervalTree()
-coords = [(100, 200),
-          (300, 400)]
+coords = [(100, 201),
+          (300, 401)]
 for s,e in coords:
     ref_tree.addi(s, e)
 ex_trees['chr1'] = ref_tree
 
 # make reference -- chrom2
 ref_tree = IntervalTree()
-coords = [(500, 600),
-          (800, 900)]
+coords = [(500, 601),
+          (800, 901)]
 for s,e in coords:
     ref_tree.addi(s, e)
 ex_trees['chr2']= ref_tree
@@ -81,12 +82,27 @@ def test_check_valid_motif(params, expected):
     valid, motif = ra.check_valid_motif(left_idx, right_idx, block_seqs, mismatches)
     assert valid == expected and motif == ''.join(block_seqs)
 
+@pytest.mark.parametrize('coord,expected', [((150, 160), 10),
+                                            ((90, 100), 0),
+                                            ((90, 101), 1),
+                                            ((198, 205), 3),
+                                            ((193, 200), 7),
+                                            ((201, 208), 0),
+                                            ((100, 107), 7),
+                                            ((50, 90), float('nan'))])
+def test_get_overlap_size(coord, expected):
+    s, e = coord
+    if np.isnan(expected):
+        assert np.isnan(ra.get_overlap_size(ex_trees, 'chr1', s, e))
+    else:
+        assert ra.get_overlap_size(ex_trees, 'chr1', s, e) == expected
+
 @pytest.mark.parametrize('coord,expected', [((150, 160), True),
                                             ((90, 101), False),
                                             ((198, 205), False),
                                             ((193, 200), True),
                                             ((100, 107), True)])
-def test_check_overlap_del(coord, expected):
+def test_check_overlap_with_size(coord, expected):
     s, e = coord
     assert ra.check_overlap(ex_trees, 'chr1', s, e, size = args.minGap) == expected
 
@@ -152,7 +168,7 @@ def test_match_splice_juncs():
     assert all(ra.match_splice_juncs(contigs) == pd.Series([True, False, False]))
 
 
-@pytest.mark.parametrize('coord,expected', [((200, 250, 'NE'), False),
+@pytest.mark.parametrize('coord,expected', [((210, 250, 'NE'), False),
                                             ((100, 150, 'DEL'), True),
                                             ((450, 500, 'FUS'), False)])
 def test_vars_overlap_exons(coord, expected):
