@@ -173,7 +173,7 @@ run_salmon = {
     produce("eq_classes.txt*"){
         exec """
         cd $output.dir/../.. ;
-        $salmon quant --dumpEq --seqBias -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $base_outdir
+        $salmon quant --dumpEq --seqBias --validateMappings --hardFilter -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $base_outdir
         """, "run_salmon"
     }
 }
