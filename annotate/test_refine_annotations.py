@@ -89,6 +89,7 @@ def test_check_valid_motif(params, expected):
                                             ((193, 200), 7),
                                             ((201, 208), 0),
                                             ((100, 107), 7),
+                                            ((195, 320), 20),
                                             ((50, 90), float('nan'))])
 def test_get_overlap_size(coord, expected):
     s, e = coord
@@ -101,6 +102,8 @@ def test_get_overlap_size(coord, expected):
                                             ((90, 101), False),
                                             ((198, 205), False),
                                             ((193, 200), True),
+                                            ((195, 320), True),
+                                            ((195, 305), False),
                                             ((100, 107), True)])
 def test_check_overlap_with_size(coord, expected):
     s, e = coord
@@ -111,6 +114,9 @@ def test_check_overlap_with_size(coord, expected):
                                             ((198, 205), True),
                                             ((193, 200), True),
                                             ((100, 107), True),
+                                            ((200, 300), True),
+                                            ((202, 298), False),
+                                            ((201, 298), True),
                                             ((50, 90), False)])
 def test_check_overlap(coord, expected):
     s, e = coord
