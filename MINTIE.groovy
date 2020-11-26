@@ -35,17 +35,9 @@ fastq_dedupe = {
     from("*.gz"){
         def sample_name = branch.name
         output.dir = sample_name
-        produce(sample_name+'.1.fastq.gz',sample_name+'.2.fastq.gz'){
+        produce(sample_name+'.1.fastq.gz'){
             exec """
-            gunzip -c $input1.gz > $sample_name/temp1.fastq ;
-            gunzip -c $input2.gz > $sample_name/temp2.fastq ;
-            echo $sample_name/temp1.fastq > $sample_name/fastq.list ;
-            echo $sample_name/temp2.fastq >> $sample_name/fastq.list ;
-            echo "Reads before:" ; wc -l $sample_name/temp1.fastq ;
-            $fastuniq -i $sample_name/fastq.list -o $output1.prefix -p $output2.prefix ;
-            echo "Reads after:" ; wc -l $output1.prefix ;
-            gzip $output1.prefix $output2.prefix ;
-            rm $sample_name/fastq.list $sample_name/temp1.fastq $sample_name/temp2.fastq
+            dedupe $input.gz $output
             """, "fastq_dedupe"
         }
     }
@@ -53,7 +45,7 @@ fastq_dedupe = {
 
 trim = {
     output.dir = branch.name
-    produce('trim1.fastq.gz', 'trim2.fastq.gz') {
+    produce('trim1.fastq.gz') {
         if (assemblyFasta != '') {
             // no need to trim if assembly provided
             exec """
@@ -61,10 +53,10 @@ trim = {
             """
         } else {
             exec """
-            $trimmomatic PE -threads $threads -phred$scores $input1 $input2
-                $output1.prefix /dev/null $output2.prefix /dev/null
+            $trimmomatic SE -threads $threads -phred$scores $input1
+                $output1.prefix
                 LEADING:$minQScore TRAILING:$minQScore MINLEN:$min_read_length ;
-            gzip $output1.prefix $output2.prefix ;
+            gzip $output1.prefix  ;
             """, "trim"
         }
     }
@@ -92,7 +84,7 @@ assemble = {
             """, "assemble"
         } else {
             exec """
-            rlens=`zcat $input1 $input2 \
+            rlens=`zcat $input1 \
                        | awk -v mrl=$min_read_length 'BEGIN {minlen = mrl; maxlen = 0} {
                             if (NR % 4 == 2) {
                                 rlen = length(\$1) ;
@@ -108,7 +100,7 @@ assemble = {
             cd $output.dir/SOAPassembly ;
 
             echo \"max_rd_len=\$max_rlen\" > config.config ;
-            echo -e \"[LIB]\\nq1=../../$input1\\nq2=../../$input2\" >> config.config ;
+            echo -e \"[LIB]\\nq=../../$input1\" >> config.config ;
             if [ -e SOAP.fasta ]; then rm SOAP.fasta ; fi ;
             for k in $Ks_for_soap ; do
                 if [ \$k -gt \$min_rlen ]; then
@@ -153,7 +145,7 @@ create_salmon_index = {
 
 run_salmon = {
     def workingDir = System.getProperty("user.dir");
-    def (rf1, rf2) = inputs.split().collect { workingDir+"/$it" }
+    def rf = inputs.split().collect { workingDir+"/$it" }[0]
     def salmon_index="all_fasta_index"
     def base_outdir = "salmon_out"
     def controls_dir = fastqControlFormat.split("/")[-2]
@@ -173,7 +165,7 @@ run_salmon = {
     produce("eq_classes.txt*"){
         exec """
         cd $output.dir/../.. ;
-        $salmon quant --dumpEq --seqBias --validateMappings --hardFilter -i $salmon_index -l A -r $rf1 $rf2 -p $threads -o $base_outdir
+        $salmon quant --dumpEq --seqBias --validateMappings --hardFilter -i $salmon_index -l A -r $rf -p $threads -o $base_outdir
         """, "run_salmon"
     }
 }
