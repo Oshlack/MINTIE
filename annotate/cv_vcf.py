@@ -121,7 +121,7 @@ class CrypticVariant(object):
             varsize = abs(cv1.pos - cv2.pos)
 
         # fix pos2 for insertions and soft-clips
-        cv_pos2 = cv1.pos if cv1.cvtype in ['INS', 'UN'] else cv1.pos + varsize
+        cv_pos2 = cv1.pos if cv1.cvtype in ['INS', 'UN'] else cv1.pos + varsize - 1
 
         pos1 = "%s:%d(%s)" % (cv1.chrom, cv1.pos, cv1.cstrand)
         pos2 = "%s:%d(%s)" % (cv2.chrom, cv2.pos, cv2.cstrand) if cv2 \
