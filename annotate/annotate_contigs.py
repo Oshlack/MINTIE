@@ -610,9 +610,6 @@ def annotate_single_read(args, read, juncs, ex_ref, ref_trees, outbam=None, gene
     has_gaps = any([op in constants.GAPS and val >= MIN_GAP for op, val in read.cigar])
     has_scs = any([op == constants.CIGAR['soft-clip'] and val >= MIN_CLIP for op, val in read.cigar])
     is_spliced = any([op == constants.CIGAR['skipped'] for op, val in read.cigar])
-    if not is_spliced and not (has_gaps or has_scs or fusion):
-        logging.info('No splicing, gaps or clipping observed in read %s; skipping' % read.query_name)
-        return
 
     # check junctions
     tx_juncs = get_tx_juncs(read)
@@ -677,9 +674,13 @@ def annotate_contigs(args):
             logging.info('Skipping contig %s: not enough bases match reference' % read.query_name)
             continue
 
-        if all([op == constants.CIGAR['match'] for op, val in read.cigar]):
-            logging.info('Skipping contig %s: unspliced contiguous alignment' % read.query_name)
-            continue
+        if len(read.get_blocks()) == 1:
+            chr_ex = get_chrom_ref_tree(read.reference_name, ex_tree)
+            s, e = read.get_blocks()[0]
+            if not (chr_ex.overlaps(s, s + 1) and chr_ex.overlaps(e - 1, e)):
+                # skip the contig if the contig start or end are outside exons
+                logging.info('Skipping contig %s: unspliced contiguous alignment' % read.query_name)
+                continue
 
         is_hardclipped = any([op == constants.CIGAR['hard-clip'] and val >= MIN_CLIP for op, val in read.cigar])
         if is_hardclipped:
