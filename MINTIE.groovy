@@ -241,7 +241,7 @@ annotate_contigs = {
             --minGap $min_gap \
             --minMatch $min_match \
             --log $output.dir/annotate.log > $output.vcf
-        """
+        """, "annotate_contigs"
     }
 }
 

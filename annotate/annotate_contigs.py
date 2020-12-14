@@ -386,8 +386,9 @@ def annotate_softclips(cv, read, ci_file):
         block = cv.blocks[block_idx][1]
         cv.pos = int(block[0]) + 1 if sc_left else int(block[1])
 
-        rcigar = read.cigar[::-1] if cv.strand == '-' else read.cigar
-        cv.cpos = sum([v for c,v in rcigar[:sc_idx] if c in constants.AFFECT_CONTIG])
+        rcigar = read.cigar[::-1] if cv.cstrand == '-' else read.cigar
+        idx = len(rcigar) - sc_idx - 1 if cv.cstrand == '-' else sc_idx
+        cv.cpos = sum([v for c,v in rcigar[:(idx + 1)] if c in constants.AFFECT_CONTIG])
 
         varseq = read.query_sequence[cv.cpos:(cv.cpos+cv.cvsize)]
         refseq = read.get_reference_sequence()
@@ -427,9 +428,11 @@ def annotate_blocks(cv, read, chr_ref, ci_file):
     '''
     cv.parid = '.' # blocks don't have pairs
     novel_blocks = [(idx, block) for idx, block in cv.blocks if bh.is_novel_block(block, chr_ref, MIN_CLIP)]
+    rcigar = read.cigar[::-1] if cv.cstrand == '-' else read.cigar
     for block_idx, block in novel_blocks:
-        cpos1 = sum([v for c,v in read.cigar[:block_idx] if c in constants.AFFECT_CONTIG])
-        cpos2 = sum([v for c,v in read.cigar[:block_idx+1] if c in constants.AFFECT_CONTIG])
+        idx = len(rcigar) - block_idx - 1 if cv.cstrand == '-' else block_idx
+        cpos1 = sum([v for c,v in rcigar[:idx] if c in constants.AFFECT_CONTIG])
+        cpos2 = sum([v for c,v in rcigar[:idx+1] if c in constants.AFFECT_CONTIG])
 
         # whether sequence block is overlapping, or on left or right side of contig block
         olapping = chr_ref[np.logical_and(block[0] < chr_ref.start, block[1] > chr_ref.end)]
@@ -545,6 +548,11 @@ def annotate_fusion(args, read, juncs, bam_idx, ex_ref, ref_trees, outbam):
     cv2.vid = get_next_id(r2.query_name)
     cv1.parid, cv2.parid = cv2.vid, cv1.vid
 
+    # set cpos as the location of clip on the contig
+    rcigar = r1.cigar[::-1] if cv1.cstrand == '-' else r1.cigar
+    idx = len(rcigar) - hc_idx1 - 1 if cv1.cstrand == '-' else hc_idx1
+    cv1.cpos = sum([v for c,v in rcigar[:(idx + 1)] if c in constants.AFFECT_CONTIG])
+
     print(cv1.vcf_output())
     print(cv2.vcf_output())
     outbam.write(r1)
@@ -566,7 +574,10 @@ def annotate_juncs(cv, read, locs, novel_juncs, ci_file):
         cp = CrypticVariant().from_read(read) # partner variant
         cp.genes = cv.genes
         varseq, refseq = '', read.get_reference_sequence()
-        cpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in constants.AFFECT_CONTIG])
+
+        rcigar = read.cigar[::-1] if cv.cstrand == '-' else read.cigar
+        idx = len(rcigar) - junc_idx - 1 if cv.cstrand == '-' else junc_idx
+        cpos = sum([v for c,v in read.cigar[:(idx+1)] if c in constants.AFFECT_CONTIG])
         rpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in constants.AFFECT_REF])
         cv.cpos, cp.cpos = cpos, cpos
         cv.pos, cp.pos = pos1, pos2+1
