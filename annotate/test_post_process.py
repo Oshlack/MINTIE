@@ -2,6 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 import post_process as pp
+import tempfile
 
 # dummy classes
 class Read:
@@ -23,10 +24,12 @@ class AlignmentFile:
 test_reads = [('1', 100, 200, 'A'),
               ('1', 105, 205, 'B'),
               ('1', 200, 300, 'C')]
+test_seq = 'TGGTAATCTACTGGGACGGAACAGCTTTGAGGTGCGTGTTTGTGCCTGTCCTGGGAGAGACCGGCGCACAGAGGAAGAGA'
 
 def test_parse_args():
     args = pp.parse_args(['sample',
                          'contig_info.tsv',
+                         'contigs.fasta',
                          'de_results.tsv',
                          'estimated_VAF.txt',
                          '--gene_filter', 'gene_filter.txt',
@@ -91,6 +94,28 @@ def test_add_de_info():
 def test_get_short_gene_name(gene, expected):
     assert pp.get_short_gene_name(gene) == expected
 
+def test_get_variant_seq():
+    contigs = { 'contig_id': ['1', '1'],
+                'variant_id': ['1a', '1b'],
+                'cpos': [20, 40],
+                'contig_varsize': [0, 20],
+                'contig_len': [80, 80],
+                'variant_type': ['NEJ', 'NE'],
+                'overlapping_genes': ['A', 'A']}
+    contigs = pd.DataFrame.from_dict(contigs)
+
+    with tempfile.NamedTemporaryFile() as contig_fasta:
+        contig_fasta.write(bytes('>1\n', 'utf-8'))
+        contig_fasta.write(bytes('%s\n' % test_seq, 'utf-8'))
+        contig_fasta.flush()
+
+        result = pp.get_variant_seq(contigs, contig_fasta.name)
+
+    assert list(result.seq1.values) == ['TGGTAATCTACTGGGACGGAACAGCTTTGAGGTGCGTGTT',
+                                        'ACAGCTTTGAGGTGCGTGTTTGTGCCTGTCCTGGGAGAGA']
+    assert list(result.seq2.values) == [np.nan,
+                                        'TGTGCCTGTCCTGGGAGAGACCGGCGCACAGAGGAAGAGA']
+
 def test_reformat_fields():
     contigs = { 'contig_id': ['1', '2'],
                 'variant_id': ['1a', '2a'],
@@ -99,7 +124,7 @@ def test_reformat_fields():
                 'pos1': ['chr1:100(+)', 'chr2:200(-)'],
                 'pos2': ['chr1:200(+)', 'chr2:250(-)'],
                 'varsize': [100, 0],
-                'cpos': [0, 0],
+                'cpos': [0, 10],
                 'contig_varsize': [0, 0],
                 'contig_len': [200, 150],
                 'contig_cigar': ['100M50N100M', '50M50N50M'],
@@ -126,13 +151,17 @@ def test_reformat_fields():
                 'TPM': [1000, 2000],
                 'mean_WT_TPM': [1400, 1400],
                 'VAF': [1000./2400, 2000./3400],
-                'unique_contig_ID': ['S1|1|A', 'S1|2|B'] }
+                'unique_contig_ID': ['S1|1|A', 'S1|2|B'],
+                'seq_loc1': ['1a:0:40', '2a'],
+                'seq_loc2': ['1a:80-120', ''],
+                'seq1': ['AA', 'GG'],
+                'seq2': ['TT', np.nan]}
     contigs = pd.DataFrame.from_dict(contigs)
     contigs = pp.reformat_fields(contigs)
 
-    assert list(contigs['chr1'].values) == ['chr2', 'chr1']
-    assert list(contigs['chr2'].values) == ['chr2', 'chr1']
-    assert list(contigs['pos1'].values) == [200, 100]
-    assert list(contigs['pos2'].values) == [250, 200]
-    assert list(contigs['strand1'].values) == ['-', '+']
-    assert list(contigs['strand2'].values) == ['-', '+']
+    assert list(contigs['chr1'].values) == ['chr1', 'chr2']
+    assert list(contigs['chr2'].values) == ['chr1', 'chr2']
+    assert list(contigs['pos1'].values) == [100, 200]
+    assert list(contigs['pos2'].values) == [200, 250]
+    assert list(contigs['strand1'].values) == ['+', '-']
+    assert list(contigs['strand2'].values) == ['+', '-']

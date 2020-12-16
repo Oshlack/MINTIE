@@ -283,6 +283,7 @@ post_process = {
         $python ${code_base}/annotate/post_process.py \
             $sample_name \
             $input.tsv \
+            $input.fasta \
             $sample_name/eq_classes_de.txt \
             $sample_name/vaf_estimates.txt \
             $gf_arg \
