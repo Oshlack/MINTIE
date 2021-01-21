@@ -214,7 +214,7 @@ filter_on_significant_ecs = {
     produce("de_contigs.fasta"){
         exec """
         $python $code_base/util/filter_fasta.py $output.dir/${sample_name}_denovo_filt.fasta $input.txt --col_id contig > $output1 ;
-        """
+        """, "filter_sig_ecs"
     }
 }
 
@@ -259,7 +259,7 @@ refine_contigs = {
             --log $output.dir/refine.log > $output.vcf ;
         $samtools index $output.bam ;
         $python $code_base/util/filter_fasta.py $input.fasta $output.tsv --col_id contig_id > $output.fasta ;
-        """
+        """, "refine_contigs"
     }
 }
 

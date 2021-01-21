@@ -387,8 +387,8 @@ def annotate_softclips(cv, read, ci_file):
         cv.pos = int(block[0]) + 1 if sc_left else int(block[1])
 
         rcigar = read.cigar[::-1] if cv.cstrand == '-' else read.cigar
-        idx = len(rcigar) - sc_idx - 1 if cv.cstrand == '-' else sc_idx
-        cv.cpos = sum([v for c,v in rcigar[:(idx + 1)] if c in constants.AFFECT_CONTIG])
+        idx = len(rcigar) - sc_idx - 1 if cv.cstrand == '-' else sc_idx + 1
+        cv.cpos = sum([v for c,v in rcigar[:idx] if c in constants.AFFECT_CONTIG])
 
         varseq = read.query_sequence[cv.cpos:(cv.cpos+cv.cvsize)]
         refseq = read.get_reference_sequence()
@@ -550,8 +550,8 @@ def annotate_fusion(args, read, juncs, bam_idx, ex_ref, ref_trees, outbam):
 
     # set cpos as the location of clip on the contig
     rcigar = r1.cigar[::-1] if cv1.cstrand == '-' else r1.cigar
-    idx = len(rcigar) - hc_idx1 - 1 if cv1.cstrand == '-' else hc_idx1
-    cv1.cpos = sum([v for c,v in rcigar[:(idx + 1)] if c in constants.AFFECT_CONTIG])
+    idx = len(rcigar) - hc_idx1 - 1 if cv1.cstrand == '-' else hc_idx1 + 1
+    cv1.cpos = sum([v for c,v in rcigar[:idx] if c in constants.AFFECT_CONTIG])
 
     print(cv1.vcf_output())
     print(cv2.vcf_output())
@@ -576,12 +576,12 @@ def annotate_juncs(cv, read, locs, novel_juncs, ci_file):
         varseq, refseq = '', read.get_reference_sequence()
 
         rcigar = read.cigar[::-1] if cv.cstrand == '-' else read.cigar
-        idx = len(rcigar) - junc_idx - 1 if cv.cstrand == '-' else junc_idx
-        cpos = sum([v for c,v in read.cigar[:(idx+1)] if c in constants.AFFECT_CONTIG])
-        rpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in constants.AFFECT_REF])
+        idx = len(rcigar) - junc_idx - 1 if cv.cstrand == '-' else junc_idx + 1
+        cpos = sum([v for c,v in rcigar[:idx] if c in constants.AFFECT_CONTIG])
         cv.cpos, cp.cpos = cpos, cpos
         cv.pos, cp.pos = pos1, pos2+1
 
+        rpos = sum([v for c,v in read.cigar[:(junc_idx+1)] if c in constants.AFFECT_REF])
         cv.ref, cp.ref = refseq[rpos-1], refseq[rpos]
         cv.alt = '%s[%s:%d[%s' % (cv.ref, cv.chrom, cv.pos, varseq)
         cp.alt = '%s]%s:%d]%s' % (varseq, cp.chrom, cp.pos, cp.ref)
