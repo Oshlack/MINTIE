@@ -187,7 +187,7 @@ def reformat_fields(contigs):
     contigs = contigs[basic + variant + de + ec + cont + seq_fields]
 
     contigs = contigs if not ran_de else contigs.sort_values(by='PValue', ascending=True)
-    return contigs
+    return contigs.drop_duplicates()
 
 def main():
     args = parse_args(sys.argv[1:])
