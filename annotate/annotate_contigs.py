@@ -685,7 +685,8 @@ def annotate_contigs(args):
             logging.info('Skipping contig %s: not enough bases match reference' % read.query_name)
             continue
 
-        if len(read.get_blocks()) == 1:
+        allmatch = all([op == constants.CIGAR['match'] for op, val in read.cigar])
+        if len(read.get_blocks()) == 1 and allmatch:
             chr_ex = get_chrom_ref_tree(read.reference_name, ex_tree)
             s, e = read.get_blocks()[0]
             if not (chr_ex.overlaps(s, s + 1) and chr_ex.overlaps(e - 1, e)):
