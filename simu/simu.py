@@ -283,7 +283,8 @@ def get_random_seq(ins_range):
     '''
     Generate random insertion sequence
     '''
-    ins_size = np.random.randint(ins_range[0], ins_range[1])
+    ins_min, ins_max = ins_range
+    ins_size = np.random.randint(ins_min, ins_max) if ins_min < ins_max else ins_min
     ins = np.random.choice(BASES, ins_size)
     ins = ''.join(ins)
     return ins
@@ -433,7 +434,7 @@ def get_exon_for_deletion(seq, indel_range):
             max_delsize = len(seq[select]) - (MAX_BP_FROM_BOUNDARY * 2)
             # ^ max possible variant size including padding from boundary
             varmax = min(indel_range[1], max_delsize)
-            if varmin < varmax:
+            if varmin <= varmax:
                 break
     assert varmin <= varmax # bad transcript if assert fails
 
@@ -657,9 +658,10 @@ def write_indel(tx, all_exons, genome_fasta, indel_range, out_prefix, vartype='D
         select, varmin, varmax = get_exon_for_deletion(seq, indel_range)
 
         # make ITD sequence
-        select_seq, varsize = seq[select], np.random.randint(varmin, varmax)
+        varsize = np.random.randint(varmin, varmax) if varmin < varmax else varmin
+        select_seq = seq[select]
         maxpos = len(select_seq) - varsize - MAX_BP_FROM_BOUNDARY
-        itd_pos = np.random.randint(MAX_BP_FROM_BOUNDARY, maxpos)
+        itd_pos = np.random.randint(MAX_BP_FROM_BOUNDARY, maxpos) if MAX_BP_FROM_BOUNDARY < maxpos else MAX_BP_FROM_BOUNDARY
 
         itd_seq = select_seq[itd_pos:(itd_pos + varsize)]
         seq[select] = select_seq[:itd_pos] + itd_seq + select_seq[itd_pos:]
