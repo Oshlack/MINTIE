@@ -11,7 +11,7 @@ mkdir -p tools/bin
 cd tools
 
 #a list of which programs need to be installed
-commands="bpipe fastuniq dedupe trimmomatic fasta_formatter samtools bedtools soapdenovotrans salmon hisat gmap"
+commands="bpipe fastuniq dedupe trimmomatic fasta_formatter samtools bedtools soapdenovotrans salmon gmap"
 
 #installation methods
 function bpipe_install {
@@ -118,14 +118,6 @@ function salmon_install {
     tar -xvzf salmon-0.14.0_linux_x86_64.tar.gz
     rm salmon-0.14.0_linux_x86_64.tar.gz
     ln -s $PWD/salmon-latest_linux_x86_64/bin/salmon $PWD/bin
-}
-
-function hisat_install {
-    wget --no-check-certificate http://ccb.jhu.edu/software/hisat2/dl/hisat2-2.1.0-Linux_x86_64.zip
-    unzip hisat2-2.1.0-Linux_x86_64.zip
-    rm hisat2-2.1.0-Linux_x86_64.zip
-    ln -s $PWD/hisat2-2.1.0/hisat2 $PWD/bin/hisat
-    ln -s $PWD/hisat2-2.1.0/hisat2-build $PWD/bin/hisat-build
 }
 
 echo "// Path to tools used by the MINTIE pipeline" > ../tools.groovy
