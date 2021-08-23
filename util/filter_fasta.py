@@ -29,9 +29,11 @@ except ValueError:
 
 tx_list = pd.read_csv(tx_list_file, sep='\t', header=header)
 
+lookup_list = set(tx_list[col_id].values.tolist())
+
 handle = open(fasta_file, 'r')
 for record in SeqIO.parse(handle, 'fasta'):
     record.description = record.id
-    if record.id in tx_list[col_id].values:
+    if record.id in lookup_list:
         sys.stdout.write(record.format('fasta'))
 handle.close()
