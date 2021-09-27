@@ -92,7 +92,7 @@ assemble = {
             """, "assemble"
         } else {
             exec """
-            rlens=`zcat $input1 $input2 \
+            rlens=`gunzip -c $input1 $input2 \
                        | awk -v mrl=$min_read_length 'BEGIN {minlen = mrl; maxlen = 0} {
                             if (NR % 4 == 2) {
                                 rlen = length(\$1) ;
@@ -138,9 +138,6 @@ assemble = {
 create_salmon_index = {
     def sample_name = branch.name
     def salmon_index = sample_name + "/all_fasta_index"
-    if (type == "quant") {
-        salmon_index = sample_name + "/salmon_quant_index"
-    }
     output.dir = salmon_index
     def index_fasta = output.dir + "/" + sample_name + ".fasta"
     produce(index_fasta, '*.bin'){
@@ -307,7 +304,7 @@ run { fastqCaseFormat * [ fastq_dedupe +
                           trim +
                           assemble +
                           create_salmon_index +
-                          [ fastqCaseFormat * [ run_salmon ],
+                          [ fastqCaseFormat * [ run_salmon.using(type: "case") ],
                             fastqControlFormat * [ run_salmon.using(type:"controls") ] ] +
                           create_ec_count_matrix +
                           run_de +

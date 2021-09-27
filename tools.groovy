@@ -1,0 +1,13 @@
+// Path to tools used by the MINTIE pipeline
+bpipe="bpipe"
+fastuniq="fastuniq"
+dedupe="dedupe.sh"
+trimmomatic="trimmomatic"
+fasta_formatter="fasta_formatter"
+samtools="samtools"
+bedtools="bedtools"
+soapdenovotrans="SOAPdenovo-Trans-127mer"
+salmon="salmon"
+gmap="gmap"
+R="R"
+python="python"
