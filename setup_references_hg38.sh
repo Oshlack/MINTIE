@@ -6,7 +6,7 @@ mkdir -p ref
 cd ref
 
 gmap_refdir=$PWD
-commands="genome_fasta trans_fasta tx_annotation ann_info tx2gene gmap_refdir gmap_genome"
+commands="genome_fasta tx_annotation trans_fasta ann_info tx2gene gmap_refdir gmap_genome"
 
 function genome_fasta_setup {
     file=hg38.fa
@@ -26,16 +26,6 @@ function genome_fasta_setup {
     fi
 }
 
-function trans_fasta_setup {
-    file=chess2.2.fa
-    wget --no-check-certificate http://ccb.jhu.edu/software/stringtie/dl/gffread-0.11.6.Linux_x86_64.tar.gz
-    tar -xvzf gffread-0.11.6.Linux_x86_64.tar.gz && rm gffread-0.11.6.Linux_x86_64.tar.gz
-    gffread-0.11.6.Linux_x86_64/gffread chess2.2.gtf -g hg38.fa -w $file
-    if [ -s $file ]; then
-        echo -e "$PWD/$file" > trans_fasta.success
-    fi
-}
-
 function tx_annotation_setup {
     file=chess2.2.gtf
     wget http://ccb.jhu.edu/chess/data/${file}.gz
@@ -44,6 +34,16 @@ function tx_annotation_setup {
 
     if [ -s $file ]; then
         echo -e "$PWD/$file" > tx_annotation.success
+    fi
+}
+
+function trans_fasta_setup {
+    file=chess2.2.fa
+    wget --no-check-certificate http://ccb.jhu.edu/software/stringtie/dl/gffread-0.11.6.Linux_x86_64.tar.gz
+    tar -xvzf gffread-0.11.6.Linux_x86_64.tar.gz && rm gffread-0.11.6.Linux_x86_64.tar.gz
+    gffread-0.11.6.Linux_x86_64/gffread chess2.2.gtf -g hg38.fa -w $file
+    if [ -s $file ]; then
+        echo -e "$PWD/$file" > trans_fasta.success
     fi
 }
 
