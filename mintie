@@ -26,7 +26,8 @@ do
         echo -e "\nusage (setup references): mintie -r "
         echo -e "\nusage (setup test data): mintie -t "
         echo -e "\nusage (wrapper): mintie -w -p [params.txt] cases/*.fastq.gz controls/*.fastq.gz "
-        echo -e "\nusage (direct):\n export \$MINTIEDIR=$MINTIE_HOME;\n bpipe run -@$MINTIEDIR/params.txt  [ <other bpipe options >] \n\t \$MINTIEDIR/MINTIE.groovy cases/*.fastq.gz controls/*fastq.gz"
+        echo -e "\nusage (direct):\n export \$MINTIEDIR=$MINTIE_HOME;\n bpipe run -@\$MINTIEDIR/params.txt  [ <other bpipe options >] \n\t \$MINTIEDIR/MINTIE.groovy cases/*.fastq.gz controls/*fastq.gz"
+        echo -e "\nusage (direct single-end):\n export \$MINTIEDIR=$MINTIE_HOME;\n bpipe run -@\$MINTIEDIR/params.txt  [ <other bpipe options >] \n\t \$MINTIEDIR/MINTIE_SE.groovy cases/*.fastq.gz controls/*fastq.gz"
         echo ""
         exit 0
         shift
