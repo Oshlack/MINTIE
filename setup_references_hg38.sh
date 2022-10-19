@@ -10,26 +10,27 @@ commands="genome_fasta tx_annotation trans_fasta ann_info tx2gene gmap_refdir gm
 
 function genome_fasta_setup {
     file=hg38.fa
-    wget http://ccb.jhu.edu/chess/data/hg38_p8.fa.gz
-    gunzip hg38_p8.fa.gz
+    wget https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/p12/hg38.p12.fa.gz
+    gunzip hg38.p12.fa.gz
     samtools=`which samtools 2>/dev/null`
     if [ -z $samtools ] ; then
         samtools=$PWD/../tools/bin/samtools
     fi
     chr=$(seq 1 1 22)" X Y M"
     for i in $chr; do
-        $samtools faidx hg38_p8.fa chr$i >> $file ;
+        $samtools faidx hg38.p12.fa chr$i >> $file ;
     done
     if [ -s $file ]; then
-        rm hg38_p8.fa*
+        rm hg38.p12.fa*
         echo -e "$PWD/$file" > genome_fasta.success
     fi
 }
 
 function tx_annotation_setup {
-    file=chess2.2.gtf
-    wget http://ccb.jhu.edu/chess/data/${file}.gz
-    gunzip ${file}.gz
+    version=3.0
+    file=chess${version}.gtf
+    wget https://github.com/chess-genome/chess/releases/download/v.${version}/${file}.gz
+    gunzip ${file}.gz > ${file}
     grep -vE "^K|^chrUn|alt|random" $file > ${file}.tmp && mv ${file}.tmp $file
 
     if [ -s $file ]; then
@@ -38,18 +39,18 @@ function tx_annotation_setup {
 }
 
 function trans_fasta_setup {
-    file=chess2.2.fa
+    file=chess3.0.fa
     wget --no-check-certificate http://ccb.jhu.edu/software/stringtie/dl/gffread-0.11.6.Linux_x86_64.tar.gz
     tar -xvzf gffread-0.11.6.Linux_x86_64.tar.gz && rm gffread-0.11.6.Linux_x86_64.tar.gz
-    gffread-0.11.6.Linux_x86_64/gffread chess2.2.gtf -g hg38.fa -w $file
+    gffread-0.11.6.Linux_x86_64/gffread chess3.0.gtf -g hg38.fa -w $file
     if [ -s $file ]; then
         echo -e "$PWD/$file" > trans_fasta.success
     fi
 }
 
 function ann_info_setup {
-    file=chess2.2.info
-    python ../util/make_exon_reference.py chess2.2.gtf
+    file=chess3.0.info
+    python ../util/make_exon_reference.py chess3.0.gtf
     if [ -s $file ]; then
         echo -e "$PWD/$file" > ann_info.success
     fi
@@ -57,7 +58,7 @@ function ann_info_setup {
 
 function tx2gene_setup {
     file=tx2gene.txt
-    python ../util/make_tx2gene_lookup.py chess2.2.gtf > $file
+    python ../util/make_tx2gene_lookup.py chess3.0.gtf > $file
     if [ -s $file ]; then
         echo -e "$PWD/$file" > tx2gene.success
     fi
