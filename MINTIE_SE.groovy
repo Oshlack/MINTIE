@@ -30,6 +30,12 @@ if(!binding.variables.containsKey("run_de_step")){
 if(!binding.variables.containsKey("splice_motif_mismatch")){
     splice_motif_mismatch=0
 }
+if(!binding.variables.containsKey("var_filter")){
+    var_filter=""
+}
+if(!binding.variables.containsKey("gene_filter")){
+    gene_filter=""
+}
 
 fastq_dedupe = {
     from("*.gz"){
