@@ -40,7 +40,7 @@ function tx_annotation_setup {
 
 function trans_fasta_setup {
     file=chess3.0.fa
-    wget --no-check-certificate http://ccb.jhu.edu/software/stringtie/dl/gffread-0.11.6.Linux_x86_64.tar.gz
+    wget --no-check-certificate https://ccb.jhu.edu/software/stringtie/dl/gffread-0.11.6.Linux_x86_64.tar.gz
     tar -xvzf gffread-0.11.6.Linux_x86_64.tar.gz && rm gffread-0.11.6.Linux_x86_64.tar.gz
     gffread-0.11.6.Linux_x86_64/gffread chess3.0.gtf -g hg38.fa -w $file
     if [ -s $file ]; then
